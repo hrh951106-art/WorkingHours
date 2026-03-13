@@ -1,0 +1,173 @@
+
+> jy-frontend@1.0.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 257 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+11:24:38 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+11:24:52 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+11:25:02 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+11:25:08 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+11:25:15 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+11:36:23 [vite] hmr update /src/router/index.tsx, /src/index.css
+11:36:23 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:36:23 [vite] page reload src/router/index.tsx
+11:36:28 [vite] hmr update /src/router/index.tsx, /src/index.css
+11:36:28 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:36:28 [vite] page reload src/router/index.tsx
+11:36:37 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+11:37:14 [vite] hmr update /src/router/index.tsx, /src/index.css
+11:37:16 [vite] hmr update /src/router/index.tsx, /src/index.css
+12:05:39 [vite] hmr update /src/router/index.tsx, /src/index.css
+12:05:39 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+12:05:39 [vite] page reload src/router/index.tsx
+12:05:42 [vite] hmr update /src/router/index.tsx, /src/index.css
+12:05:42 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+12:05:42 [vite] page reload src/router/index.tsx
+12:05:45 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+12:13:59 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+12:14:23 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+12:14:33 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+12:14:37 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+12:14:42 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+12:14:47 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+12:14:53 [vite] hmr update /src/pages/calculate/PunchPairResultPage.tsx, /src/index.css
+12:14:59 [vite] hmr update /src/pages/calculate/PunchPairResultPage.tsx, /src/index.css
+12:15:04 [vite] hmr update /src/pages/calculate/PunchPairResultPage.tsx, /src/index.css
+12:15:08 [vite] hmr update /src/pages/calculate/PunchPairResultPage.tsx, /src/index.css
+12:15:24 [vite] hmr update /src/pages/calculate/WorkHourResultPage.tsx, /src/index.css
+12:15:28 [vite] hmr update /src/pages/calculate/WorkHourResultPage.tsx, /src/index.css
+12:15:38 [vite] hmr update /src/pages/calculate/WorkHourResultPage.tsx, /src/index.css
+12:15:42 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+12:20:47 [vite] hmr update /src/pages/calculate/PunchPairResultPage.tsx, /src/index.css
+12:20:55 [vite] hmr update /src/pages/calculate/PunchPairResultPage.tsx, /src/index.css
+12:59:36 [vite] hmr update /src/router/index.tsx, /src/index.css
+12:59:36 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+12:59:36 [vite] page reload src/router/index.tsx
+12:59:38 [vite] hmr update /src/router/index.tsx, /src/index.css
+12:59:38 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+12:59:38 [vite] page reload src/router/index.tsx
+12:59:43 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+13:05:48 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+13:05:51 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+13:09:05 [vite] hmr update /src/pages/attendance/tabs/PunchResultsTab.tsx, /src/index.css
+13:09:44 [vite] hmr update /src/pages/attendance/tabs/PunchResultsTab.tsx, /src/index.css
+13:11:25 [vite] hmr update /src/pages/attendance/tabs/PunchResultsTab.tsx, /src/index.css
+13:11:52 [vite] hmr update /src/pages/attendance/tabs/PunchResultsTab.tsx
+13:12:43 [vite] hmr update /src/pages/attendance/WorkHourDetailPage.tsx, /src/index.css
+13:17:07 [vite] Pre-transform error: /Users/aaron.he/Desktop/AI/JY/frontend/src/pages/attendance/tabs/PunchResultsTab.tsx: Expecting Unicode escape sequence \uXXXX. (65:44)
+
+  63 |
+  64 |   const updateMutation = useMutation({
+> 65 |     mutationFn: (data: any) => request.put(\`/punch/pairs/\${data.id}\`, data),
+     |                                             ^
+  66 |     onSuccess: () => {
+  67 |       message.success('修改成功');
+  68 |       setEditModalOpen(false);
+13:17:07 [vite] Internal server error: /Users/aaron.he/Desktop/AI/JY/frontend/src/pages/attendance/tabs/PunchResultsTab.tsx: Expecting Unicode escape sequence \uXXXX. (65:44)
+
+  63 |
+  64 |   const updateMutation = useMutation({
+> 65 |     mutationFn: (data: any) => request.put(\`/punch/pairs/\${data.id}\`, data),
+     |                                             ^
+  66 |     onSuccess: () => {
+  67 |       message.success('修改成功');
+  68 |       setEditModalOpen(false);
+  Plugin: vite:react-babel
+  File: /Users/aaron.he/Desktop/AI/JY/frontend/src/pages/attendance/tabs/PunchResultsTab.tsx:65:44
+  63 |  
+  64 |    const updateMutation = useMutation({
+  65 |      mutationFn: (data: any) => request.put(\`/punch/pairs/\${data.id}\`, data),
+     |                                              ^
+  66 |      onSuccess: () => {
+  67 |        message.success('修改成功');
+      at constructor (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.readWord1 (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:6559:16)
+      at TypeScriptParserMixin.readWord (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:6579:23)
+      at TypeScriptParserMixin.getTokenFromCode (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:6298:14)
+      at TypeScriptParserMixin.getTokenFromCode (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4797:11)
+      at TypeScriptParserMixin.getTokenFromCode (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9987:11)
+      at TypeScriptParserMixin.nextToken (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:5782:10)
+      at TypeScriptParserMixin.next (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:5692:10)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11169:10)
+      at TypeScriptParserMixin.parseSubscript (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at TypeScriptParserMixin.parseFunctionBody (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12093:24)
+      at TypeScriptParserMixin.parseArrowExpression (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseObjectProperty (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11950:83)
+      at TypeScriptParserMixin.parseObjPropValue (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11978:100)
+      at TypeScriptParserMixin.parseObjPropValue (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9744:18)
+      at TypeScriptParserMixin.parsePropertyDefinition (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11915:17)
+      at TypeScriptParserMixin.parseObjectLike (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11832:21)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11339:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+13:17:31 [vite] hmr update /src/pages/attendance/tabs/PunchResultsTab.tsx, /src/index.css
+14:47:34 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+14:52:28 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+14:52:33 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+14:52:37 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+14:52:40 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+14:52:46 [vite] hmr update /src/pages/calculate/AttendanceCodePage.tsx, /src/index.css
+15:00:23 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+15:07:05 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+15:13:12 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+15:18:31 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+15:23:06 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:14:11 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:14:17 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:14:27 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:08 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:25 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:27 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:33 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:38 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:42 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:15:50 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:25:50 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:25:55 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:32:08 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:32:16 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:32:37 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:33:00 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:33:25 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:34:31 [vite] hmr update /src/pages/attendance/WorkHourDetailPage.tsx, /src/index.css
+16:41:53 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:43:18 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:43:21 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:43:25 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:43:55 [vite] hmr update /src/pages/attendance/WorkHourDetailPage.tsx, /src/index.css
+16:47:35 [vite] hmr update /src/pages/attendance/tabs/WorkHourResultsTab.tsx, /src/index.css
+16:47:41 [vite] hmr update /src/pages/attendance/WorkHourDetailPage.tsx, /src/index.css

@@ -1,0 +1,100 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function checkHierarchyLevels() {
+  console.log('========================================');
+  console.log('检查分配归属层级');
+  console.log('========================================\n');
+
+  // 1. 查看所有的层级配置
+  const levels = await prisma.accountHierarchyLevel.findMany({
+    where: {
+      deletedAt: null,
+    },
+    include: {
+      hierarchyType: true,
+    },
+    orderBy: {
+      level: 'asc',
+    },
+  });
+
+  console.log('可用的层级配置:\n');
+  levels.forEach(lvl => {
+    console.log(`层级${lvl.level} (ID: ${lvl.id}):`);
+    console.log(`  类型: ${lvl.hierarchyType?.typeName || 'N/A'} (ID: ${lvl.hierarchyTypeId})`);
+    console.log(`  层级名称: ${lvl.levelName}`);
+    console.log();
+  });
+
+  // 2. 检查产线的层级信息
+  console.log('========================================');
+  console.log('产线的层级信息');
+  console.log('========================================\n');
+
+  const lines = await prisma.productionLine.findMany({
+    where: {
+      deletedAt: null,
+    },
+  });
+
+  lines.forEach(line => {
+    console.log(`${line.name} (ID: ${line.id}):`);
+    console.log(`  组织ID: ${line.orgId}`);
+    console.log(`  组织名称: ${line.orgName}`);
+    console.log(`  车间ID: ${line.workshopId || 'NULL'}`);
+
+    // 尝试获取层级值
+    const hierarchyValues = line.hierarchyValues ? JSON.parse(line.hierarchyValues) : null;
+    if (hierarchyValues) {
+      console.log(`  层级值: ${JSON.stringify(hierarchyValues)}`);
+    }
+    console.log();
+  });
+
+  // 3. 测试层级过滤逻辑
+  console.log('========================================');
+  console.log('测试层级过滤逻辑');
+  console.log('========================================\n');
+
+  const allocationHierarchyLevels = [30];
+  console.log(`分配归属层级: ${allocationHierarchyLevels}\n`);
+
+  lines.forEach(line => {
+    let included = false;
+
+    // 检查isLineInHierarchyLevels逻辑
+    const hierarchyValues = line.hierarchyValues ? JSON.parse(line.hierarchyValues) : null;
+    if (hierarchyValues && hierarchyValues.hierarchyId) {
+      if (allocationHierarchyLevels.includes(hierarchyValues.hierarchyId)) {
+        included = true;
+      }
+    }
+
+    console.log(`${line.name}: ${included ? '✓ 包含' : '✗ 排除'}`);
+  });
+
+  console.log('\n========================================');
+  console.log('问题诊断:');
+  console.log('========================================\n');
+
+  console.log('❌ 问题: 分配归属层级设置为 [30]');
+  console.log('   这个层级ID 30可能不存在，或者产线没有这个层级值');
+  console.log('   结果：所有产线都被过滤掉了，没有分摊目标');
+  console.log('\n建议:');
+  console.log('1. 将分配归属层级设置为空数组 []，表示包含所有层级');
+  console.log('2. 或者设置为正确的层级ID');
+  console.log('3. 确保产线的hierarchyValues中包含对应的层级ID');
+
+  console.log('\n========================================');
+}
+
+checkHierarchyLevels()
+  .catch((e) => {
+    console.error('检查失败:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

@@ -1,0 +1,39 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function checkIndirectAccounts() {
+  console.log('========================================');
+  console.log('检查间接设备账户');
+  console.log('========================================\n');
+
+  const accounts = await prisma.laborAccount.findMany({
+    where: {
+      name: {
+        endsWith: '////间接设备',
+      },
+    },
+  });
+
+  console.log('找到 ' + accounts.length + ' 个间接设备账户:\n');
+
+  for (const acc of accounts) {
+    console.log('ID: ' + acc.id);
+    console.log('名称: ' + acc.name);
+    console.log('编码: ' + (acc.code || 'N/A'));
+    console.log('层级: ' + acc.hierarchyLevelId);
+    console.log('父账户: ' + (acc.parentId || 'NULL'));
+    console.log();
+  }
+
+  console.log('========================================');
+}
+
+checkIndirectAccounts()
+  .catch((e) => {
+    console.error('检查失败:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

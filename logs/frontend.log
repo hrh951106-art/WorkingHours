@@ -1,0 +1,58 @@
+
+> jy-frontend@1.0.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 323 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+12:40:56 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:42:08 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:43:53 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:45:09 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:45:17 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:45:26 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:45:29 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:45:37 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:47:01 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:47:04 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:47:06 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:47:15 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:52:08 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:52:26 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+12:52:31 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:00:04 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:00:36 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:00:41 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:05:04 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:05:44 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:05:46 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:14:26 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:14:32 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:14:37 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:14:48 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:14:52 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:14:59 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:17:45 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:17:52 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:18:11 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:22:19 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:22:31 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:26:33 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+13:29:47 [vite] hmr update /src/pages/DashboardPage.tsx, /src/index.css
+13:30:20 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
+13:31:33 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
+13:31:40 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
+13:31:48 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
+13:39:37 [vite] hmr update /src/pages/DashboardPage.tsx, /src/index.css
+13:40:35 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
+13:42:32 [vite] hmr update /src/index.css, /src/pages/auth/LoginPage.tsx, /src/pages/DashboardPage.tsx, /src/pages/hr/OrganizationPage.tsx, /src/pages/hr/EmployeeListPage.tsx, /src/components/common/DynamicSearchConditions.tsx, /src/components/common/OrganizationTreeSelect.tsx, /src/pages/system/RolePage.tsx, /src/pages/hr/ConfigPage.tsx, /src/pages/hr/components/GeneralConfig.tsx, /src/pages/hr/components/SearchConditionsConfig.tsx, /src/pages/punch/DeviceManagementPage.tsx, /src/components/common/AccountSelect.tsx, /src/pages/punch/PunchRecordPage.tsx, /src/pages/punch/DeviceGroupPage.tsx, /src/pages/allocation/LineMaintenancePage.tsx, /src/pages/shift/ShiftPage.tsx, /src/pages/shift/SchedulePage.tsx, /src/pages/account/AccountPage.tsx
+13:42:38 [vite] changed tsconfig file detected: /Users/aaron.he/Desktop/AI/JY/frontend/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+13:44:22 [vite] vite.config.ts changed, restarting server...
+13:44:22 [vite] server restarted.
+13:51:13 [vite] hmr update /src/pages/auth/LoginPage.tsx, /src/index.css
+13:52:42 [vite] .env changed, restarting server...
+13:52:42 [vite] server restarted.
+13:56:21 [vite] vite.config.ts changed, restarting server...
+13:56:21 [vite] server restarted.

@@ -1,0 +1,617 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int           @id @default(autoincrement())
+  username  String        @unique
+  password  String
+  name      String
+  email     String?
+  status    String        @default("ACTIVE")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  userRoles UserRole[]
+}
+
+model Role {
+  id                     Int                @id @default(autoincrement())
+  code                   String             @unique
+  name                   String
+  description            String?
+  functionalPermissions String             @default("[]") // JSON数组
+  dataScopeType          String             @default("ALL") // ALL, CUSTOM
+  isDefault              Boolean            @default(false) // 是否为默认角色，新员工自动分配
+  status                 String             @default("ACTIVE")
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  userRoles              UserRole[]
+  dataScopeRules         DataScopeRule[]    // 数据权限规则
+}
+
+model DataScopeRule {
+  id          Int      @id @default(autoincrement())
+  roleId      Int
+  ruleType    String   // ORG, EMPLOYEE
+  operator    String   // AND, OR
+  orgId       Int?     // 组织ID（当ruleType为ORG时）
+  includeChild Boolean  @default(false) // 是否包含子组织
+  condition   String?  // JSON格式的额外条件（如员工标签等）
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+}
+
+model UserRole {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  roleId    Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model Organization {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  name          String
+  parentId      Int?
+  type          String
+  leaderId      Int?
+  leaderName    String?
+  level         Int
+  effectiveDate DateTime
+  expiryDate    DateTime?
+  status        String         @default("ACTIVE")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  employees     Employee[]
+  parent        Organization?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children      Organization[] @relation("OrganizationHierarchy")
+}
+
+model Employee {
+  id           Int                 @id @default(autoincrement())
+  employeeNo   String              @unique
+  name         String
+  gender       String
+  idCard       String?             @unique
+  phone        String?
+  email        String?
+  orgId        Int
+  entryDate    DateTime
+  status       String              @default("ACTIVE")
+  customFields String              @default("{}")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  calcResults  CalcResult[]
+  org          Organization        @relation(fields: [orgId], references: [id])
+  changeLogs   EmployeeChangeLog[]
+  accounts     LaborAccount[]
+  punchRecords PunchRecord[]
+  schedules    Schedule[]
+  punchPairs   PunchPair[]
+}
+
+model EmployeeChangeLog {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int
+  fieldName    String
+  oldValue     String?
+  newValue     String?
+  operatorId   Int
+  operatorName String
+  createdAt    DateTime @default(now())
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model DataSource {
+  id           Int                @id @default(autoincrement())
+  code         String             @unique
+  name         String
+  type         String             @default("CUSTOM")
+  description  String?
+  isSystem     Boolean            @default(false)
+  status       String             @default("ACTIVE")
+  sort         Int                @default(0)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  customFields CustomField[]
+  options      DataSourceOption[]
+}
+
+model DataSourceOption {
+  id           Int        @id @default(autoincrement())
+  dataSourceId Int
+  label        String
+  value        String
+  sort         Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([dataSourceId, value])
+}
+
+model CustomField {
+  id           Int                    @id @default(autoincrement())
+  code         String                 @unique
+  name         String
+  type         String
+  dataSourceId Int?
+  options      String?
+  isRequired   Boolean                @default(false)
+  defaultValue String?
+  group        String                 @default("默认分组")
+  sort         Int                    @default(0)
+  status       String                 @default("ACTIVE")
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  dataSource   DataSource?            @relation(fields: [dataSourceId], references: [id])
+}
+
+model EmployeeInfoTab {
+  id          Int                    @id @default(autoincrement())
+  code        String                 @unique
+  name        String
+  description String?
+  isSystem    Boolean                @default(false)
+  sort        Int                    @default(0)
+  status      String                 @default("ACTIVE")
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  fields      EmployeeInfoTabField[]
+}
+
+model EmployeeInfoTabField {
+  id          Int             @id @default(autoincrement())
+  tabId       Int
+  fieldCode   String
+  fieldName   String
+  fieldType   String
+  isRequired  Boolean         @default(false)
+  sort        Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  tab         EmployeeInfoTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@unique([tabId, fieldCode])
+}
+
+model LaborAccount {
+  id              Int               @id @default(autoincrement())
+  code            String            @unique
+  name            String
+  type            String
+  level           Int
+  path            String
+  namePath        String            @default("") // 层级名称路径，用于显示
+  hierarchyValues String?           @default("") // JSON字符串，存储完整的层级选择信息
+  usageType       String?           @default("SHIFT") // 用途类型：SHIFT-排班/班次转移, DEVICE-设备绑定, PUNCH-打卡记录
+  parentId        Int?
+  employeeId      Int?
+  effectiveDate   DateTime
+  expiryDate      DateTime?
+  status          String            @default("ACTIVE")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  transfers       AccountTransfer[]
+  shiftSegments   ShiftSegment[]    @relation("ShiftSegmentTransfer")
+  deviceBindings  DeviceAccount[]   // 设备绑定关系
+  punchRecords    PunchRecord[]     // 打卡记录
+  punchPairs      PunchPair[]       // 摆卡记录
+  employee        Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  parent          LaborAccount?     @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children        LaborAccount[]    @relation("AccountHierarchy")
+}
+
+model AccountTransfer {
+  id         Int          @id @default(autoincrement())
+  scheduleId Int
+  accountId  Int
+  startTime  DateTime
+  endTime    DateTime
+  hours      Float
+  reason     String
+  createdAt  DateTime     @default(now())
+  account    LaborAccount @relation(fields: [accountId], references: [id])
+  schedule   Schedule     @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+}
+
+model AccountHierarchyConfig {
+  id           Int      @id @default(autoincrement())
+  level        Int
+  name         String
+  mappingType  String
+  mappingValue String?
+  dataSourceId Int?
+  sort         Int      @default(0)
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Shift {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  name          String
+  type          String         // NORMAL: 正常班, REST: 休息班
+  standardHours Float
+  breakHours    Float          @default(0)
+  color         String?
+  status        String         @default("ACTIVE")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  schedules     Schedule[]
+  segments      ShiftSegment[]
+}
+
+model ShiftSegment {
+  id             Int       @id @default(autoincrement())
+  shiftId        Int
+  type           String    // NORMAL: 正常, REST: 休息, TRANSFER: 转移
+  startDate      String    // +0: 当天, +1: 后一天
+  startTime      String    // HH:mm 格式
+  endDate        String    // +0: 当天, +1: 后一天
+  endTime        String    // HH:mm 格式
+  duration       Float     // 时长（小时）
+  accountId      Int?      // 劳动力账户ID（仅转移类型需要）
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  shift          Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  account        LaborAccount? @relation("ShiftSegmentTransfer", fields: [accountId], references: [id])
+}
+
+model Schedule {
+  id                Int      @id @default(autoincrement())
+  employeeId        Int
+  shiftId           Int
+  scheduleDate      DateTime
+  adjustedStart     DateTime?
+  adjustedEnd       DateTime?
+  adjustedSegments  String?  // JSON string to store segment overrides (accountId, etc.)
+  status            String   @default("ACTIVE")
+  cancelReason      String?
+  pushStatus        String   @default("PENDING")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  transfers         AccountTransfer[]
+  shift             Shift    @relation(fields: [shiftId], references: [id])
+  employee          Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model PunchDevice {
+  id        Int             @id @default(autoincrement())
+  code      String          @unique
+  name      String
+  type      String
+  ipAddress String?
+  groupId   Int?            // 设备组ID
+  status    String          @default("NORMAL")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  records   PunchRecord[]
+  bindings  DeviceAccount[] // 设备绑定的子账户
+  group     DeviceGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+}
+
+model PunchRecord {
+  id         Int          @id @default(autoincrement())
+  employeeNo String
+  punchTime  DateTime
+  deviceId   Int
+  punchType  String
+  location   String?
+  accountId  Int?         // 子劳动力账户ID（可选）
+  source     String       @default("AUTO")
+  createdAt  DateTime     @default(now())
+  device     PunchDevice  @relation(fields: [deviceId], references: [id])
+  employee   Employee     @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  account    LaborAccount? @relation(fields: [accountId], references: [id])
+  inPairs    PunchPair[]  @relation("InPunch")
+  outPairs   PunchPair[]  @relation("OutPunch")
+}
+
+model DeviceAccount {
+  id            Int          @id @default(autoincrement())
+  deviceId      Int
+  accountId     Int
+  effectiveDate DateTime     @default(now()) // 生效时间
+  expiryDate    DateTime?    // 失效时间，null表示永久有效
+  createdAt     DateTime     @default(now())
+  device        PunchDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  account       LaborAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, accountId, effectiveDate, expiryDate])
+}
+
+model PunchRule {
+  id               Int      @id @default(autoincrement())
+  code             String   @unique
+  name             String
+  priority         Int
+  conditions       String
+  beforeShiftMins  Int      @default(0) // 班前多少分钟
+  afterShiftMins   Int      @default(0) // 班后多少分钟
+  configs          String   @default("[]") // 设备组和摆卡间隔配置（JSON数组）
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model CalcRule {
+  id            Int      @id @default(autoincrement())
+  code          String   @unique
+  name          String
+  priority      Int
+  conditions    String
+  calcLogic     String
+  overtimeRules String
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// 出勤代码定义
+model AttendanceCode {
+  id                Int      @id @default(autoincrement())
+  code              String   @unique
+  name              String
+  type              String   @default("LEAN_HOURS") // 出勤类型：LEAN_HOURS-精益工时
+  accountLevels     String   @default("[]") // 劳动力账户层级（JSON数组）
+  unit              String   @default("HOURS") // 单位：HOURS-小时, MINUTES-分钟
+  deductMeal        Boolean  @default(false) // 是否扣用餐
+  includeOutside    Boolean  @default(false) // 包含班外时数
+  onlyOutside       Boolean  @default(false) // 仅计算班外时数
+  showInDetailPage  Boolean  @default(false) // 是否在工时明细管理页面显示
+  priority          Int      @default(0) // 优先级
+  status            String   @default("ACTIVE")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  calcResults       CalcResult[]
+}
+
+model CalcResult {
+  id              Int       @id @default(autoincrement())
+  employeeNo      String
+  calcDate        DateTime
+  shiftId         Int
+  shiftName       String?
+  attendanceCodeId Int?     // 关联的出勤代码ID（可选，兼容旧数据）
+  attendanceCode  AttendanceCode? @relation(fields: [attendanceCodeId], references: [id])
+  punchInTime     DateTime?
+  punchOutTime    DateTime?
+  standardHours   Float
+  actualHours     Float
+  overtimeHours   Float     @default(0)
+  leaveHours      Float     @default(0)
+  absenceHours    Float     @default(0)
+  accountHours    String   @default("[]")
+  accountId       Int?     // 劳动力账户ID
+  accountName     String?  // 劳动力账户名称
+  exceptions      String   @default("[]")
+  status          String   @default("PENDING")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  employee        Employee  @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+}
+
+// 设备组
+model DeviceGroup {
+  id          Int           @id @default(autoincrement())
+  code        String        @unique
+  name        String
+  description String?
+  status      String        @default("ACTIVE")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  devices     PunchDevice[]
+}
+
+// 摆卡结果（成对的打卡记录）
+model PunchPair {
+  id              Int      @id @default(autoincrement())
+  employeeNo      String
+  pairDate        DateTime // 摆卡日期
+  shiftId         Int      // 绑定的班次ID
+  shiftName       String?  // 班次名称
+  inPunchId       Int?     // 签入打卡记录ID（null表示只有签退）
+  outPunchId      Int?     // 签退打卡记录ID（null表示只有签入）
+  inPunchTime     DateTime? // 签入时间
+  outPunchTime    DateTime? // 签退时间
+  workHours       Float    // 工作小时数
+  sourceGroupId   Int?     // 来源设备组ID
+  accountId       Int?     // 合并后的子劳动力账户ID
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  employee        Employee @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  inPunch         PunchRecord? @relation("InPunch", fields: [inPunchId], references: [id], onDelete: Restrict)
+  outPunch        PunchRecord? @relation("OutPunch", fields: [outPunchId], references: [id], onDelete: Restrict)
+  account         LaborAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([employeeNo, pairDate])
+  @@index([shiftId])
+  @@index([accountId])
+}
+
+// ============ 间接工时分摊模块 ============
+
+// 间接工时记录表
+model IndirectHourRecord {
+  id            Int      @id @default(autoincrement())
+  recordDate    DateTime @db.Date // 工时日期
+  orgId         Int              // 组织ID
+  orgName       String           // 组织名称
+  hourType      String           // 工时类型(班前会/设备点检/5S/换模/故障/培训/待工)
+  totalHours    Float            // 工时总额(小时)
+  totalAmount   Float?           // 工时总金额(元)
+  description   String?          // 工时说明
+  sourceSystem  String?          // 来源系统(MES/ERP/手工)
+  sourceId      String?          // 来源系统单据ID
+  recorderId    Int              // 记录人ID
+  recorderName  String           // 记录人姓名
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  deletedAt     DateTime?        // 软删除
+
+  // 关联的分摊结果
+  allocationResults AllocationResult[]
+
+  @@unique([recordDate, orgId, hourType, deletedAt])
+  @@index([recordDate])
+  @@index([orgId, recordDate])
+  @@index([hourType])
+}
+
+// 分摊配置表
+model AllocationConfig {
+  id                   Int               @id @default(autoincrement())
+  configCode           String            @unique
+  configName           String
+  orgId                Int
+  orgPath              String?           // 组织路径(如"1/2/3")
+  dimensionConfig      String            // JSON: 分摊维度配置
+  effectiveStartTime   DateTime
+  effectiveEndTime     DateTime?         // NULL表示永久有效
+  status               String            @default("DRAFT") // DRAFT-草稿/ACTIVE-生效/ARCHIVED-归档
+  description          String?
+  version              Int               @default(1)
+  parentConfigId       Int?              // 父配置ID(用于版本管理)
+  createdById          Int
+  createdByName        String
+  createdAt            DateTime          @default(now())
+  updatedById          Int?
+  updatedByName        String?
+  updatedAt            DateTime          @updatedAt
+  approvedById         Int?
+  approvedByName       String?
+  approvedAt           DateTime?
+  deletedAt            DateTime?
+
+  // 关联的配置明细
+  details              AllocationConfigDetail[]
+  // 关联的分摊结果
+  results              AllocationResult[]
+
+  @@index([orgId])
+  @@index([effectiveStartTime, effectiveEndTime])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// 分摊配置明细表
+model AllocationConfigDetail {
+  id                   Int             @id @default(autoincrement())
+  configId             Int
+  dimensionLevel       Int             // 维度层级(1-5)
+  dimensionType        String          // 维度类型(ORG/WORKSHOP/TEAM/WORK_CENTER/PROCESS)
+  allocationObjectId   Int             // 分摊对象ID
+  allocationObjectName String          // 分摊对象名称
+  allocationObjectCode String?         // 分摊对象编码
+  weight               Float           // 权重(0-100)
+  allocationBasis      String          // 分摊依据(ACTUAL_HOURS/STANDARD_HOURS/ACTUAL_YIELD等)
+  basisFormula         String?         // 自定义计算公式
+  sortOrder            Int             // 排序序号
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  deletedAt            DateTime?
+
+  config               AllocationConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@index([dimensionType, allocationObjectId])
+  @@unique([configId, dimensionLevel, allocationObjectId, deletedAt])
+}
+
+// 分摊结果表
+model AllocationResult {
+  id                   Int      @id @default(autoincrement())
+  batchNo              String   // 批次号(每次执行生成唯一批次)
+  recordId             Int      // 工时记录ID
+  configId             Int      // 配置ID
+  configVersion        Int      // 配置版本
+  recordDate           DateTime @db.Date // 工时日期
+  orgId                Int      // 组织ID
+  hourType             String   // 工时类型
+  totalHours           Float    // 待分摊工时总额
+  dimensionLevel       Int      // 分摊维度层级
+  dimensionType        String   // 维度类型
+  allocationObjectId   Int      // 分摊对象ID
+  allocationObjectName String   // 分摊对象名称
+  allocationBasis      String   // 分摊依据
+  basisValue           Float    // 依据数值
+  weightValue          Float    // 权重值
+  weightedBasisValue   Float    // 加权依据值
+  allocationRatio      Float    // 分摊比例(0-1)
+  allocatedHours       Float    // 分摊工时
+  allocatedAmount      Float?   // 分摊金额
+  calcTime             DateTime // 计算时间
+  createdAt            DateTime @default(now())
+  deletedAt            DateTime?
+
+  record               IndirectHourRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  config               AllocationConfig   @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([batchNo])
+  @@index([recordId])
+  @@index([configId])
+  @@index([recordDate])
+  @@index([dimensionType, allocationObjectId])
+  @@index([calcTime])
+}
+
+// 分摊依据表
+model AllocationBasis {
+  id            Int      @id @default(autoincrement())
+  basisCode     String   @unique
+  basisName     String
+  category      String   // SYSTEM-系统预置/CUSTOM-自定义
+  sourceSystem  String   // 数据来源(ERP/MES/HR/CUSTOM)
+  sourceTable   String?  // 数据源表名
+  sourceApi     String?  // 数据源API接口
+  calcFormula   String?  // 计算公式
+  dataType      String   // NUMERIC/QUANTITY/HOURS/COST
+  precision     Int      @default(2)
+  unit          String?  // 单位(小时/件/元/台时)
+  status        String   @default("ENABLED") // ENABLED-启用/DISABLED-停用
+  description   String?
+  createdById   Int
+  createdAt     DateTime @default(now())
+  updatedById   Int?
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  @@index([status])
+}
+
+// 操作审计表
+model AuditLog {
+  id             Int      @id @default(autoincrement())
+  module         String   // 模块名(CONFIG/CALCULATION/EXPORT等)
+  operationType  String   // 操作类型(CREATE/UPDATE/DELETE/EXECUTE/EXPORT)
+  operationDesc  String   // 操作描述
+  targetId       Int?     // 目标对象ID
+  targetType     String?  // 目标对象类型
+  oldValue       String?  // 修改前的值(JSON格式)
+  newValue       String?  // 修改后的值(JSON格式)
+  requestIp      String?
+  operatorId     Int
+  operatorName   String
+  operationTime  DateTime @default(now())
+  result         String   // SUCCESS/FAILURE/PARTIAL
+  errorMsg       String?
+
+  @@index([module])
+  @@index([operatorId])
+  @@index([operationTime])
+  @@index([targetType, targetId])
+}

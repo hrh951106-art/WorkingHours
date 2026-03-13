@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: jy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jy_user
+      POSTGRES_PASSWORD: jy_password
+      POSTGRES_DB: jy_production
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - jy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jy_user -d jy_production"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jy-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: "postgresql://jy_user:jy_password@postgres:5432/jy_production?schema=public"
+      JWT_SECRET: "${JWT_SECRET:-change-this-to-a-secure-random-string-min-32-chars}"
+      JWT_EXPIRES_IN: "7d"
+      FRONTEND_URL: "${FRONTEND_URL:-http://localhost}"
+      LOG_LEVEL: "info"
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jy-network
+    volumes:
+      - backend-uploads:/app/uploads
+      - backend-logs:/app/logs
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:3001/api}"
+    container_name: jy-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - jy-network
+
+volumes:
+  postgres-data:
+    driver: local
+  backend-uploads:
+    driver: local
+  backend-logs:
+    driver: local
+
+networks:
+  jy-network:
+    driver: bridge

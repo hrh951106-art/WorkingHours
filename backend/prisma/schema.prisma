@@ -1,0 +1,774 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int        @id @default(autoincrement())
+  username  String     @unique
+  password  String
+  name      String
+  email     String?
+  status    String     @default("ACTIVE")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  userRoles UserRole[]
+}
+
+model Role {
+  id                    Int             @id @default(autoincrement())
+  code                  String          @unique
+  name                  String
+  description           String?
+  functionalPermissions String          @default("[]")
+  dataScopeType         String          @default("ALL") // ALL, ORG, MANAGED_ORG, CUSTOM
+  orgDataScope          String?         // JSON: { orgId: number, includeChild: boolean }
+  managedOrgDataScope   String?         // JSON: { includeChild: boolean }
+  dataScopeRuleGroups   String?         // JSON: [{ rules: [{ field, operator, value }] }]
+  isDefault             Boolean         @default(false)
+  status                String          @default("ACTIVE")
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  dataScopeRules        DataScopeRule[]
+  userRoles             UserRole[]
+}
+
+model DataScopeRule {
+  id           Int      @id @default(autoincrement())
+  roleId       Int
+  ruleType     String
+  operator     String
+  orgId        Int?
+  includeChild Boolean  @default(false)
+  condition    String?
+  sort         Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+}
+
+model UserRole {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  roleId    Int
+  createdAt DateTime @default(now())
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model Organization {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  name          String
+  parentId      Int?
+  type          String
+  leaderId      Int?
+  leaderName    String?
+  level         Int
+  effectiveDate DateTime
+  expiryDate    DateTime?
+  status        String         @default("ACTIVE")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  employees     Employee[]
+  parent        Organization?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children      Organization[] @relation("OrganizationHierarchy")
+}
+
+model Employee {
+  id           Int                 @id @default(autoincrement())
+  employeeNo   String              @unique
+  name         String
+  gender       String
+  idCard       String?             @unique
+  phone        String?
+  email        String?
+  orgId        Int
+  entryDate    DateTime
+  status       String              @default("ACTIVE")
+  customFields String              @default("{}")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  calcResults  CalcResult[]
+  org          Organization        @relation(fields: [orgId], references: [id])
+  changeLogs   EmployeeChangeLog[]
+  accounts     LaborAccount[]
+  punchPairs   PunchPair[]
+  punchRecords PunchRecord[]
+  schedules    Schedule[]
+}
+
+model EmployeeChangeLog {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int
+  fieldName    String
+  oldValue     String?
+  newValue     String?
+  operatorId   Int
+  operatorName String
+  createdAt    DateTime @default(now())
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model DataSource {
+  id           Int                @id @default(autoincrement())
+  code         String             @unique
+  name         String
+  type         String             @default("CUSTOM")
+  description  String?
+  isSystem     Boolean            @default(false)
+  status       String             @default("ACTIVE")
+  sort         Int                @default(0)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  customFields CustomField[]
+  options      DataSourceOption[]
+}
+
+model DataSourceOption {
+  id           Int        @id @default(autoincrement())
+  dataSourceId Int
+  label        String
+  value        String
+  sort         Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([dataSourceId, value])
+}
+
+model CustomField {
+  id           Int         @id @default(autoincrement())
+  code         String      @unique
+  name         String
+  type         String
+  dataSourceId Int?
+  options      String?
+  isRequired   Boolean     @default(false)
+  defaultValue String?
+  group        String      @default("默认分组")
+  sort         Int         @default(0)
+  status       String      @default("ACTIVE")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  dataSource   DataSource? @relation(fields: [dataSourceId], references: [id])
+}
+
+model EmployeeInfoTab {
+  id          Int                    @id @default(autoincrement())
+  code        String                 @unique
+  name        String
+  description String?
+  isSystem    Boolean                @default(false)
+  sort        Int                    @default(0)
+  status      String                 @default("ACTIVE")
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  fields      EmployeeInfoTabField[]
+}
+
+model EmployeeInfoTabField {
+  id         Int             @id @default(autoincrement())
+  tabId      Int
+  fieldCode  String
+  fieldName  String
+  fieldType  String
+  isRequired Boolean         @default(false)
+  sort       Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  tab        EmployeeInfoTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@unique([tabId, fieldCode])
+}
+
+model LaborAccount {
+  id              Int               @id @default(autoincrement())
+  code            String            @unique
+  name            String
+  type            String
+  level           Int
+  path            String
+  namePath        String            @default("")
+  parentId        Int?
+  employeeId      Int?
+  effectiveDate   DateTime
+  expiryDate      DateTime?
+  status          String            @default("ACTIVE")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  hierarchyValues String?           @default("")
+  usageType       String?           @default("SHIFT")
+  transfers       AccountTransfer[]
+  deviceBindings  DeviceAccount[]
+  parent          LaborAccount?     @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children        LaborAccount[]    @relation("AccountHierarchy")
+  employee        Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  punchPairs      PunchPair[]
+  punchRecords    PunchRecord[]
+  shiftSegments   ShiftSegment[]    @relation("ShiftSegmentTransfer")
+}
+
+model AccountTransfer {
+  id         Int          @id @default(autoincrement())
+  scheduleId Int
+  accountId  Int
+  startTime  DateTime
+  endTime    DateTime
+  hours      Float
+  reason     String
+  createdAt  DateTime     @default(now())
+  account    LaborAccount @relation(fields: [accountId], references: [id])
+  schedule   Schedule     @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+}
+
+model AccountHierarchyConfig {
+  id           Int      @id @default(autoincrement())
+  level        Int
+  name         String
+  mappingType  String
+  mappingValue String?
+  dataSourceId Int?
+  sort         Int      @default(0)
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Shift {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  name          String
+  type          String
+  standardHours Float
+  breakHours    Float          @default(0)
+  color         String?
+  status        String         @default("ACTIVE")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  schedules     Schedule[]
+  segments      ShiftSegment[]
+}
+
+model ShiftSegment {
+  id        Int           @id @default(autoincrement())
+  shiftId   Int
+  type      String
+  startDate String
+  startTime String
+  endDate   String
+  endTime   String
+  duration  Float
+  accountId Int?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  account   LaborAccount? @relation("ShiftSegmentTransfer", fields: [accountId], references: [id])
+  shift     Shift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+}
+
+model Schedule {
+  id               Int               @id @default(autoincrement())
+  employeeId       Int
+  shiftId          Int
+  scheduleDate     DateTime
+  adjustedStart    DateTime?
+  adjustedEnd      DateTime?
+  status           String            @default("ACTIVE")
+  cancelReason     String?
+  pushStatus       String            @default("PENDING")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  adjustedSegments String?
+  transfers        AccountTransfer[]
+  shift            Shift             @relation(fields: [shiftId], references: [id])
+  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model PunchDevice {
+  id        Int             @id @default(autoincrement())
+  code      String          @unique
+  name      String
+  type      String
+  ipAddress String?
+  groupId   Int?
+  status    String          @default("NORMAL")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  bindings  DeviceAccount[]
+  group     DeviceGroup?    @relation(fields: [groupId], references: [id])
+  records   PunchRecord[]
+}
+
+model PunchRecord {
+  id         Int           @id @default(autoincrement())
+  employeeNo String
+  punchTime  DateTime
+  deviceId   Int
+  punchType  String
+  location   String?
+  accountId  Int?
+  source     String        @default("AUTO")
+  createdAt  DateTime      @default(now())
+  outPairs   PunchPair[]   @relation("OutPunch")
+  inPairs    PunchPair[]   @relation("InPunch")
+  account    LaborAccount? @relation(fields: [accountId], references: [id])
+  employee   Employee      @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  device     PunchDevice   @relation(fields: [deviceId], references: [id])
+}
+
+model DeviceAccount {
+  id            Int          @id @default(autoincrement())
+  deviceId      Int
+  accountId     Int
+  effectiveDate DateTime     @default(now())
+  expiryDate    DateTime?
+  createdAt     DateTime     @default(now())
+  account       LaborAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  device        PunchDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, accountId, effectiveDate, expiryDate])
+}
+
+model PunchRule {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique
+  name            String
+  priority        Int
+  conditions      String
+  beforeShiftMins Int      @default(0)
+  afterShiftMins  Int      @default(0)
+  configs         String   @default("[]")
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model CalcRule {
+  id            Int      @id @default(autoincrement())
+  code          String   @unique
+  name          String
+  priority      Int
+  conditions    String
+  calcLogic     String
+  overtimeRules String
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model AttendanceCode {
+  id               Int          @id @default(autoincrement())
+  code             String       @unique
+  name             String
+  type             String       @default("LEAN_HOURS")
+  accountLevels    String       @default("[]")
+  unit             String       @default("HOURS")
+  deductMeal       Boolean      @default(false)
+  includeOutside   Boolean      @default(false)
+  onlyOutside      Boolean      @default(false)
+  showInDetailPage Boolean      @default(false)
+  calculateHours   Boolean      @default(true)
+  priority         Int          @default(0)
+  status           String       @default("ACTIVE")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  calcResults      CalcResult[]
+}
+
+model CalcResult {
+  id               Int             @id @default(autoincrement())
+  employeeNo       String
+  calcDate         DateTime
+  shiftId          Int
+  shiftName        String?
+  attendanceCodeId Int?
+  punchInTime      DateTime?
+  punchOutTime     DateTime?
+  standardHours    Float
+  actualHours      Float
+  overtimeHours    Float           @default(0)
+  leaveHours       Float           @default(0)
+  absenceHours     Float           @default(0)
+  accountHours     String          @default("[]")
+  exceptions       String          @default("[]")
+  status           String          @default("PENDING")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  accountId        Int?
+  accountName      String?
+  employee         Employee        @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  attendanceCode   AttendanceCode? @relation(fields: [attendanceCodeId], references: [id])
+}
+
+model DeviceGroup {
+  id          Int           @id @default(autoincrement())
+  code        String        @unique
+  name        String
+  description String?
+  status      String        @default("ACTIVE")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  devices     PunchDevice[]
+}
+
+model PunchPair {
+  id            Int           @id @default(autoincrement())
+  employeeNo    String
+  pairDate      DateTime
+  shiftId       Int
+  shiftName     String?
+  inPunchId     Int?
+  outPunchId    Int?
+  inPunchTime   DateTime?
+  outPunchTime  DateTime?
+  workHours     Float
+  sourceGroupId Int?
+  accountId     Int?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  account       LaborAccount? @relation(fields: [accountId], references: [id])
+  outPunch      PunchRecord?  @relation("OutPunch", fields: [outPunchId], references: [id], onDelete: Restrict)
+  inPunch       PunchRecord?  @relation("InPunch", fields: [inPunchId], references: [id], onDelete: Restrict)
+  employee      Employee      @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+
+  @@index([employeeNo, pairDate])
+  @@index([shiftId])
+  @@index([accountId])
+}
+
+model Product {
+  id                   Int                    @id @default(autoincrement())
+  code                 String                 @unique
+  name                 String
+  specification        String?
+  unit                 String                 @default("件")
+  status               String                 @default("ACTIVE")
+  standardHours        Float
+  conversionFactor     Float                  @default(1.0)
+  description          String?
+  createdById          Int
+  createdByName        String
+  createdAt            DateTime               @default(now())
+  updatedById          Int?
+  updatedByName        String?
+  updatedAt            DateTime               @updatedAt
+  deletedAt            DateTime?
+  productStandardHours ProductStandardHours[]
+  productionRecords    ProductionRecord[]
+}
+
+model ProductionLine {
+  id                Int                @id @default(autoincrement())
+  code              String             @unique
+  name              String
+  orgId             Int
+  orgName           String
+  workshopId        Int?
+  workshopName      String?
+  type              String
+  capacity          Float?
+  status            String             @default("ACTIVE")
+  description       String?
+  createdById       Int
+  createdByName     String
+  createdAt         DateTime           @default(now())
+  updatedById       Int?
+  updatedByName     String?
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  lineShifts        LineShift[]
+  productionRecords ProductionRecord[]
+}
+
+model LineShift {
+  id                      Int             @id @default(autoincrement())
+  orgId                   Int
+  orgName                 String
+  lineId                  Int?
+  shiftId                 Int
+  shiftName               String
+  scheduleDate            DateTime
+  startTime               DateTime
+  endTime                 DateTime
+  plannedProducts         String
+  participateInAllocation Boolean         @default(true)
+  status                  String          @default("ACTIVE")
+  description             String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  deletedAt               DateTime?
+  delayedShutdownTime     Int?
+  line                    ProductionLine? @relation(fields: [lineId], references: [id])
+
+  @@unique([orgId, shiftId, scheduleDate, deletedAt])
+  @@index([orgId, scheduleDate])
+  @@index([scheduleDate])
+}
+
+model ProductStandardHours {
+  id            Int       @id @default(autoincrement())
+  productId     Int
+  productName   String
+  processId     Int?
+  processName   String?
+  standardHours Float
+  effectiveDate DateTime
+  expiryDate    DateTime?
+  status        String    @default("ACTIVE")
+  description   String?
+  createdById   Int
+  createdByName String
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, effectiveDate, expiryDate, status])
+}
+
+model ProductionRecord {
+  id             Int             @id @default(autoincrement())
+  recordDate     DateTime
+  orgId          Int
+  orgName        String
+  lineId         Int?
+  lineName       String?
+  shiftId        Int
+  shiftName      String
+  productId      Int
+  productCode    String
+  productName    String
+  plannedQty     Float
+  actualQty      Float
+  qualifiedQty   Float
+  unqualifiedQty Float?
+  standardHours  Float
+  totalStdHours  Float
+  workHours      Float?
+  source         String          @default("MANUAL")
+  recorderId     Int
+  recorderName   String
+  recordedAt     DateTime        @default(now())
+  description    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  line           ProductionLine? @relation(fields: [lineId], references: [id])
+
+  @@unique([recordDate, orgId, shiftId, productId, deletedAt])
+  @@index([recordDate])
+  @@index([orgId, recordDate])
+  @@index([productId, recordDate])
+  @@index([shiftId, recordDate])
+}
+
+model AllocationConfig {
+  id                 Int                     @id @default(autoincrement())
+  configCode         String                  @unique
+  configName         String
+  orgId              Int
+  orgPath            String?
+  effectiveStartTime DateTime
+  effectiveEndTime   DateTime?
+  status             String                  @default("DRAFT")
+  description        String?
+  version            Int                     @default(1)
+  parentConfigId     Int?
+  createdById        Int
+  createdByName      String
+  createdAt          DateTime                @default(now())
+  updatedById        Int?
+  updatedByName      String?
+  updatedAt          DateTime                @updatedAt
+  approvedById       Int?
+  approvedByName     String?
+  approvedAt         DateTime?
+  deletedAt          DateTime?
+  results            AllocationResult[]
+  rules              AllocationRuleConfig[]
+  sourceConfig       AllocationSourceConfig?
+}
+
+model AllocationSourceConfig {
+  id              Int              @id @default(autoincrement())
+  configId        Int              @unique
+  sourceType      String           @default("EMPLOYEE_HOURS")
+  employeeFilter  String           @default("{}")
+  accountFilter   String           @default("{}")
+  attendanceCodes String           @default("[]")
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  config          AllocationConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+}
+
+model AllocationRuleConfig {
+  id                        Int                    @id @default(autoincrement())
+  configId                  Int
+  ruleName                  String?
+  ruleType                  String
+  allocationBasis           String
+  allocationAttendanceCodes String                 @default("[]")
+  allocationHierarchyLevels String                 @default("[]")
+  allocationScopeId         Int?                   // 分摊范围层级配置ID（关联AccountHierarchyConfig）
+  basisFilter               String                 @default("{}")
+  sortOrder                 Int                    @default(0)
+  status                    String                 @default("ACTIVE")
+  description               String?
+  effectiveStartTime        DateTime?
+  effectiveEndTime          DateTime?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  deletedAt                 DateTime?
+  config                    AllocationConfig       @relation(fields: [configId], references: [id], onDelete: Cascade)
+  targets                   AllocationRuleTarget[]
+
+  @@index([configId])
+  @@index([status])
+}
+
+model AllocationRuleTarget {
+  id                Int                  @id @default(autoincrement())
+  ruleId            Int
+  targetType        String
+  targetId          Int
+  targetName        String
+  targetCode        String?
+  weight            Float                @default(0)
+  targetAccountId   Int?
+  targetAccountName String?
+  rule              AllocationRuleConfig @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@index([targetType, targetId])
+}
+
+model AllocationResult {
+  id                 Int              @id @default(autoincrement())
+  batchNo            String
+  recordDate         DateTime
+  calcResultId       Int
+  configId           Int
+  configVersion      Int
+  ruleId             Int
+  sourceEmployeeNo   String?
+  sourceEmployeeName String?
+  sourceAccountId    Int?
+  sourceAccountName  String?
+  attendanceCodeId   Int?
+  attendanceCode     String?
+  sourceHours        Float
+  targetType         String
+  targetId           Int
+  targetName         String
+  targetAccountId    Int?
+  allocationBasis    String
+  basisValue         Float
+  weightValue        Float
+  allocationRatio    Float
+  allocatedHours     Float
+  calcTime           DateTime
+  createdAt          DateTime         @default(now())
+  deletedAt          DateTime?
+  config             AllocationConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([batchNo])
+  @@index([recordDate])
+  @@index([configId])
+  @@index([ruleId])
+  @@index([calcResultId])
+  @@index([targetType, targetId])
+  @@index([sourceEmployeeNo])
+  @@index([calcTime])
+}
+
+model AllocationBasis {
+  id          Int       @id @default(autoincrement())
+  basisCode   String    @unique
+  basisName   String
+  category    String    @default("SYSTEM")
+  sourceTable String?
+  calcFormula String?
+  dataType    String
+  precision   Int       @default(2)
+  unit        String?
+  status      String    @default("ENABLED")
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([status])
+}
+
+model AuditLog {
+  id            Int      @id @default(autoincrement())
+  module        String
+  operationType String
+  operationDesc String
+  targetId      Int?
+  targetType    String?
+  oldValue      String?
+  newValue      String?
+  requestIp     String?
+  operatorId    Int
+  operatorName  String
+  operationTime DateTime @default(now())
+  result        String
+  errorMsg      String?
+
+  @@index([module])
+  @@index([operatorId])
+  @@index([operationTime])
+  @@index([targetType, targetId])
+}
+
+model AllocationGeneralConfig {
+  id                          Int      @id @default(autoincrement())
+  actualHoursAllocationCode   String
+  indirectHoursAllocationCode String
+  description                 String?
+  updatedById                 Int?
+  updatedByName               String?
+  updatedAt                   DateTime @updatedAt
+  createdAt                   DateTime @default(now())
+}
+
+model SearchConditionConfig {
+  id             Int      @id @default(autoincrement())
+  pageCode       String
+  pageName       String
+  fieldCode      String
+  fieldName      String
+  fieldType      String
+  isEnabled      Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  dataSourceCode String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([pageCode, fieldCode])
+  @@index([pageCode])
+}
+
+model SystemConfig {
+  id        Int      @id @default(autoincrement())
+  configKey String   @unique
+  configValue String
+  category  String
+  description String?
+  updatedById Int?
+  updatedByName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}

@@ -1,0 +1,255 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function testAllocationScope() {
+  console.log('========================================');
+  console.log('测试分摊范围功能');
+  console.log('========================================\n');
+
+  const calcDate = new Date('2026-03-11');
+
+  // 1. 检查现有的配置和规则
+  console.log('1. 检查现有配置的分摊范围');
+  console.log('========================================\n');
+
+  const configs = await prisma.allocationConfig.findMany({
+    where: {
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    include: {
+      rules: {
+        where: {
+          deletedAt: null,
+        },
+        orderBy: {
+          sortOrder: 'asc',
+        },
+      },
+    },
+  });
+
+  console.log(`找到 ${configs.length} 个活跃配置:\n`);
+
+  for (const config of configs) {
+    console.log(`配置: ${config.configName} (${config.configCode})`);
+    console.log(`  规则数: ${config.rules.length}`);
+
+    for (const rule of config.rules) {
+      console.log(`    规则: ${rule.ruleName}`);
+      console.log(`    分摊依据: ${rule.allocationBasis}`);
+      console.log(`    分摊范围: ${rule.allocationScope || 'WORKSHOP (默认)'}`);
+      console.log();
+    }
+  }
+
+  // 2. 检查产线、车间、工厂的层级关系
+  console.log('2. 检查产线、车间、工厂的层级关系');
+  console.log('========================================\n');
+
+  const lineShifts = await prisma.lineShift.findMany({
+    where: {
+      scheduleDate: calcDate,
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    include: {
+      line: true,
+    },
+    distinct: ['lineId'],
+  });
+
+  console.log(`找到 ${lineShifts.length} 条开线记录:\n`);
+
+  const lineToWorkshop: Record<number, number> = {};
+  const lineToFactory: Record<number, number> = {};
+  const workshopToFactory: Record<number, number> = {};
+  const workshops = new Set<number>();
+  const factories = new Set<number>();
+
+  for (const lineShift of lineShifts) {
+    const line = lineShift.line;
+    if (line) {
+      lineToWorkshop[line.id] = line.workshopId;
+      lineToFactory[line.id] = line.orgId;
+      workshops.add(line.workshopId);
+      factories.add(line.orgId);
+      workshopToFactory[line.workshopId] = line.orgId;
+
+      console.log(`产线: ${line.name} (ID: ${line.id})`);
+      console.log(`  所属车间: ${line.workshopName} (ID: ${line.workshopId})`);
+      console.log(`  所属工厂: ${line.orgName} (ID: ${line.orgId})`);
+      console.log();
+    }
+  }
+
+  console.log(`总车间数: ${workshops.size}`);
+  console.log(`总工厂数: ${factories.size}\n`);
+
+  // 3. 测试车间级别的分摊计算
+  console.log('3. 测试车间级别的分摊计算');
+  console.log('========================================\n');
+
+  const productionRecords = await prisma.productionRecord.findMany({
+    where: {
+      recordDate: calcDate,
+      deletedAt: null,
+    },
+    include: {
+      product: true,
+    },
+  });
+
+  // 按产线-班次汇总实际产量
+  const productionByLineAndShift: Record<string, number> = {};
+  for (const record of productionRecords) {
+    if (record.lineId && record.shiftId) {
+      const key = `${record.lineId}-${record.shiftId}`;
+      productionByLineAndShift[key] += record.actualQty || 0;
+    }
+  }
+
+  // 计算车间总产量
+  const workshopTotalProduction: Record<string, number> = {};
+  for (const key in productionByLineAndShift) {
+    const [lineId, shiftId] = key.split('-').map(Number);
+    const workshopId = lineToWorkshop[lineId];
+    if (workshopId) {
+      const workshopKey = `${workshopId}-${shiftId}`;
+      workshopTotalProduction[workshopKey] = (workshopTotalProduction[workshopKey] || 0) + productionByLineAndShift[key];
+    }
+  }
+
+  console.log('车间级别产量汇总:');
+  for (const workshopKey in workshopTotalProduction) {
+    const [workshopId, shiftId] = workshopKey.split('-').map(Number);
+    console.log(`  车间ID ${workshopId}, 班次ID ${shiftId}: ${workshopTotalProduction[workshopKey]} 件`);
+  }
+  console.log();
+
+  // 4. 测试工厂级别的分摊计算
+  console.log('4. 测试工厂级别的分摊计算');
+  console.log('========================================\n');
+
+  // 计算工厂总产量
+  const factoryTotalProduction: Record<string, number> = {};
+  for (const key in productionByLineAndShift) {
+    const [lineId, shiftId] = key.split('-').map(Number);
+    const factoryId = lineToFactory[lineId];
+    if (factoryId) {
+      const factoryKey = `${factoryId}-${shiftId}`;
+      factoryTotalProduction[factoryKey] = (factoryTotalProduction[factoryKey] || 0) + productionByLineAndShift[key];
+    }
+  }
+
+  console.log('工厂级别产量汇总:');
+  for (const factoryKey in factoryTotalProduction) {
+    const [factoryId, shiftId] = factoryKey.split('-').map(Number);
+    console.log(`  工厂ID ${factoryId}, 班次ID ${shiftId}: ${factoryTotalProduction[factoryKey]} 件`);
+  }
+  console.log();
+
+  // 5. 计算示例：8.5h间接工时的分摊结果
+  console.log('5. 计算示例：8.5h间接工时的分摊结果');
+  console.log('========================================\n');
+
+  const indirectHours = 8.5;
+  const shiftId = 1; // 假设班次ID为1
+
+  console.log(`待分摊工时: ${indirectHours}h\n`);
+
+  // 车间级别分摊
+  console.log('车间级别分摊结果:');
+  for (const lineId in lineToWorkshop) {
+    const line = lineShifts.find(ls => ls.line?.id === Number(lineId))?.line;
+    if (!line) continue;
+
+    const workshopId = lineToWorkshop[Number(lineId)];
+    const workshopKey = `${workshopId}-${shiftId}`;
+    const lineKey = `${lineId}-${shiftId}`;
+
+    const lineProduction = productionByLineAndShift[lineKey] || 0;
+    const workshopProduction = workshopTotalProduction[workshopKey] || 0;
+
+    if (workshopProduction > 0 && lineProduction > 0) {
+      const ratio = lineProduction / workshopProduction;
+      const allocatedHours = indirectHours * ratio;
+      console.log(`  ${line.name}:`);
+      console.log(`    产量: ${lineProduction} 件`);
+      console.log(`    车间总产量: ${workshopProduction} 件`);
+      console.log(`    分摊比例: ${(ratio * 100).toFixed(2)}%`);
+      console.log(`    分摊工时: ${allocatedHours.toFixed(3)}h`);
+    }
+  }
+  console.log();
+
+  // 工厂级别分摊
+  console.log('工厂级别分摊结果:');
+  for (const lineId in lineToFactory) {
+    const line = lineShifts.find(ls => ls.line?.id === Number(lineId))?.line;
+    if (!line) continue;
+
+    const factoryId = lineToFactory[Number(lineId)];
+    const factoryKey = `${factoryId}-${shiftId}`;
+    const lineKey = `${lineId}-${shiftId}`;
+
+    const lineProduction = productionByLineAndShift[lineKey] || 0;
+    const factoryProduction = factoryTotalProduction[factoryKey] || 0;
+
+    if (factoryProduction > 0 && lineProduction > 0) {
+      const ratio = lineProduction / factoryProduction;
+      const allocatedHours = indirectHours * ratio;
+      console.log(`  ${line.name}:`);
+      console.log(`    产量: ${lineProduction} 件`);
+      console.log(`    工厂总产量: ${factoryProduction} 件`);
+      console.log(`    分摊比例: ${(ratio * 100).toFixed(2)}%`);
+      console.log(`    分摊工时: ${allocatedHours.toFixed(3)}h`);
+    }
+  }
+  console.log();
+
+  // 6. 更新测试配置的分摊范围
+  console.log('6. 更新测试配置的分摊范围');
+  console.log('========================================\n');
+
+  const testConfigs = configs.filter(c =>
+    c.configCode.includes('A03') || c.configCode.includes('A02')
+  );
+
+  for (const config of testConfigs) {
+    console.log(`配置: ${config.configName} (${config.configCode})`);
+
+    for (const rule of config.rules) {
+      const currentScope = rule.allocationScope || 'WORKSHOP';
+      console.log(`  规则: ${rule.ruleName}`);
+      console.log(`    当前分摊范围: ${currentScope}`);
+
+      // 将分摊范围设置为工厂级别
+      await prisma.allocationRuleConfig.update({
+        where: { id: rule.id },
+        data: { allocationScope: 'FACTORY' },
+      });
+      console.log(`    更新后分摊范围: FACTORY`);
+    }
+    console.log();
+  }
+
+  console.log('========================================');
+  console.log('测试完成！');
+  console.log('========================================');
+  console.log('\n说明：');
+  console.log('- 车间级别分摊：分摊比例 = 产线产量 / 车间总产量');
+  console.log('- 工厂级别分摊：分摊比例 = 产线产量 / 工厂总产量');
+  console.log('- 已将 A02 和 A03 相关配置的分摊范围更新为 FACTORY');
+  console.log('- 可以在界面上执行分摊操作来验证功能');
+}
+
+testAllocationScope()
+  .catch((e) => {
+    console.error('测试失败:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

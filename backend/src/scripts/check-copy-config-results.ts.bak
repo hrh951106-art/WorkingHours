@@ -1,0 +1,105 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function checkCopyConfigResults() {
+  const calcDate = new Date('2026-03-11');
+
+  // 查找 A02_COPY_1773285414740 的配置ID
+  const config = await prisma.allocationConfig.findFirst({
+    where: {
+      configCode: 'A02_COPY_1773285414740',
+    },
+  });
+
+  if (!config) {
+    console.log('❌ 未找到 A02_COPY_1773285414740 配置\n');
+    return;
+  }
+
+  console.log('========================================');
+  console.log('检查 A02_COPY_1773285414740 的分摊结果');
+  console.log('========================================\n');
+  console.log('配置ID: ' + config.id);
+  console.log('配置名称: ' + config.configName);
+  console.log('配置编码: ' + config.configCode);
+  console.log('状态: ' + config.status);
+  console.log();
+
+  // 查找该配置的分摊结果
+  const results = await prisma.allocationResult.findMany({
+    where: {
+      configId: config.id,
+      recordDate: calcDate,
+    },
+    orderBy: {
+      calcTime: 'desc',
+    },
+  });
+
+  console.log('该配置的分摊结果数: ' + results.length + '\n');
+
+  if (results.length === 0) {
+    console.log('❌ 该配置没有产生分摊结果\n');
+    console.log('可能的原因:');
+    console.log('1. 用户点击的不是这个配置的执行按钮');
+    console.log('2. 执行时出错但没有记录');
+    console.log('3. 后端执行逻辑有问题\n');
+
+    // 检查所有配置，看看用户可能执行了哪个
+    console.log('========================================');
+    console.log('所有ACTIVE的分摊配置');
+    console.log('========================================\n');
+
+    const allConfigs = await prisma.allocationConfig.findMany({
+      where: {
+        status: 'ACTIVE',
+      },
+      include: {
+        rules: {
+          where: {
+            deletedAt: null,
+          },
+        },
+      },
+    });
+
+    allConfigs.forEach(cfg => {
+      console.log('配置ID: ' + cfg.id);
+      console.log('  名称: ' + cfg.configName);
+      console.log('  编码: ' + cfg.configCode);
+      console.log('  规则数: ' + cfg.rules.length);
+      if (cfg.rules.length > 0) {
+        cfg.rules.forEach(rule => {
+          console.log('    规则: ' + rule.ruleName);
+          console.log('    分摊依据: ' + rule.allocationBasis);
+          console.log('    目标数: ' + rule.targets?.length || 0);
+        });
+      }
+      console.log();
+    });
+  } else {
+    console.log('✓ 找到分摊结果:\n');
+    results.forEach((r, idx) => {
+      console.log((idx + 1) + '. ' + r.sourceEmployeeNo + ' ' + (r.sourceEmployeeName || ''));
+      console.log('   批次: ' + r.batchNo);
+      console.log('   源工时: ' + r.sourceHours + 'h');
+      console.log('   目标: ' + r.targetName);
+      console.log('   目标账户ID: ' + (r.targetAccountId || 'NULL'));
+      console.log('   分摊工时: ' + r.allocatedHours + 'h');
+      console.log('   计算时间: ' + r.calcTime);
+      console.log();
+    });
+  }
+
+  console.log('========================================');
+}
+
+checkCopyConfigResults()
+  .catch((e) => {
+    console.error('检查失败:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

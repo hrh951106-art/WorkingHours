@@ -1,0 +1,1424 @@
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
+
+@Injectable()
+export class AllocationService {
+  constructor(private prisma: PrismaService) {}
+
+  // ============ 产品管理 ============
+
+  async getProducts(query: any) {
+    const { page = 1, pageSize = 10, keyword, status } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+    if (keyword) {
+      where.OR = [
+        { code: { contains: keyword } },
+        { name: { contains: keyword } },
+      ];
+    }
+    if (status) {
+      where.status = status;
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.product.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  async getProduct(id: number) {
+    const product = await this.prisma.product.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        productStandardHours: {
+          where: { deletedAt: null },
+          orderBy: { effectiveDate: 'desc' },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException('产品不存在');
+    }
+
+    return product;
+  }
+
+  async createProduct(dto: any) {
+    const { code, name, specification, unit, standardHours, description, createdById, createdByName } = dto;
+
+    // 检查编码是否已存在
+    const existing = await this.prisma.product.findUnique({
+      where: { code, deletedAt: null },
+    });
+
+    if (existing) {
+      throw new BadRequestException('产品编码已存在');
+    }
+
+    return this.prisma.product.create({
+      data: {
+        code,
+        name,
+        specification,
+        unit: unit || '件',
+        standardHours: standardHours || 0,
+        description,
+        status: 'ACTIVE',
+        createdById,
+        createdByName,
+      },
+    });
+  }
+
+  async updateProduct(id: number, dto: any) {
+    const product = await this.prisma.product.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!product) {
+      throw new NotFoundException('产品不存在');
+    }
+
+    const { name, specification, unit, standardHours, status, description, updatedById, updatedByName } = dto;
+
+    const updateData: any = {
+      name,
+      specification,
+      unit,
+      standardHours,
+      status,
+      description,
+    };
+
+    if (updatedById) {
+      updateData.updatedById = updatedById;
+      updateData.updatedByName = updatedByName;
+    }
+
+    return this.prisma.product.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
+  async deleteProduct(id: number) {
+    const product = await this.prisma.product.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!product) {
+      throw new NotFoundException('产品不存在');
+    }
+
+    return this.prisma.product.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  // ============ 产线管理 ============
+
+  async getProductionLines(query: any) {
+    const { page = 1, pageSize = 10, keyword, orgId, status } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+    if (keyword) {
+      where.OR = [
+        { code: { contains: keyword } },
+        { name: { contains: keyword } },
+      ];
+    }
+    if (orgId) {
+      where.orgId = +orgId;
+    }
+    if (status) {
+      where.status = status;
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.productionLine.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.productionLine.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  async getProductionLine(id: number) {
+    const line = await this.prisma.productionLine.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        lineShifts: {
+          where: { deletedAt: null },
+          orderBy: { scheduleDate: 'desc' },
+          take: 30,
+        },
+      },
+    });
+
+    if (!line) {
+      throw new NotFoundException('产线不存在');
+    }
+
+    return line;
+  }
+
+  async createProductionLine(dto: any) {
+    const { code, name, orgId, orgName, workshopId, workshopName, type, capacity, description, createdById, createdByName } = dto;
+
+    const existing = await this.prisma.productionLine.findUnique({
+      where: { code, deletedAt: null },
+    });
+
+    if (existing) {
+      throw new BadRequestException('产线编码已存在');
+    }
+
+    return this.prisma.productionLine.create({
+      data: {
+        code,
+        name,
+        orgId,
+        orgName,
+        workshopId,
+        workshopName,
+        type,
+        capacity,
+        description,
+        status: 'ACTIVE',
+        createdById,
+        createdByName,
+      },
+    });
+  }
+
+  async updateProductionLine(id: number, dto: any) {
+    const line = await this.prisma.productionLine.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!line) {
+      throw new NotFoundException('产线不存在');
+    }
+
+    const { name, workshopId, workshopName, type, capacity, status, description, updatedById, updatedByName } = dto;
+
+    const updateData: any = {
+      name,
+      workshopId,
+      workshopName,
+      type,
+      capacity,
+      status,
+      description,
+    };
+
+    if (updatedById) {
+      updateData.updatedById = updatedById;
+      updateData.updatedByName = updatedByName;
+    }
+
+    return this.prisma.productionLine.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
+  async deleteProductionLine(id: number) {
+    const line = await this.prisma.productionLine.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!line) {
+      throw new NotFoundException('产线不存在');
+    }
+
+    return this.prisma.productionLine.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  // ============ 产线班次管理 ============
+
+  async getLineShifts(query: any) {
+    const { page = 1, pageSize = 10, lineId, scheduleDate, shiftId } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+    if (lineId) where.lineId = +lineId;
+    if (shiftId) where.shiftId = +shiftId;
+    if (scheduleDate) {
+      const date = new Date(scheduleDate);
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+      where.scheduleDate = { gte: date, lt: nextDate };
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.lineShift.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { scheduleDate: 'desc' },
+        include: {
+          line: true,
+        },
+      }),
+      this.prisma.lineShift.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  async createLineShift(dto: any) {
+    const { lineId, shiftId, shiftName, scheduleDate, startTime, endTime, plannedProducts, description } = dto;
+
+    // 检查是否已存在
+    const existing = await this.prisma.lineShift.findFirst({
+      where: {
+        lineId,
+        shiftId,
+        scheduleDate: new Date(scheduleDate),
+        deletedAt: null,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('该产线在该日期的该班次已存在');
+    }
+
+    return this.prisma.lineShift.create({
+      data: {
+        lineId,
+        shiftId,
+        shiftName,
+        scheduleDate: new Date(scheduleDate),
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        plannedProducts: plannedProducts ? JSON.stringify(plannedProducts) : '[]',
+        description,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  async updateLineShift(id: number, dto: any) {
+    const shift = await this.prisma.lineShift.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!shift) {
+      throw new NotFoundException('产线班次不存在');
+    }
+
+    const { startTime, endTime, plannedProducts, status, description } = dto;
+
+    return this.prisma.lineShift.update({
+      where: { id },
+      data: {
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        plannedProducts: plannedProducts ? JSON.stringify(plannedProducts) : '[]',
+        status,
+        description,
+      },
+    });
+  }
+
+  async deleteLineShift(id: number) {
+    const shift = await this.prisma.lineShift.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!shift) {
+      throw new NotFoundException('产线班次不存在');
+    }
+
+    return this.prisma.lineShift.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  // ============ 产量记录管理 ============
+
+  async getProductionRecords(query: any) {
+    const { page = 1, pageSize = 10, recordDate, lineId, productId, shiftId } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+    if (recordDate) where.recordDate = new Date(recordDate);
+    if (lineId) where.lineId = +lineId;
+    if (productId) where.productId = +productId;
+    if (shiftId) where.shiftId = +shiftId;
+
+    const [items, total] = await Promise.all([
+      this.prisma.productionRecord.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { recordDate: 'desc' },
+      }),
+      this.prisma.productionRecord.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  async getProductionRecord(id: number) {
+    const record = await this.prisma.productionRecord.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!record) {
+      throw new NotFoundException('产量记录不存在');
+    }
+
+    return record;
+  }
+
+  async createProductionRecord(dto: any) {
+    const { recordDate, lineId, lineName, shiftId, shiftName, productId, productCode, productName, plannedQty, actualQty, qualifiedQty, unqualifiedQty, standardHours, workHours, source, recorderId, recorderName, description } = dto;
+
+    // 检查是否已存在
+    const existing = await this.prisma.productionRecord.findFirst({
+      where: {
+        recordDate: new Date(recordDate),
+        lineId,
+        shiftId,
+        productId,
+        deletedAt: null,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('该产线该班次该产品的产量记录已存在');
+    }
+
+    const totalStdHours = (actualQty || 0) * (standardHours || 0);
+
+    return this.prisma.productionRecord.create({
+      data: {
+        recordDate: new Date(recordDate),
+        lineId,
+        lineName,
+        shiftId,
+        shiftName,
+        productId,
+        productCode,
+        productName,
+        plannedQty: plannedQty || 0,
+        actualQty: actualQty || 0,
+        qualifiedQty: qualifiedQty || 0,
+        unqualifiedQty: unqualifiedQty || 0,
+        standardHours: standardHours || 0,
+        totalStdHours,
+        workHours,
+        source: source || 'MANUAL',
+        recorderId,
+        recorderName,
+        description,
+      },
+    });
+  }
+
+  async updateProductionRecord(id: number, dto: any) {
+    const record = await this.prisma.productionRecord.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!record) {
+      throw new NotFoundException('产量记录不存在');
+    }
+
+    const { plannedQty, actualQty, qualifiedQty, unqualifiedQty, standardHours, workHours, description } = dto;
+
+    const totalStdHours = (actualQty || 0) * (standardHours || 0);
+
+    return this.prisma.productionRecord.update({
+      where: { id },
+      data: {
+        plannedQty,
+        actualQty,
+        qualifiedQty,
+        unqualifiedQty,
+        standardHours,
+        totalStdHours,
+        workHours,
+        description,
+      },
+    });
+  }
+
+  async deleteProductionRecord(id: number) {
+    const record = await this.prisma.productionRecord.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!record) {
+      throw new NotFoundException('产量记录不存在');
+    }
+
+    return this.prisma.productionRecord.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  async batchImportProductionRecords(dto: any) {
+    const { records } = dto;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      throw new BadRequestException('记录列表不能为空');
+    }
+
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as any[],
+    };
+
+    for (const record of records) {
+      try {
+        await this.createProductionRecord(record);
+        results.success++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          record,
+          error: error.message,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  // ============ 分摊配置管理 ============
+
+  /**
+   * 获取分摊配置列表
+   */
+  async getAllocationConfigs(query: any) {
+    const { page = 1, pageSize = 10, keyword, orgId, status, configCode } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+
+    if (keyword) {
+      where.OR = [
+        { configCode: { contains: keyword } },
+        { configName: { contains: keyword } },
+        { description: { contains: keyword } },
+      ];
+    }
+
+    if (orgId) {
+      where.orgId = +orgId;
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (configCode) {
+      where.configCode = { contains: configCode };
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.allocationConfig.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          details: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+          },
+          _count: {
+            select: { details: true, results: true },
+          },
+        },
+      }),
+      this.prisma.allocationConfig.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  /**
+   * 获取分摊配置详情
+   */
+  async getAllocationConfig(id: number) {
+    const config = await this.prisma.allocationConfig.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        details: {
+          where: { deletedAt: null },
+          orderBy: [{ dimensionLevel: 'asc' }, { sortOrder: 'asc' }],
+        },
+      },
+    });
+
+    if (!config) {
+      throw new NotFoundException('分摊配置不存在');
+    }
+
+    // 解析维度配置
+    const dimensionConfig = JSON.parse(config.dimensionConfig || '{}');
+
+    return {
+      ...config,
+      dimensionConfig,
+    };
+  }
+
+  /**
+   * 创建分摊配置
+   */
+  async createAllocationConfig(dto: any) {
+    const {
+      configCode,
+      configName,
+      orgId,
+      orgName,
+      orgPath,
+      dimensionConfig,
+      effectiveStartTime,
+      effectiveEndTime,
+      description,
+      createdById,
+      createdByName,
+      details,
+    } = dto;
+
+    // 检查编码是否已存在
+    const existing = await this.prisma.allocationConfig.findUnique({
+      where: { configCode, deletedAt: null },
+    });
+
+    if (existing) {
+      throw new BadRequestException('配置编码已存在');
+    }
+
+    // 验证维度配置
+    const parsedDimensionConfig = typeof dimensionConfig === 'string'
+      ? JSON.parse(dimensionConfig)
+      : dimensionConfig;
+
+    if (!parsedDimensionConfig || !parsedDimensionConfig.indirectHourCodes || !Array.isArray(parsedDimensionConfig.indirectHourCodes)) {
+      throw new BadRequestException('维度配置必须包含indirectHourCodes数组');
+    }
+
+    // 创建配置和明细
+    const result = await this.prisma.$transaction(async (tx) => {
+      const config = await tx.allocationConfig.create({
+        data: {
+          configCode,
+          configName,
+          orgId,
+          orgPath,
+          dimensionConfig: JSON.stringify(parsedDimensionConfig),
+          effectiveStartTime: new Date(effectiveStartTime),
+          effectiveEndTime: effectiveEndTime ? new Date(effectiveEndTime) : null,
+          status: 'DRAFT',
+          description,
+          createdById,
+          createdByName,
+        },
+      });
+
+      // 创建配置明细
+      if (details && Array.isArray(details) && details.length > 0) {
+        for (const detail of details) {
+          await tx.allocationConfigDetail.create({
+            data: {
+              configId: config.id,
+              dimensionLevel: detail.dimensionLevel,
+              dimensionType: detail.dimensionType,
+              allocationObjectId: detail.allocationObjectId,
+              allocationObjectName: detail.allocationObjectName,
+              allocationObjectCode: detail.allocationObjectCode,
+              weight: detail.weight || 0,
+              allocationBasis: detail.allocationBasis,
+              basisFormula: detail.basisFormula,
+              sortOrder: detail.sortOrder || 0,
+            },
+          });
+        }
+      }
+
+      return config;
+    });
+
+    return this.getAllocationConfig(result.id);
+  }
+
+  /**
+   * 更新分摊配置
+   */
+  async updateAllocationConfig(id: number, dto: any) {
+    const config = await this.prisma.allocationConfig.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!config) {
+      throw new NotFoundException('分摊配置不存在');
+    }
+
+    // 只有草稿状态才能修改
+    if (config.status !== 'DRAFT') {
+      throw new BadRequestException('只有草稿状态的配置才能修改');
+    }
+
+    const {
+      configName,
+      dimensionConfig,
+      effectiveStartTime,
+      effectiveEndTime,
+      description,
+      updatedById,
+      updatedByName,
+      details,
+    } = dto;
+
+    // 解析维度配置
+    let parsedDimensionConfig;
+    if (dimensionConfig) {
+      parsedDimensionConfig = typeof dimensionConfig === 'string'
+        ? JSON.parse(dimensionConfig)
+        : dimensionConfig;
+
+      if (!parsedDimensionConfig.indirectHourCodes || !Array.isArray(parsedDimensionConfig.indirectHourCodes)) {
+        throw new BadRequestException('维度配置必须包含indirectHourCodes数组');
+      }
+    }
+
+    // 更新配置和明细
+    await this.prisma.$transaction(async (tx) => {
+      const updateData: any = {
+        configName,
+        description,
+      };
+
+      if (parsedDimensionConfig) {
+        updateData.dimensionConfig = JSON.stringify(parsedDimensionConfig);
+      }
+
+      if (effectiveStartTime) {
+        updateData.effectiveStartTime = new Date(effectiveStartTime);
+      }
+
+      if (effectiveEndTime !== undefined) {
+        updateData.effectiveEndTime = effectiveEndTime ? new Date(effectiveEndTime) : null;
+      }
+
+      if (updatedById) {
+        updateData.updatedById = updatedById;
+        updateData.updatedByName = updatedByName;
+      }
+
+      await tx.allocationConfig.update({
+        where: { id },
+        data: updateData,
+      });
+
+      // 更新配置明细：先删除旧的，再创建新的
+      if (details && Array.isArray(details)) {
+        // 软删除旧明细
+        await tx.allocationConfigDetail.updateMany({
+          where: { configId: id },
+          data: { deletedAt: new Date() },
+        });
+
+        // 创建新明细
+        for (const detail of details) {
+          await tx.allocationConfigDetail.create({
+            data: {
+              configId: id,
+              dimensionLevel: detail.dimensionLevel,
+              dimensionType: detail.dimensionType,
+              allocationObjectId: detail.allocationObjectId,
+              allocationObjectName: detail.allocationObjectName,
+              allocationObjectCode: detail.allocationObjectCode,
+              weight: detail.weight || 0,
+              allocationBasis: detail.allocationBasis,
+              basisFormula: detail.basisFormula,
+              sortOrder: detail.sortOrder || 0,
+            },
+          });
+        }
+      }
+    });
+
+    return this.getAllocationConfig(id);
+  }
+
+  /**
+   * 删除分摊配置
+   */
+  async deleteAllocationConfig(id: number) {
+    const config = await this.prisma.allocationConfig.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!config) {
+      throw new NotFoundException('分摊配置不存在');
+    }
+
+    // 只有草稿状态才能删除
+    if (config.status !== 'DRAFT') {
+      throw new BadRequestException('只有草稿状态的配置才能删除');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // 软删除配置
+      await tx.allocationConfig.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+
+      // 软删除明细
+      await tx.allocationConfigDetail.updateMany({
+        where: { configId: id },
+        data: { deletedAt: new Date() },
+      });
+    });
+
+    return { message: '删除成功' };
+  }
+
+  /**
+   * 启用分摊配置
+   */
+  async activateAllocationConfig(id: number, dto: any) {
+    const config = await this.prisma.allocationConfig.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!config) {
+      throw new NotFoundException('分摊配置不存在');
+    }
+
+    const { approvedById, approvedByName } = dto;
+
+    // 只有草稿状态才能启用
+    if (config.status !== 'DRAFT') {
+      throw new BadRequestException('只有草稿状态的配置才能启用');
+    }
+
+    // 检查是否有配置明细
+    const detailsCount = await this.prisma.allocationConfigDetail.count({
+      where: { configId: id, deletedAt: null },
+    });
+
+    if (detailsCount === 0) {
+      throw new BadRequestException('请先添加分摊配置明细');
+    }
+
+    // 更新为生效状态
+    await this.prisma.allocationConfig.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        approvedById,
+        approvedByName,
+        approvedAt: new Date(),
+      },
+    });
+
+    return { message: '启用成功' };
+  }
+
+  /**
+   * 归档分摊配置
+   */
+  async archiveAllocationConfig(id: number) {
+    const config = await this.prisma.allocationConfig.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!config) {
+      throw new NotFoundException('分摊配置不存在');
+    }
+
+    // 只有生效状态才能归档
+    if (config.status !== 'ACTIVE') {
+      throw new BadRequestException('只有生效状态的配置才能归档');
+    }
+
+    await this.prisma.allocationConfig.update({
+      where: { id },
+      data: { status: 'ARCHIVED' },
+    });
+
+    return { message: '归档成功' };
+  }
+
+  /**
+   * 分摊计算
+   */
+  async calculateAllocation(dto: any) {
+    const { configId, startDate, endDate, executeById, executeByName } = dto;
+
+    // 验证配置
+    const config = await this.prisma.allocationConfig.findUnique({
+      where: { id: configId, deletedAt: null },
+      include: {
+        details: {
+          where: { deletedAt: null },
+          orderBy: [{ dimensionLevel: 'asc' }, { sortOrder: 'asc' }],
+        },
+      },
+    });
+
+    if (!config) {
+      throw new NotFoundException('分摊配置不存在');
+    }
+
+    if (config.status !== 'ACTIVE') {
+      throw new BadRequestException('只有生效状态的配置才能执行计算');
+    }
+
+    // 解析维度配置
+    const dimensionConfig = JSON.parse(config.dimensionConfig || '{}');
+    const indirectHourCodes = dimensionConfig.indirectHourCodes || [];
+
+    if (indirectHourCodes.length === 0) {
+      throw new BadRequestException('请先配置间接工时的出勤代码');
+    }
+
+    // 生成批次号
+    const batchNo = this.generateBatchNo();
+
+    // 获取出勤代码映射
+    const attendanceCodes = await this.prisma.attendanceCode.findMany({
+      where: { code: { in: indirectHourCodes } },
+    });
+
+    const attendanceCodeIds = attendanceCodes.map((ac) => ac.id);
+
+    // 查询间接工时记录
+    const calcResults = await this.prisma.calcResult.findMany({
+      where: {
+        attendanceCodeId: { in: attendanceCodeIds },
+        calcDate: {
+          gte: new Date(startDate),
+          lte: new Date(endDate),
+        },
+        status: { in: ['PENDING', 'APPROVED'] },
+      },
+      include: {
+        employee: {
+          include: {
+            org: true,
+          },
+        },
+      },
+    });
+
+    if (calcResults.length === 0) {
+      throw new BadRequestException('未找到符合条件的间接工时记录');
+    }
+
+    // 获取组织下的所有产线
+    const productionLines = await this.prisma.productionLine.findMany({
+      where: {
+        orgId: config.orgId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+    });
+
+    // 执行分摊计算
+    const results = await this.executeAllocation({
+      batchNo,
+      config,
+      dimensionConfig,
+      calcResults,
+      productionLines,
+    });
+
+    // 记录审计日志
+    await this.prisma.auditLog.create({
+      data: {
+        module: 'ALLOCATION',
+        operationType: 'EXECUTE',
+        operationDesc: `执行间接工时分摊计算，批次号：${batchNo}，配置：${config.configName}`,
+        targetId: config.id,
+        targetType: 'AllocationConfig',
+        newValue: JSON.stringify({
+          batchNo,
+          startDate,
+          endDate,
+          resultCount: results.length,
+        }),
+        operatorId: executeById || 0,
+        operatorName: executeByName || 'System',
+        result: 'SUCCESS',
+      },
+    });
+
+    return {
+      batchNo,
+      resultCount: results.length,
+      message: '分摊计算完成',
+    };
+  }
+
+  /**
+   * 执行分摊计算的核心逻辑
+   */
+  private async executeAllocation(params: any) {
+    const { batchNo, config, dimensionConfig, calcResults, productionLines } = params;
+
+    const allocationResults: any[] = [];
+    const calcTime = new Date();
+
+    // 按日期和工时类型分组
+    const groupedResults = this.groupCalcResults(calcResults);
+
+    // 对每组进行分摊计算
+    for (const groupKey in groupedResults) {
+      const [dateStr, attendanceCodeId] = groupKey.split('-');
+      const groupResults = groupedResults[groupKey];
+
+      // 获取该组的总工时
+      const totalHours = groupResults.reduce((sum: number, r: any) => sum + r.actualHours, 0);
+
+      if (totalHours === 0) {
+        continue;
+      }
+
+      // 获取该出勤代码
+      const attendanceCode = await this.prisma.attendanceCode.findUnique({
+        where: { id: +attendanceCodeId },
+      });
+
+      // 根据配置明细进行分摊
+      for (const detail of config.details) {
+        const basisValue = await this.getBasisValue({
+          detail,
+          recordDate: new Date(dateStr),
+          productionLines,
+        });
+
+        // 计算权重后的依据值
+        const weightValue = detail.weight / 100;
+        const weightedBasisValue = basisValue * weightValue;
+
+        allocationResults.push({
+          batchNo,
+          recordDate: new Date(dateStr),
+          calcResultId: null, // 间接工时没有具体的calcResultId
+          configId: config.id,
+          configVersion: config.version,
+          orgId: config.orgId,
+          hourType: attendanceCode?.name || '间接工时',
+          totalHours,
+          dimensionLevel: detail.dimensionLevel,
+          dimensionType: detail.dimensionType,
+          allocationObjectId: detail.allocationObjectId,
+          allocationObjectName: detail.allocationObjectName,
+          allocationBasis: detail.allocationBasis,
+          basisValue,
+          weightValue,
+          weightedBasisValue,
+          allocationRatio: 0, // 稍后计算
+          allocatedHours: 0, // 稍后计算
+          calcTime,
+        });
+      }
+    }
+
+    // 计算总加权依据值，然后计算分摊比例和工时
+    const totalWeightedBasis = allocationResults.reduce(
+      (sum: number, r: any) => sum + r.weightedBasisValue,
+      0
+    );
+
+    for (const result of allocationResults) {
+      if (totalWeightedBasis > 0) {
+        result.allocationRatio = result.weightedBasisValue / totalWeightedBasis;
+        // 按照每个工时结果分别分摊
+        for (const groupKey in groupedResults) {
+          const groupResults = groupedResults[groupKey];
+          for (const calcResult of groupResults) {
+            const allocatedHours = calcResult.actualHours * result.allocationRatio;
+            if (allocatedHours > 0) {
+              await this.prisma.allocationResult.create({
+                data: {
+                  ...result,
+                  calcResultId: calcResult.id,
+                  totalHours: calcResult.actualHours,
+                  allocatedHours,
+                },
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return allocationResults;
+  }
+
+  /**
+   * 获取分摊依据值
+   */
+  private async getBasisValue(params: any): Promise<number> {
+    const { detail, recordDate, productionLines } = params;
+
+    switch (detail.allocationBasis) {
+      case 'ACTUAL_HOURS':
+        // 实际工时：从CalcResult表获取该产线的实际工时总和
+        const line = productionLines.find((pl) => pl.id === detail.allocationObjectId);
+        if (!line) return 0;
+
+        // 查询该产线在该日期的所有直接工时
+        const directHours = await this.prisma.calcResult.aggregate({
+          where: {
+            calcDate: recordDate,
+            // 这里需要根据实际业务逻辑过滤直接工时
+            // 暂时用NOT IN间接工时的方式
+            // attendanceCodeId: { notIn: indirectHourIds },
+          },
+          _sum: {
+            actualHours: true,
+          },
+        });
+
+        return directHours._sum.actualHours || 0;
+
+      case 'STD_HOURS':
+        // 标准工时
+        const stdHours = await this.prisma.calcResult.aggregate({
+          where: {
+            calcDate: recordDate,
+          },
+          _sum: {
+            standardHours: true,
+          },
+        });
+
+        return stdHours._sum.standardHours || 0;
+
+      case 'ACTUAL_YIELD':
+        // 实际产量：从ProductionRecord表获取
+        const productionRecords = await this.prisma.productionRecord.aggregate({
+          where: {
+            recordDate,
+            lineId: detail.allocationObjectId,
+          },
+          _sum: {
+            actualQty: true,
+          },
+        });
+
+        return productionRecords._sum.actualQty || 0;
+
+      case 'PRODUCT_STD_HOURS':
+        // 产品标准工时
+        const prodStdHours = await this.prisma.productionRecord.aggregate({
+          where: {
+            recordDate,
+            lineId: detail.allocationObjectId,
+          },
+          _sum: {
+            totalStdHours: true,
+          },
+        });
+
+        return prodStdHours._sum.totalStdHours || 0;
+
+      case 'EMPLOYEE_COUNT':
+        // 人员数量：从Employee表获取
+        const employeeCount = await this.prisma.employee.count({
+          where: {
+            orgId: detail.allocationObjectId,
+            status: 'ACTIVE',
+          },
+        });
+
+        return employeeCount;
+
+      case 'FIXED_VALUE':
+        // 固定值
+        return detail.weight || 0;
+
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * 将计算结果按日期和出勤代码分组
+   */
+  private groupCalcResults(calcResults: any[]) {
+    const grouped: any = {};
+
+    for (const result of calcResults) {
+      const dateStr = result.calcDate.toISOString().split('T')[0];
+      const attendanceCodeId = result.attendanceCodeId || 0;
+      const key = `${dateStr}-${attendanceCodeId}`;
+
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+
+      grouped[key].push(result);
+    }
+
+    return grouped;
+  }
+
+  /**
+   * 生成批次号
+   */
+  private generateBatchNo(): string {
+    const now = new Date();
+    const timestamp = now.getTime();
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `ALC${timestamp}${random}`;
+  }
+
+  /**
+   * 查询计算进度
+   */
+  async getCalculationProgress(batchNo: string) {
+    // 查询该批次的分摊结果数量
+    const results = await this.prisma.allocationResult.findMany({
+      where: { batchNo },
+    });
+
+    if (results.length === 0) {
+      throw new NotFoundException('批次不存在');
+    }
+
+    // 获取第一个和最后一个结果的时间差来估算进度
+    const firstResult = results[0];
+    const lastResult = results[results.length - 1];
+
+    return {
+      batchNo,
+      totalRecords: results.length,
+      status: 'COMPLETED',
+      startTime: firstResult.calcTime,
+      endTime: lastResult.calcTime,
+    };
+  }
+
+  /**
+   * 查询分摊结果
+   */
+  async getAllocationResults(query: any) {
+    const { page = 1, pageSize = 10, batchNo, recordDate, configId, dimensionType, allocationObjectId } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+
+    if (batchNo) where.batchNo = batchNo;
+    if (recordDate) {
+      const date = new Date(recordDate);
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+      where.recordDate = { gte: date, lt: nextDate };
+    }
+    if (configId) where.configId = +configId;
+    if (dimensionType) where.dimensionType = dimensionType;
+    if (allocationObjectId) where.allocationObjectId = +allocationObjectId;
+
+    const [items, total] = await Promise.all([
+      this.prisma.allocationResult.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { calcTime: 'desc' },
+        include: {
+          config: true,
+        },
+      }),
+      this.prisma.allocationResult.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  /**
+   * 查询分摊结果汇总
+   */
+  async getAllocationResultsSummary(query: any) {
+    const { batchNo, startDate, endDate, configId } = query;
+
+    const where: any = { deletedAt: null };
+
+    if (batchNo) where.batchNo = batchNo;
+    if (configId) where.configId = +configId;
+    if (startDate && endDate) {
+      where.recordDate = {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      };
+    }
+
+    // 按维度对象汇总
+    const byDimension = await this.prisma.allocationResult.groupBy({
+      by: ['dimensionType', 'allocationObjectId', 'allocationObjectName'],
+      where,
+      _sum: {
+        totalHours: true,
+        allocatedHours: true,
+      },
+    });
+
+    // 按日期汇总
+    const byDate = await this.prisma.allocationResult.groupBy({
+      by: ['recordDate'],
+      where,
+      _sum: {
+        totalHours: true,
+        allocatedHours: true,
+      },
+    });
+
+    // 按工时类型汇总
+    const byHourType = await this.prisma.allocationResult.groupBy({
+      by: ['hourType'],
+      where,
+      _sum: {
+        totalHours: true,
+        allocatedHours: true,
+      },
+    });
+
+    // 总计
+    const total = await this.prisma.allocationResult.aggregate({
+      where,
+      _sum: {
+        totalHours: true,
+        allocatedHours: true,
+      },
+      _count: true,
+    });
+
+    return {
+      byDimension,
+      byDate,
+      byHourType,
+      total: {
+        totalHours: total._sum.totalHours || 0,
+        allocatedHours: total._sum.allocatedHours || 0,
+        recordCount: total._count,
+      },
+    };
+  }
+
+  /**
+   * 获取可用的出勤代码列表（用于配置间接工时）
+   */
+  async getAttendanceCodesForAllocation() {
+    const attendanceCodes = await this.prisma.attendanceCode.findMany({
+      where: {
+        status: 'ACTIVE',
+      },
+      orderBy: [{ type: 'asc' }, { priority: 'desc' }],
+    });
+
+    return attendanceCodes;
+  }
+
+  /**
+   * 获取可用的分摊对象列表（产线、车间等）
+   */
+  async getAllocationObjects(dimensionType: string, orgId: number) {
+    switch (dimensionType) {
+      case 'LINE':
+        return this.prisma.productionLine.findMany({
+          where: {
+            orgId,
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+          orderBy: [{ code: 'asc' }],
+        });
+
+      case 'WORKSHOP':
+        // 车间数据可能需要从Organization表获取
+        return this.prisma.organization.findMany({
+          where: {
+            parentId: orgId,
+            type: 'WORKSHOP',
+            status: 'ACTIVE',
+          },
+        });
+
+      case 'TEAM':
+        return this.prisma.organization.findMany({
+          where: {
+            type: 'TEAM',
+            status: 'ACTIVE',
+          },
+        });
+
+      case 'WORK_CENTER':
+        // 工作中心暂不支持，返回空数组
+        return [];
+
+      default:
+        return [];
+    }
+  }
+}

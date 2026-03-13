@@ -1,0 +1,287 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function diagnoseYieldAllocation() {
+  console.log('========================================');
+  console.log('深度诊断A02_COPY_1773285414740分摊');
+  console.log('========================================\n');
+
+  const calcDate = new Date('2026-03-11');
+
+  // 1. 检查配置
+  const config = await prisma.allocationConfig.findFirst({
+    where: {
+      configCode: 'A02_COPY_1773285414740',
+    },
+    include: {
+      sourceConfig: true,
+      rules: {
+        where: { deletedAt: null },
+      },
+    },
+  });
+
+  if (!config) {
+    console.log('❌ 配置不存在\n');
+    return;
+  }
+
+  console.log('1. 配置检查 ✓');
+  console.log(`   配置ID: ${config.id}`);
+  console.log(`   状态: ${config.status}`);
+  console.log(`   规则数: ${config.rules.length}\n`);
+
+  // 2. 检查规则
+  const rule = config.rules[0];
+  const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
+
+  console.log('2. 规则检查 ✓');
+  console.log(`   规则ID: ${rule.id}`);
+  console.log(`   分摊依据: ${rule.allocationBasis}`);
+  console.log(`   规则状态: ${rule.status}`);
+  console.log(`   分配归属层级: ${JSON.stringify(allocationHierarchyLevels)}\n`);
+
+  // 3. 检查分摊源配置
+  console.log('3. 分摊源检查');
+  if (!config.sourceConfig) {
+    console.log('   ❌ 未配置分摊源\n');
+    return;
+  }
+
+  const attendanceCodes = JSON.parse(config.sourceConfig.attendanceCodes || '[]');
+  console.log(`   出勤代码: ${attendanceCodes.join(', ')}`);
+  console.log(`   ✓ 有分摊源配置\n`);
+
+  // 4. 检查待分摊的工时数据
+  console.log('4. 检查待分摊工时数据');
+
+  // 先获取I04的ID
+  const i04Code = await prisma.attendanceCode.findUnique({
+    where: { code: 'I04' },
+  });
+
+  if (!i04Code) {
+    console.log('   ❌ 未找到I04出勤代码\n');
+    return;
+  }
+
+  const calcResults = await prisma.calcResult.findMany({
+    where: {
+      calcDate,
+      attendanceCodeId: i04Code.id,
+    },
+    include: {
+      employee: true,
+    },
+  });
+
+  console.log(`   找到 ${calcResults.length} 条I04工时记录`);
+
+  // 按员工汇总
+  const byEmployee: Record<string, number> = {};
+  calcResults.forEach(r => {
+    const key = `${r.employeeNo} ${r.employee.name || ''}`;
+    byEmployee[key] = (byEmployee[key] || 0) + r.actualHours;
+  });
+
+  Object.entries(byEmployee).forEach(([emp, hours]) => {
+    console.log(`   ${emp}: ${hours}h`);
+  });
+
+  if (calcResults.length === 0) {
+    console.log('   ❌ 没有待分摊的工时数据\n');
+    return;
+  }
+  console.log('   ✓ 有待分摊工时\n');
+
+  // 5. 检查产量数据
+  console.log('5. 检查产量数据');
+  const productionRecords = await prisma.productionRecord.findMany({
+    where: {
+      recordDate: calcDate,
+      deletedAt: null,
+    },
+  });
+
+  console.log(`   找到 ${productionRecords.length} 条产量记录`);
+
+  // 按产线-班次汇总
+  const byLineAndShift: Record<string, number> = {};
+  productionRecords.forEach(r => {
+    if (r.lineId && r.shiftId) {
+      const key = `${r.lineId}-${r.shiftId}`;
+      byLineAndShift[key] = (byLineAndShift[key] || 0) + r.actualQty;
+    }
+  });
+
+  if (Object.keys(byLineAndShift).length === 0) {
+    console.log('   ❌ 产量记录没有lineId或shiftId，无法按班次汇总\n');
+    return;
+  }
+
+  console.log('   按产线-班次汇总的产量:');
+  Object.entries(byLineAndShift).forEach(([key, qty]) => {
+    console.log(`   ${key}: ${qty}`);
+  });
+  console.log('   ✓ 有有效的产量数据\n');
+
+  // 6. 检查开线计划
+  console.log('6. 检查开线计划');
+  const lineShifts = await prisma.lineShift.findMany({
+    where: {
+      scheduleDate: calcDate,
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    include: {
+      line: true,
+    },
+  });
+
+  console.log(`   找到 ${lineShifts.length} 条开线计划`);
+
+  const activeLines = lineShifts.filter(ls => ls.participateInAllocation);
+  console.log(`   其中参与分摊的产线: ${activeLines.length} 条`);
+
+  activeLines.forEach(ls => {
+    console.log(`   - ${ls.line?.name} (班次ID: ${ls.shiftId})`);
+  });
+
+  if (activeLines.length === 0) {
+    console.log('   ❌ 没有参与分摊的产线\n');
+    return;
+  }
+  console.log('   ✓ 有参与分摊的产线\n');
+
+  // 7. 检查排班信息
+  console.log('7. 检查排班信息');
+  const schedules = await prisma.schedule.findMany({
+    where: {
+      scheduleDate: calcDate,
+      employeeId: { in: calcResults.map(r => r.employeeId) },
+    },
+    include: {
+      shift: true,
+      employee: true,
+    },
+  });
+
+  console.log(`   找到 ${schedules.length} 条排班记录`);
+  schedules.forEach(s => {
+    console.log(`   - ${s.employee?.name || s.employeeId || 'N/A'}: 班次${s.shift?.name || `ID:${s.shiftId}`}`);
+  });
+
+  if (schedules.length === 0) {
+    console.log('   ❌ 员工没有排班信息，无法分摊\n');
+    return;
+  }
+  console.log('   ✓ 有排班信息\n');
+
+  // 8. 检查间接设备账户
+  console.log('8. 检查间接设备账户');
+  const indirectAccounts = await prisma.laborAccount.findMany({
+    where: {
+      name: {
+        endsWith: '////间接设备',
+      },
+      status: 'ACTIVE',
+    },
+  });
+
+  console.log(`   找到 ${indirectAccounts.length} 个间接设备账户`);
+  indirectAccounts.forEach(acc => {
+    console.log(`   - ${acc.name} (ID: ${acc.id})`);
+  });
+
+  if (indirectAccounts.length < activeLines.length) {
+    console.log('   ⚠️  间接设备账户数量少于产线数量\n');
+  } else {
+    console.log('   ✓ 间接设备账户充足\n');
+  }
+
+  // 9. 检查最新分摊结果
+  console.log('========================================');
+  console.log('9. 检查最新分摊结果');
+  console.log('========================================\n');
+
+  const allResults = await prisma.allocationResult.findMany({
+    where: {
+      recordDate: calcDate,
+    },
+    orderBy: {
+      calcTime: 'desc',
+    },
+    take: 20,
+  });
+
+  if (allResults.length === 0) {
+    console.log('❌ 3月11日没有任何分摊结果');
+    console.log('\n请检查：');
+    console.log('1. 是否真的点击了"执行"按钮？');
+    console.log('2. 执行时是否有错误提示？');
+    console.log('3. 浏览器控制台是否有报错？');
+  } else {
+    console.log(`最新 ${Math.min(10, allResults.length)} 条分摊结果:\n`);
+
+    // 按配置分组
+    const byConfig: Record<number, any[]> = {};
+    allResults.forEach(r => {
+      if (!byConfig[r.configId]) {
+        byConfig[r.configId] = [];
+      }
+      byConfig[r.configId].push(r);
+    });
+
+    for (const [configId, results] of Object.entries(byConfig)) {
+      const cfg = await prisma.allocationConfig.findUnique({
+        where: { id: +configId },
+      });
+
+      console.log(`配置: ${cfg?.configName} (${cfg?.configCode})`);
+      console.log(`  依据: ${results[0].allocationBasis}`);
+      console.log(`  记录数: ${results.length}`);
+      console.log(`  最新时间: ${results[0].calcTime}`);
+
+      if (+configId === config.id) {
+        console.log(`  ✓ 这是A02_COPY_1773285414740的结果`);
+      }
+      console.log();
+    }
+  }
+
+  console.log('\n========================================');
+  console.log('诊断总结:');
+  console.log('========================================\n');
+
+  const issues = [];
+
+  if (calcResults.length === 0) issues.push('没有待分摊的工时数据');
+  if (Object.keys(byLineAndShift).length === 0) issues.push('产量数据无效');
+  if (activeLines.length === 0) issues.push('没有参与分摊的产线');
+  if (schedules.length === 0) issues.push('员工没有排班');
+
+  if (issues.length === 0) {
+    console.log('✓ 所有必要的数据都存在');
+    console.log('\n可能的问题：');
+    console.log('1. 分摊执行时出错，但没有报错信息');
+    console.log('2. executeActualYieldAllocation方法有bug');
+    console.log('3. 需要查看后端实时日志');
+  } else {
+    console.log('❌ 发现以下问题:');
+    issues.forEach((issue, idx) => {
+      console.log(`${idx + 1}. ${issue}`);
+    });
+  }
+
+  console.log('\n========================================');
+}
+
+diagnoseYieldAllocation()
+  .catch((e) => {
+    console.error('诊断失败:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
