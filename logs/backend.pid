@@ -1,1 +1,0 @@
- sleep 8 tail -30 ../logs/backend.log

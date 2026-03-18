@@ -162,27 +162,29 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
       initialValues={initialValues}
       style={{ width: '100%' }}
     >
-      <Row gutter={[12, 12]} align="middle" style={{ width: '100%', flexWrap: 'nowrap' }}>
+      <Row gutter={[12, 12]} align="middle" style={{ width: '100%' }}>
         {/* 固定查询条件（如月份选择器、日期范围选择器） */}
-        {pageCode === 'schedules' && fixedFilters?.month && (
-          <Col style={{ marginBottom: 0, flex: '0 0 auto' }}>
+        {pageCode === 'schedules' && fixedFilters?.dateRange && (
+          <Col style={{ marginBottom: 0 }}>
             <Form.Item
-              label="月份"
+              label="日期范围"
               style={{ marginBottom: 0, marginRight: 0 }}
               labelCol={{ style: { width: 'auto', marginRight: 8 } }}
             >
-              <DatePicker.MonthPicker
-                value={fixedFilters.month}
-                onChange={(date) => onFixedFilterChange?.('month', date)}
-                style={{ width: 150 }}
+              <DatePicker.RangePicker
+                value={fixedFilters.dateRange}
+                onChange={(dates) => onFixedFilterChange?.('dateRange', dates)}
+                style={{ width: 240 }}
                 size="middle"
+                format="YYYY-MM-DD"
+                allowClear={false}
               />
             </Form.Item>
           </Col>
         )}
 
         {(pageCode === 'punch-records' || pageCode === 'pair-results' || pageCode === 'work-hour-results' || pageCode === 'workhour-details') && fixedFilters?.dateRange && (
-          <Col style={{ marginBottom: 0, flex: '0 0 auto' }}>
+          <Col style={{ marginBottom: 0 }}>
             <Form.Item
               label="日期范围"
               style={{ marginBottom: 0, marginRight: 0 }}
@@ -208,7 +210,7 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
           });
 
           return (
-            <Col key={config.fieldCode} style={{ marginBottom: 0, flex: '0 0 auto' }}>
+            <Col key={config.fieldCode} style={{ marginBottom: 0 }}>
               <Form.Item
                 name={config.fieldCode}
                 label={config.fieldName}
@@ -261,7 +263,7 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
             </Col>
           );
         })}
-        <Col style={{ marginBottom: 0, flex: '0 0 auto', marginLeft: 'auto' }}>
+        <Col style={{ marginBottom: 0 }}>
           <Form.Item style={{ marginBottom: 0 }}>
             <Space>
               {extraActions}

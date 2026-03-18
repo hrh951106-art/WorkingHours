@@ -50,7 +50,7 @@ const LineMaintenancePage: React.FC = () => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
 
-  // 获取系统配置 - 产线对应层级
+  // 获取系统配置 - 产线对应层级和产线班次
   const { data: systemConfigs = [] } = useQuery({
     queryKey: ['systemConfigs'],
     queryFn: () =>
@@ -62,6 +62,11 @@ const LineMaintenancePage: React.FC = () => {
     (c: any) => c.configKey === 'productionLineHierarchyLevel'
   )?.configValue;
 
+  // 获取配置的产线班次ID列表
+  const configuredShiftIds = systemConfigs.find(
+    (c: any) => c.configKey === 'productionLineShiftIds'
+  )?.configValue?.split(',').map((id: string) => parseInt(id)) || [];
+
   const { data: productionLineOrgs = [] } = useQuery({
     queryKey: ['productionLineOrgs', productionLineHierarchyLevelId],
     queryFn: () =>
@@ -69,6 +74,18 @@ const LineMaintenancePage: React.FC = () => {
         .then((res: any) => res || []),
     enabled: !!productionLineHierarchyLevelId,
   });
+
+  // 获取所有班次
+  const { data: allShifts } = useQuery({
+    queryKey: ['allShifts'],
+    queryFn: () =>
+      request.get('/shift/shifts').then((res: any) => res?.items || res || []),
+  });
+
+  // 根据配置过滤班次
+  const shifts = configuredShiftIds.length > 0
+    ? allShifts?.filter((s: any) => configuredShiftIds.includes(s.id))
+    : allShifts;
 
   // 查询条件
   const [filters, setFilters] = useState({
@@ -89,13 +106,6 @@ const LineMaintenancePage: React.FC = () => {
           shiftId: filters.shiftId,
         },
       }).then((res: any) => res?.items || []),
-  });
-
-  // 获取班次列表
-  const { data: shifts } = useQuery({
-    queryKey: ['shiftsForLineMaintenance'],
-    queryFn: () =>
-      request.get('/shift/shifts').then((res: any) => res?.items || res || []),
   });
 
   // 获取产线树（当没有配置层级时使用）

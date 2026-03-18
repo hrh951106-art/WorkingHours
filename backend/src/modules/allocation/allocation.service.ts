@@ -1421,28 +1421,15 @@ export class AllocationService {
       const aggregatedResults = this.aggregateCalcResultsByEmployeeAndCode(dailyResults);
 
       // 对汇总后的工时记录进行分摊
+      console.log(`[分摊计算] 汇总后的工时记录数: ${aggregatedResults.length}`);
       for (const aggregatedResult of aggregatedResults) {
-        // 获取员工当天的班次和排班信息
-        const schedule = await this.prisma.schedule.findFirst({
-          where: {
-            employeeId: aggregatedResult.employee.id,
-            scheduleDate: calcDate,
-          },
-          include: {
-            shift: true,
-          },
-        });
+        console.log(`[分摊计算] 处理汇总记录: 员工=${aggregatedResult.employeeNo}, 出勤代码ID=${aggregatedResult.attendanceCodeId}, 班次ID=${aggregatedResult.shiftId}, 班次名称=${aggregatedResult.shiftName}, 实际工时=${aggregatedResult.actualHours}`);
 
-        if (!schedule) {
-          console.log(`员工 ${aggregatedResult.employeeNo} 在 ${dateKey} 没有排班，跳过`);
-          continue;
-        }
-
-        // 获取该班次当天开的产线列表
-        const shiftLines = activeLines.filter((line) => line.shiftId === schedule.shiftId);
+        // 获取该班次当天开的产线列表（直接使用工时记录中的班次ID）
+        const shiftLines = activeLines.filter((line) => line.shiftId === aggregatedResult.shiftId);
 
         if (shiftLines.length === 0) {
-          console.log(`班次 ${schedule.shift.name} 在 ${dateKey} 没有开线，跳过`);
+          console.log(`班次 ${aggregatedResult.shiftName} (ID:${aggregatedResult.shiftId}) 在 ${dateKey} 没有开线，跳过 (员工:${aggregatedResult.employeeNo}, 工时:${aggregatedResult.actualHours})`);
           continue;
         }
 
@@ -1457,7 +1444,8 @@ export class AllocationService {
               rule,
               calcResult: aggregatedResult,
               calcDate,
-              schedule,
+              shiftId: aggregatedResult.shiftId,
+              shiftName: aggregatedResult.shiftName,
               shiftLines,
               lineToWorkshop,
               actualHoursAttendanceCodeId,
@@ -1475,7 +1463,8 @@ export class AllocationService {
               rule,
               calcResult: aggregatedResult,
               calcDate,
-              schedule,
+              shiftId: aggregatedResult.shiftId,
+              shiftName: aggregatedResult.shiftName,
               shiftLines,
               lineToWorkshop,
               indirectHoursAttendanceCodeId,
@@ -1484,7 +1473,8 @@ export class AllocationService {
               executeByName,
             });
             resultCount += yieldResult;
-          } else if (rule.allocationBasis === 'EQUIVALENT_YIELDS') {
+          }
+          else if (rule.allocationBasis === 'EQUIVALENT_YIELDS') {
             // 按同效产量比例分摊（标准产量 = 实际产量 × 转换系数）
             const equivalentYieldResult = await this.executeEquivalentYieldAllocation({
               batchNo,
@@ -1492,7 +1482,8 @@ export class AllocationService {
               rule,
               calcResult: aggregatedResult,
               calcDate,
-              schedule,
+              shiftId: aggregatedResult.shiftId,
+              shiftName: aggregatedResult.shiftName,
               shiftLines,
               lineToWorkshop,
               indirectHoursAttendanceCodeId,
@@ -1509,7 +1500,8 @@ export class AllocationService {
               rule,
               calcResult: aggregatedResult,
               calcDate,
-              schedule,
+              shiftId: aggregatedResult.shiftId,
+              shiftName: aggregatedResult.shiftName,
               shiftLines,
               lineToWorkshop,
               indirectHoursAttendanceCodeId,
@@ -1536,7 +1528,8 @@ export class AllocationService {
       rule,
       calcResult,
       calcDate,
-      schedule,
+      shiftId,
+      shiftName,
       shiftLines,
       lineToWorkshop,
       actualHoursAttendanceCodeId,
@@ -1634,33 +1627,29 @@ export class AllocationService {
       return 0;
     }
 
-    // 计算分摊范围的总工时（只计算有直接工时的产线）
-    const scopeTotalHours: Record<number, number> = {};
-    for (const lineId in lineToScope) {
+    // 计算分摊范围的总工时（只计算有直接工时的产线，且只统计当前班次）
+    const scopeTotalHours: Record<string, number> = {};
+    for (const key in directHoursByLine) {
+      const [lineId, shiftId] = key.split('-').map(Number);
       const scopeId = lineToScope[lineId];
-      // 只统计属于源层级的产线
-      if (scopeId === sourceScopeId) {
-        if (!scopeTotalHours[scopeId]) {
-          scopeTotalHours[scopeId] = 0;
+      // 只统计属于源层级的产线，并且只统计当前班次的数据
+      if (scopeId === sourceScopeId && shiftId === params.shiftId) {
+        const scopeKey = `${scopeId}-${shiftId}`;
+        if (!scopeTotalHours[scopeKey]) {
+          scopeTotalHours[scopeKey] = 0;
         }
-      }
-    }
-    for (const lineId in directHoursByLine) {
-      const scopeId = lineToScope[lineId];
-      // 只统计属于源层级的产线
-      if (scopeId === sourceScopeId && scopeTotalHours[scopeId] !== undefined) {
-        scopeTotalHours[scopeId] += directHoursByLine[lineId];
+        scopeTotalHours[scopeKey] += directHoursByLine[key];
       }
     }
 
-    const scopeDirectHours = scopeTotalHours[sourceScopeId] || 0;
+    const scopeDirectHours = scopeTotalHours[`${sourceScopeId}-${params.shiftId}`] || 0;
 
     if (scopeDirectHours === 0) {
-      console.log(`车间 ${sourceScopeId} 的直接工时为0，跳过分摊`);
+      console.log(`车间 ${sourceScopeId} 班次 ${params.shiftName} 的直接工时为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 的总直接工时: ${scopeDirectHours}`);
+    console.log(`车间 ${sourceScopeId} 班次 ${params.shiftName} 的总直接工时: ${scopeDirectHours}`);
 
     // 解析分配归属层级
     const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
@@ -1686,12 +1675,13 @@ export class AllocationService {
         continue;
       }
 
-      // 计算分摊
-      const lineDirectHours = directHoursByLine[line.id] || 0;
+      // 计算分摊 - 使用当前班次的直接工时数据
+      const lineDirectHoursKey = `${line.id}-${shiftId}`;
+      const lineDirectHours = directHoursByLine[lineDirectHoursKey] || 0;
 
-      // 如果产线没有直接工时，跳过
+      // 如果产线当前班次没有直接工时，跳过
       if (lineDirectHours === 0) {
-        console.log(`产线 ${line.name} 没有直接工时，跳过分摊`);
+        console.log(`产线 ${line.name} 班次 ${shiftName} 没有直接工时，跳过分摊`);
         continue;
       }
 
@@ -1699,7 +1689,7 @@ export class AllocationService {
       const allocationRatio = lineDirectHours / scopeDirectHours;
       const allocatedHours = calcResult.actualHours * allocationRatio;
 
-      console.log(`产线 ${line.name}: 直接工时=${lineDirectHours}, 系数=${allocationRatio.toFixed(4)}, 分摊工时=${allocatedHours.toFixed(2)}`);
+      console.log(`产线 ${line.name} 班次 ${shiftName}: 直接工时=${lineDirectHours}, 系数=${allocationRatio.toFixed(4)}, 分摊工时=${allocatedHours.toFixed(2)}`);
 
       // 只保存有效的分摊结果
       if (allocatedHours > 0) {
@@ -1738,8 +1728,8 @@ export class AllocationService {
           data: {
             employeeNo: calcResult.employeeNo,
             calcDate: calcDate,
-            shiftId: schedule.shiftId,
-            shiftName: schedule.shift.name,
+            shiftId: shiftId,
+            shiftName: shiftName,
             attendanceCodeId: indirectHoursAttendanceCodeId,
             standardHours: 0, // 间接工时没有标准工时
             actualHours: allocatedHours,
@@ -1775,7 +1765,8 @@ export class AllocationService {
       rule,
       calcResult,
       calcDate,
-      schedule,
+      shiftId,
+      shiftName,
       shiftLines,
       lineToWorkshop,
       indirectHoursAttendanceCodeId,
@@ -1886,14 +1877,14 @@ export class AllocationService {
       }
     }
 
-    const scopeProduction = scopeTotalProduction[`${sourceScopeId}-${schedule.shiftId}`] || 0;
+    const scopeProduction = scopeTotalProduction[`${sourceScopeId}-${shiftId}`] || 0;
 
     if (scopeProduction === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${schedule.shift.name} 的实际产量为0，跳过分摊`);
+      console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的实际产量为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${schedule.shift.name} 的总实际产量: ${scopeProduction}`);
+    console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的总实际产量: ${scopeProduction}`);
 
     // 解析分配归属层级
     const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
@@ -1920,11 +1911,11 @@ export class AllocationService {
       }
 
       // 计算分摊 - 使用当前班次的产量数据
-      const lineProductionKey = `${line.id}-${schedule.shiftId}`;
+      const lineProductionKey = `${line.id}-${shiftId}`;
       const lineProduction = productionByLine[lineProductionKey] || 0;
 
       if (lineProduction === 0) {
-        console.log(`产线 ${line.name} 班次 ${schedule.shift.name} 的实际产量为0，跳过`);
+        console.log(`产线 ${line.name} 班次 ${shiftName} 的实际产量为0，跳过`);
         continue;
       }
 
@@ -1969,8 +1960,8 @@ export class AllocationService {
           data: {
             employeeNo: calcResult.employeeNo,
             calcDate: calcDate,
-            shiftId: schedule.shiftId,
-            shiftName: schedule.shift.name,
+            shiftId: shiftId,
+            shiftName: shiftName,
             attendanceCodeId: indirectHoursAttendanceCodeId,
             standardHours: 0, // 间接工时没有标准工时
             actualHours: allocatedHours,
@@ -2006,7 +1997,8 @@ export class AllocationService {
       rule,
       calcResult,
       calcDate,
-      schedule,
+      shiftId,
+      shiftName,
       shiftLines,
       lineToWorkshop,
       indirectHoursAttendanceCodeId,
@@ -2117,14 +2109,14 @@ export class AllocationService {
       }
     }
 
-    const scopeEquivalentProduction = scopeTotalEquivalentProduction[`${sourceScopeId}-${schedule.shiftId}`] || 0;
+    const scopeEquivalentProduction = scopeTotalEquivalentProduction[`${sourceScopeId}-${shiftId}`] || 0;
 
     if (scopeEquivalentProduction === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${schedule.shift.name} 的标准产量为0，跳过分摊`);
+      console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的标准产量为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${schedule.shift.name} 的总标准产量: ${scopeEquivalentProduction}`);
+    console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的总标准产量: ${scopeEquivalentProduction}`);
 
     // 解析分配归属层级
     const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
@@ -2151,11 +2143,11 @@ export class AllocationService {
       }
 
       // 计算分摊 - 使用当前班次的标准产量数据
-      const lineProductionKey = `${line.id}-${schedule.shiftId}`;
+      const lineProductionKey = `${line.id}-${shiftId}`;
       const lineEquivalentProduction = equivalentProductionByLine[lineProductionKey] || 0;
 
       if (lineEquivalentProduction === 0) {
-        console.log(`产线 ${line.name} 班次 ${schedule.shift.name} 的标准产量为0，跳过`);
+        console.log(`产线 ${line.name} 班次 ${shiftName} 的标准产量为0，跳过`);
         continue;
       }
 
@@ -2200,8 +2192,8 @@ export class AllocationService {
           data: {
             employeeNo: calcResult.employeeNo,
             calcDate: calcDate,
-            shiftId: schedule.shiftId,
-            shiftName: schedule.shift.name,
+            shiftId: shiftId,
+            shiftName: shiftName,
             attendanceCodeId: indirectHoursAttendanceCodeId,
             standardHours: 0, // 间接工时没有标准工时
             actualHours: allocatedHours,
@@ -2237,7 +2229,8 @@ export class AllocationService {
       rule,
       calcResult,
       calcDate,
-      schedule,
+      shiftId,
+      shiftName,
       shiftLines,
       lineToWorkshop,
       indirectHoursAttendanceCodeId,
@@ -2354,14 +2347,14 @@ export class AllocationService {
       }
     }
 
-    const scopeStandardHours = scopeTotalStandardHours[`${sourceScopeId}-${schedule.shiftId}`] || 0;
+    const scopeStandardHours = scopeTotalStandardHours[`${sourceScopeId}-${shiftId}`] || 0;
 
     if (scopeStandardHours === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${schedule.shift.name} 的标准工时为0，跳过分摊`);
+      console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的标准工时为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${schedule.shift.name} 的总标准工时: ${scopeStandardHours}`);
+    console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的总标准工时: ${scopeStandardHours}`);
 
     // 输出所有标准工时数据用于调试
     console.log(`[executeStandardHoursAllocation] 所有标准工时数据:`);
@@ -2396,11 +2389,11 @@ export class AllocationService {
       }
 
       // 计算分摊 - 使用当前班次的标准工时数据
-      const lineProductionKey = `${line.id}-${schedule.shiftId}`;
+      const lineProductionKey = `${line.id}-${shiftId}`;
       const lineStandardHours = standardHoursByLine[lineProductionKey] || 0;
 
       if (lineStandardHours === 0) {
-        console.log(`产线 ${line.name} 班次 ${schedule.shift.name} 的标准工时为0，跳过`);
+        console.log(`产线 ${line.name} 班次 ${shiftName} 的标准工时为0，跳过`);
         continue;
       }
 
@@ -2445,8 +2438,8 @@ export class AllocationService {
           data: {
             employeeNo: calcResult.employeeNo,
             calcDate: calcDate,
-            shiftId: schedule.shiftId,
-            shiftName: schedule.shift.name,
+            shiftId: shiftId,
+            shiftName: shiftName,
             attendanceCodeId: indirectHoursAttendanceCodeId,
             standardHours: 0, // 间接工时没有标准工时
             actualHours: allocatedHours,
@@ -2491,7 +2484,7 @@ export class AllocationService {
    * 获取指定日期各产线的直接工时
    * 通过劳动力账户路径关联产线，按产线汇总直接工时
    */
-  private async getDirectHoursByLine(params: { calcDate: Date; actualHoursAttendanceCodeId: number }): Promise<Record<number, number>> {
+  private async getDirectHoursByLine(params: { calcDate: Date; actualHoursAttendanceCodeId: number }): Promise<Record<string, number>> {
     const { calcDate, actualHoursAttendanceCodeId } = params;
 
     // 获取当天的工时结果（直接工时）
@@ -2552,17 +2545,19 @@ export class AllocationService {
       }
     }
 
-    // 按产线汇总直接工时
-    const directHoursByLine: Record<number, number> = {};
+    // 按产线和班次汇总直接工时
+    const directHoursByLine: Record<string, number> = {};
 
     for (const result of directResults) {
       // 通过工时的劳动力账户ID找到对应的产线
       if (result.accountId && accountToLine[result.accountId]) {
         const line = accountToLine[result.accountId];
-        if (!directHoursByLine[line.id]) {
-          directHoursByLine[line.id] = 0;
+        // 使用 "产线ID-班次ID" 作为key，确保按班次分别统计
+        const key = `${line.id}-${result.shiftId}`;
+        if (!directHoursByLine[key]) {
+          directHoursByLine[key] = 0;
         }
-        directHoursByLine[line.id] += result.actualHours;
+        directHoursByLine[key] += result.actualHours;
       }
     }
 
@@ -3074,8 +3069,9 @@ export class AllocationService {
     const aggregatedMap = new Map<string, any>();
 
     calcResults.forEach(result => {
-      // 使用员工编号和出勤代码ID作为唯一键
-      const key = `${result.employeeNo}-${result.attendanceCodeId}`;
+      // 使用员工编号、出勤代码ID和班次ID作为唯一键
+      // 这样不同班次的工时会分别汇总处理
+      const key = `${result.employeeNo}-${result.attendanceCodeId}-${result.shiftId}`;
 
       if (aggregatedMap.has(key)) {
         // 如果已存在，累加工时

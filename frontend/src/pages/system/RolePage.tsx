@@ -30,77 +30,121 @@ interface Permission {
   children?: Permission[];
 }
 
-// 功能权限树定义（按左侧菜单结构）
+// 功能权限树定义
 const functionalPermissions: Permission[] = [
   {
-    key: 'dashboard',
-    title: '工作台',
+    key: 'frontend-access',
+    title: '🌐 前端访问权限',
     children: [
-      { key: 'dashboard:view', title: '查看工作台' },
+      {
+        key: 'workspace',
+        title: '工作台',
+        children: [
+          { key: 'dashboard:view', title: '查看工作台' },
+        ],
+      },
+      {
+        key: 'hr-management',
+        title: '人事管理',
+        children: [
+          { key: 'hr:organizations', title: '组织管理' },
+          { key: 'hr:employees', title: '人员管理' },
+        ],
+      },
+      {
+        key: 'account-management',
+        title: '劳动力账户',
+        children: [
+          { key: 'account:view', title: '查看账户' },
+        ],
+      },
+      {
+        key: 'punch-management',
+        title: '打卡管理',
+        children: [
+          { key: 'punch:records', title: '打卡记录' },
+        ],
+      },
+      {
+        key: 'shift-management',
+        title: '排班管理',
+        children: [
+          { key: 'shift:schedules', title: '排班管理' },
+        ],
+      },
+      {
+        key: 'attendance-management',
+        title: '工时管理',
+        children: [
+          { key: 'attendance:workhour-details', title: '工时明细管理' },
+          { key: 'allocation:line-maintenance', title: '开线维护' },
+          { key: 'allocation:production-records', title: '产量记录' },
+          { key: 'allocation:config', title: '分摊规则' },
+          { key: 'allocation:calculate', title: '分摊计算' },
+          { key: 'allocation:results', title: '分摊结果查询' },
+        ],
+      },
+      {
+        key: 'calculate-management',
+        title: '计算管理',
+        children: [
+          { key: 'calculate:pairing-results', title: '摆卡结果' },
+          { key: 'calculate:work-hour-results', title: '工时结果' },
+        ],
+      },
     ],
   },
   {
-    key: 'hr',
-    title: '人事管理',
+    key: 'backend-config',
+    title: '⚙️ 后台配置权限',
     children: [
-      { key: 'hr:organizations', title: '组织管理' },
-      { key: 'hr:employees', title: '人员管理' },
-    ],
-  },
-  {
-    key: 'account',
-    title: '劳动力账户',
-    children: [
-      { key: 'account:view', title: '查看账户' },
-    ],
-  },
-  {
-    key: 'punch',
-    title: '打卡管理',
-    children: [
-      { key: 'punch:devices', title: '设备管理' },
-      { key: 'punch:records', title: '打卡记录' },
-      { key: 'punch:device-groups', title: '设备组管理' },
-    ],
-  },
-  {
-    key: 'shift',
-    title: '排班管理',
-    children: [
-      { key: 'shift:shifts', title: '班次管理' },
-      { key: 'shift:schedules', title: '排班管理' },
-    ],
-  },
-  {
-    key: 'calculate',
-    title: '计算管理',
-    children: [
-      { key: 'calculate:punch-rules', title: '打卡规则' },
-      { key: 'calculate:attendance-codes', title: '出勤代码' },
-      { key: 'calculate:pairing-results', title: '摆卡结果' },
-      { key: 'calculate:work-hour-results', title: '工时结果' },
-    ],
-  },
-  {
-    key: 'allocation',
-    title: '工时管理',
-    children: [
-      { key: 'allocation:config', title: '分摊规则' },
-      { key: 'allocation:calculate', title: '分摊计算' },
-      { key: 'allocation:results', title: '分摊结果查询' },
-      { key: 'allocation:line-maintenance', title: '开线维护' },
-      { key: 'allocation:product-config', title: '基础配置' },
-      { key: 'allocation:production-records', title: '产量记录' },
-      { key: 'allocation:workhour-details', title: '工时明细管理' },
-    ],
-  },
-  {
-    key: 'system',
-    title: '系统配置',
-    children: [
-      { key: 'system:users', title: '用户管理' },
-      { key: 'system:roles', title: '角色管理' },
-      { key: 'system:hr-config', title: '人事基础配置' },
+      {
+        key: 'hr-config',
+        title: '人事配置',
+        children: [
+          { key: 'hr:config', title: '人事基础配置' },
+          { key: 'hr:employee-info-config', title: '员工信息配置' },
+        ],
+      },
+      {
+        key: 'punch-config',
+        title: '打卡配置',
+        children: [
+          { key: 'punch:devices', title: '设备管理' },
+          { key: 'punch:device-groups', title: '设备组管理' },
+        ],
+      },
+      {
+        key: 'shift-config',
+        title: '排班配置',
+        children: [
+          { key: 'shift:shifts', title: '班次管理' },
+        ],
+      },
+      {
+        key: 'calculate-config',
+        title: '计算配置',
+        children: [
+          { key: 'calculate:punch-rules', title: '打卡规则' },
+          { key: 'calculate:attendance-codes', title: '出勤代码' },
+        ],
+      },
+      {
+        key: 'allocation-config',
+        title: '工时分摊配置',
+        children: [
+          { key: 'allocation:basic-config', title: '通用配置' },
+          { key: 'allocation:product-config', title: '产品配置' },
+        ],
+      },
+      {
+        key: 'system-config',
+        title: '用户与角色',
+        children: [
+          { key: 'system:users', title: '用户管理' },
+          { key: 'system:roles', title: '角色管理' },
+        ],
+      },
     ],
   },
 ];

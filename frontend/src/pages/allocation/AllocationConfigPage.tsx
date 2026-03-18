@@ -158,14 +158,15 @@ const AllocationConfigPage: React.FC = () => {
       sourceConfig: {
         filterGroups: [
           {
-            employeeFilter: { fieldGroups: [{ id: Date.now().toString(), conditions: [] }] },
+            id: 'default_group',
+            employeeFilter: { fieldGroups: [] },
             workHoursFilter: { hierarchySelections: [], attendanceCodes: [] },
           },
         ],
       },
       rules: [],
     });
-    console.log('handleCreate - 初始化表单值:', form.getFieldsValue());
+    console.log('handleCreate - 初始化表单值:', JSON.stringify(form.getFieldsValue(), null, 2));
     setIsModalVisible(true);
   };
 
@@ -179,11 +180,32 @@ const AllocationConfigPage: React.FC = () => {
       allocationScopeId: undefined,  // 删除后端使用的allocationScopeId字段
     }));
 
+    // 转换sourceConfig结构，从后端格式转换为前端表单格式
+    let transformedSourceConfig = null;
+    if (config.sourceConfig) {
+      transformedSourceConfig = {
+        filterGroups: [
+          {
+            employeeFilter: {
+              fieldGroups: config.sourceConfig.employeeFilter?.fieldGroups || []
+            },
+            workHoursFilter: {
+              hierarchySelections: config.sourceConfig.accountFilter?.hierarchySelections || [],
+              attendanceCodes: config.sourceConfig.attendanceCodes || []
+            }
+          }
+        ]
+      };
+    }
+
+    console.log('编辑配置 - 原始sourceConfig:', config.sourceConfig);
+    console.log('编辑配置 - 转换后sourceConfig:', transformedSourceConfig);
+
     form.setFieldsValue({
       configCode: config.configCode,
       configName: config.configName,
       description: config.description,
-      sourceConfig: config.sourceConfig,
+      sourceConfig: transformedSourceConfig,
       rules: transformedRules,  // 使用转换后的rules
     });
     setIsModalVisible(true);
@@ -268,16 +290,27 @@ const AllocationConfigPage: React.FC = () => {
       // 转换sourceConfig为后端期望的格式
       let transformedSourceConfig = null;
       if (values.sourceConfig && values.sourceConfig.filterGroups) {
+        console.log('原始sourceConfig:', JSON.stringify(values.sourceConfig, null, 2));
+
         // 合并所有filterGroups的条件
-        const allFieldGroups = values.sourceConfig.filterGroups.map((fg: any) => ({
-          id: fg.id || `group_${Date.now()}`,
-          fieldGroups: fg.employeeFilter?.fieldGroups || [],
-        }));
+        const allFieldGroups = values.sourceConfig.filterGroups
+          .map((fg: any) => {
+            const fieldGroups = fg.employeeFilter?.fieldGroups || [];
+            // 只保留有条件的fieldGroups
+            const validFieldGroups = fieldGroups.filter((group: any) =>
+              group.conditions && group.conditions.length > 0
+            );
+            return {
+              id: fg.id || `group_${Date.now()}`,
+              fieldGroups: validFieldGroups,
+            };
+          })
+          .filter((group: any) => group.fieldGroups.length > 0); // 只保留有效条件的组
 
         // 收集所有出勤代码
         const allAttendanceCodes: string[] = [];
         values.sourceConfig.filterGroups.forEach((fg: any) => {
-          if (fg.workHoursFilter?.attendanceCodes) {
+          if (fg.workHoursFilter?.attendanceCodes && fg.workHoursFilter.attendanceCodes.length > 0) {
             allAttendanceCodes.push(...fg.workHoursFilter.attendanceCodes);
           }
         });
@@ -285,15 +318,16 @@ const AllocationConfigPage: React.FC = () => {
         // 收集所有工时归属选择
         const allHierarchySelections: any[] = [];
         values.sourceConfig.filterGroups.forEach((fg: any) => {
-          if (fg.workHoursFilter?.hierarchySelections) {
+          if (fg.workHoursFilter?.hierarchySelections && fg.workHoursFilter.hierarchySelections.length > 0) {
             allHierarchySelections.push(...fg.workHoursFilter.hierarchySelections);
           }
         });
 
+        // 构建sourceConfig
         transformedSourceConfig = {
           sourceType: 'EMPLOYEE_HOURS',
           employeeFilter: {
-            fieldGroups: allFieldGroups,
+            fieldGroups: allFieldGroups.length > 0 ? allFieldGroups : [],
           },
           accountFilter: {
             hierarchySelections: allHierarchySelections,
@@ -303,6 +337,20 @@ const AllocationConfigPage: React.FC = () => {
         };
 
         console.log('转换后的sourceConfig:', JSON.stringify(transformedSourceConfig, null, 2));
+      } else {
+        // 如果没有sourceConfig，创建一个空的
+        transformedSourceConfig = {
+          sourceType: 'EMPLOYEE_HOURS',
+          employeeFilter: {
+            fieldGroups: [],
+          },
+          accountFilter: {
+            hierarchySelections: [],
+          },
+          attendanceCodes: [],
+          description: values.description || '',
+        };
+        console.log('创建空的sourceConfig:', JSON.stringify(transformedSourceConfig, null, 2));
       }
 
       // 获取当前用户信息以确定组织
@@ -310,11 +358,44 @@ const AllocationConfigPage: React.FC = () => {
       const user = userStr ? JSON.parse(userStr) : null;
 
       // 转换rules数组，将allocationScope改为allocationScopeId
-      const transformedRules = (values.rules || []).map((rule: any) => ({
-        ...rule,
-        allocationScopeId: rule.allocationScope || null,  // 将allocationScope映射为allocationScopeId
-        allocationScope: undefined,  // 删除前端使用的allocationScope字段
-      }));
+      const transformedRules = (values.rules || []).map((rule: any, index: number) => {
+        console.log(`处理规则 ${index}:`, JSON.stringify(rule, null, 2));
+
+        // 提取需要的字段
+        const {
+          ruleName,
+          ruleType,
+          allocationBasis,
+          allocationHierarchyLevels,
+          allocationScope,
+          basisFilter,
+          targets,
+          sortOrder,
+          status,
+          effectiveStartTime,
+          effectiveEndTime,
+          description,
+        } = rule;
+
+        const transformedRule = {
+          ruleName: ruleName || `分摊规则${index + 1}`,
+          ruleType: ruleType || 'PROPORTIONAL',
+          allocationBasis: allocationBasis || 'ACTUAL_HOURS',
+          allocationHierarchyLevels: allocationHierarchyLevels || [],
+          allocationScopeId: allocationScope || null,
+          basisFilter: basisFilter || {},
+          targets: [],  // 分摊目标通过分配归属(allocationHierarchyLevels)实现，这里固定为空数组
+          sortOrder: sortOrder !== undefined ? sortOrder : index,
+          status: status || 'ACTIVE',
+          effectiveStartTime: effectiveStartTime || null,
+          effectiveEndTime: effectiveEndTime || null,
+          description: description || '',
+        };
+
+        console.log(`转换后规则 ${index}:`, JSON.stringify(transformedRule, null, 2));
+
+        return transformedRule;
+      });
 
       const data = {
         configCode: values.configCode,
@@ -331,17 +412,39 @@ const AllocationConfigPage: React.FC = () => {
         createdByName: 'Admin',
       };
 
-      console.log('准备发送的数据:', JSON.stringify(data, null, 2));
+      console.log('========== 开始创建分摊规则 ==========');
+      console.log('表单所有值:', JSON.stringify(values, null, 2));
+      console.log('转换后的sourceConfig:', JSON.stringify(transformedSourceConfig, null, 2));
+      console.log('转换后的rules:', JSON.stringify(transformedRules, null, 2));
+      console.log('准备发送的完整数据:', JSON.stringify(data, null, 2));
+      console.log('========== 结束创建分摊规则 ==========');
 
       if (editingConfig) {
-        updateMutation.mutate({
-          id: editingConfig.id,
-          data: {
-            ...data,
+        // 如果是已启用的配置，只更新规则，不更新数据源
+        if (editingConfig.status === 'ACTIVE') {
+          const activeConfigUpdateData = {
+            rules: transformedRules,  // 只更新规则
             updatedById: 1,
             updatedByName: 'Admin',
-          },
-        });
+          };
+
+          console.log('更新已启用配置 - 只更新规则:', JSON.stringify(activeConfigUpdateData, null, 2));
+
+          updateMutation.mutate({
+            id: editingConfig.id,
+            data: activeConfigUpdateData,
+          });
+        } else {
+          // 草稿状态可以更新全部
+          updateMutation.mutate({
+            id: editingConfig.id,
+            data: {
+              ...data,
+              updatedById: 1,
+              updatedByName: 'Admin',
+            },
+          });
+        }
       } else {
         console.log('创建分摊规则 - 发送数据到 /allocation/configs');
         createMutation.mutate(data);
@@ -411,7 +514,7 @@ const AllocationConfigPage: React.FC = () => {
           >
             复制
           </Button>
-          {record.status === 'DRAFT' && (
+          {record.status === 'DRAFT' ? (
             <>
               <Button
                 type="link"
@@ -439,6 +542,17 @@ const AllocationConfigPage: React.FC = () => {
                 onClick={() => handleActivate(record)}
               >
                 启用
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+              >
+                编辑规则
               </Button>
             </>
           )}
@@ -495,7 +609,13 @@ const AllocationConfigPage: React.FC = () => {
 
       {/* 创建/编辑配置模态框 - 向导式 */}
       <Modal
-        title={editingConfig ? '编辑分摊配置' : '新建分摊配置'}
+        title={
+          editingConfig
+            ? editingConfig.status === 'ACTIVE'
+              ? `编辑分摊规则（${editingConfig.configName}）`
+              : '编辑分摊配置'
+            : '新建分摊配置'
+        }
         open={isModalVisible}
         onOk={handleSubmit}
         onCancel={() => {
@@ -622,9 +742,9 @@ const AllocationWizardForm: React.FC<AllocationWizardFormProps> = ({
   const renderStepContent = () => {
     switch (currentStep) {
       case 0:
-        return <StepOneDefineSource form={form} attendanceCodes={attendanceCodes} />;
+        return <StepOneDefineSource form={form} attendanceCodes={attendanceCodes} editingConfig={editingConfig} />;
       case 1:
-        return <StepTwoAllocationRules form={form} attendanceCodes={attendanceCodes} />;
+        return <StepTwoAllocationRules form={form} attendanceCodes={attendanceCodes} editingConfig={editingConfig} />;
       default:
         return null;
     }
@@ -666,9 +786,10 @@ const AllocationWizardForm: React.FC<AllocationWizardFormProps> = ({
 interface StepOneProps {
   form: any;
   attendanceCodes: any[];
+  editingConfig?: AllocationConfig | null;
 }
 
-const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) => {
+const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, editingConfig }) => {
   // 获取当前的条件组列表，确保至少有一个默认条件组
   const filterGroups = Form.useWatch(['sourceConfig', 'filterGroups'], form) || [
     {
@@ -722,8 +843,20 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
     form.setFieldValue(['sourceConfig', 'filterGroups'], newGroups);
   };
 
+  // 判断是否禁用数据源编辑（已启用的配置不可修改数据源）
+  const isDataSourceDisabled = editingConfig?.status === 'ACTIVE';
+
   return (
     <div>
+      {isDataSourceDisabled && (
+        <Alert
+          message="数据源已锁定"
+          description="该配置已启用，数据源配置不可修改。您可以编辑分摊规则或添加新规则。"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <Row gutter={16}>
         <Col span={12}>
           <Form.Item
@@ -731,7 +864,7 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
             name="configCode"
             rules={[{ required: true, message: '请输入规则代码' }]}
           >
-            <Input placeholder="如：ALLOC_001" disabled={!!form.getFieldValue('id')} />
+            <Input placeholder="如：ALLOC_001" disabled={!!form.getFieldValue('id') || isDataSourceDisabled} />
           </Form.Item>
         </Col>
         <Col span={12}>
@@ -740,7 +873,7 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
             name="configName"
             rules={[{ required: true, message: '请输入规则名称' }]}
           >
-            <Input placeholder="如：车间间接工时分摊" />
+            <Input placeholder="如：车间间接工时分摊" disabled={isDataSourceDisabled} />
           </Form.Item>
         </Col>
       </Row>
@@ -749,21 +882,21 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
         label="规则描述"
         name="description"
       >
-        <TextArea rows={2} placeholder="请描述规则的作用和适用范围" />
+        <TextArea rows={2} placeholder="请描述规则的作用和适用范围" disabled={isDataSourceDisabled} />
       </Form.Item>
 
       <Divider><span style={{ fontWeight: 500 }}>筛选条件</span></Divider>
 
       {/* 条件组列表 */}
       <Space direction="vertical" style={{ width: '100%' }} size="large">
-        {filterGroups.map((_: any, groupIndex: number) => (
+        {filterGroups.map((group: any, groupIndex: number) => (
           <Card
             key={groupIndex}
             size="small"
             title={<span>条件组 {groupIndex + 1}</span>}
             extra={
               <Space>
-                {filterGroups.length > 1 && (
+                {!isDataSourceDisabled && filterGroups.length > 1 && (
                   <Popconfirm
                     title="确认删除"
                     description="确定要删除这组条件吗？"
@@ -779,9 +912,15 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
                 {groupIndex < filterGroups.length - 1 && (
                   <Tag color="orange">OR</Tag>
                 )}
+                {isDataSourceDisabled && (
+                  <Tag color="blue" icon={<EditOutlined />}>已锁定</Tag>
+                )}
               </Space>
             }
-            style={{ background: '#fafafa', border: '1px solid #f0f0f0' }}
+            style={{
+              background: isDataSourceDisabled ? '#f5f5f5' : '#fafafa',
+              border: '1px solid #f0f0f0'
+            }}
           >
             {/* 人员筛选区域 */}
             <div style={{ marginBottom: 16 }}>
@@ -807,7 +946,7 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
                 name={['sourceConfig', 'filterGroups', groupIndex, 'employeeFilter', 'fieldGroups']}
                 style={{ marginBottom: 0 }}
               >
-                <EmployeeFieldFilter />
+                <EmployeeFieldFilter disabled={isDataSourceDisabled} />
               </Form.Item>
             </div>
 
@@ -836,21 +975,23 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
                 name={['sourceConfig', 'filterGroups', groupIndex, 'workHoursFilter']}
                 style={{ marginBottom: 0 }}
               >
-                <WorkHoursFilter attendanceCodes={attendanceCodes} />
+                <WorkHoursFilter attendanceCodes={attendanceCodes} disabled={isDataSourceDisabled} />
               </Form.Item>
             </div>
           </Card>
         ))}
 
         {/* 添加条件组按钮 */}
-        <Button
-          type="dashed"
-          onClick={addFilterGroup}
-          icon={<PlusOutlined />}
-          block
-        >
-          添加条件组（OR关系）
-        </Button>
+        {!isDataSourceDisabled && (
+          <Button
+            type="dashed"
+            onClick={addFilterGroup}
+            icon={<PlusOutlined />}
+            block
+          >
+            添加条件组（OR关系）
+          </Button>
+        )}
       </Space>
     </div>
   );
@@ -860,9 +1001,10 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes }) 
 interface StepTwoProps {
   form: any;
   attendanceCodes: any[];
+  editingConfig?: AllocationConfig | null;
 }
 
-const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes }) => {
+const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes, editingConfig }) => {
   const [rules, setRules] = useState<any[]>([]);
 
   // 获取层级配置列表（用于分配归属）

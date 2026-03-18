@@ -30,6 +30,7 @@ const AttendanceCodePage = lazy(() => import('@/pages/calculate/AttendanceCodePa
 const WorkHourDetailPage = lazy(() => import('@/pages/attendance/WorkHourDetailPage'));
 const AllocationPage = lazy(() => import('@/pages/allocation/AllocationPage'));
 const AllocationConfigPage = lazy(() => import('@/pages/allocation/AllocationConfigPage'));
+const AllocationBasicConfigPage = lazy(() => import('@/pages/allocation/AllocationBasicConfigPage'));
 const AllocationCalculatePage = lazy(() => import('@/pages/allocation/AllocationCalculatePage'));
 const AllocationResultPage = lazy(() => import('@/pages/allocation/AllocationResultPage'));
 const LineMaintenancePage = lazy(() => import('@/pages/allocation/LineMaintenancePage'));
@@ -38,6 +39,7 @@ const ProductionRecordPage = lazy(() => import('@/pages/allocation/ProductionRec
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const SystemPage = lazy(() => import('@/pages/system/SystemPage'));
 const RoleManagementPage = lazy(() => import('@/pages/system/RoleManagementPage'));
+const SettingsManagementPage = lazy(() => import('@/pages/system/SettingsManagementPage'));
 
 // Loading component
 const PageLoader = () => (
@@ -287,6 +289,22 @@ const router = createBrowserRouter([
             ),
           },
           {
+            path: 'product-config',
+            element: (
+              <SuspenseWrapper>
+                <ProductConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'basic-config',
+            element: (
+              <SuspenseWrapper>
+                <AllocationBasicConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
             path: 'calculate',
             element: (
               <SuspenseWrapper>
@@ -331,7 +349,15 @@ const router = createBrowserRouter([
       {
         path: 'system',
         children: [
-          { index: true, element: <Navigate to="/system/users" replace /> },
+          { index: true, element: <Navigate to="/system/settings" replace /> },
+          {
+            path: 'settings',
+            element: (
+              <SuspenseWrapper>
+                <SettingsManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
           {
             path: 'users',
             element: (

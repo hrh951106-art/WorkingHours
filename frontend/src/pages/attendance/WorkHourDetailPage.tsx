@@ -68,7 +68,7 @@ const WorkHourDetailPage: React.FC = () => {
       children: (
         <PunchResultsTab
           selectedDateRange={selectedDateRange}
-          dynamicFilters={dynamicFilters}
+          selectedEmployee={dynamicFilters.employeeNo}
           onRefresh={() => queryClient.invalidateQueries({ queryKey: ['punchPairs'] })}
         />
       ),
@@ -84,7 +84,7 @@ const WorkHourDetailPage: React.FC = () => {
       children: (
         <WorkHourResultsTab
           selectedDateRange={selectedDateRange}
-          dynamicFilters={dynamicFilters}
+          selectedEmployee={dynamicFilters.employeeNo}
         />
       ),
     },

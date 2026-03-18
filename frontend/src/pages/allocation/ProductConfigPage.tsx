@@ -22,7 +22,7 @@ import request from '@/utils/request';
 
 const { TextArea } = Input;
 
-// ============ 产品配置组件 ============
+// ============ 产品配置页面 ============
 interface Product {
   id?: number;
   code: string;
@@ -33,7 +33,7 @@ interface Product {
   status: 'ACTIVE' | 'INACTIVE';
 }
 
-const ProductConfigTab: React.FC = () => {
+const ProductConfigPage: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [form] = Form.useForm();
@@ -402,147 +402,6 @@ const ProductConfigTab: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
-  );
-};
-
-// ============ 通用配置组件 ============
-const GeneralConfigTab: React.FC = () => {
-  const [form] = Form.useForm();
-  const queryClient = useQueryClient();
-
-  // 获取通用配置
-  const { data: config, isLoading } = useQuery({
-    queryKey: ['allocationGeneralConfig'],
-    queryFn: () =>
-      request.get('/allocation/general-config').then((res: any) => res || {}),
-  });
-
-  // 获取出勤代码列表
-  const { data: attendanceCodes } = useQuery({
-    queryKey: ['attendanceCodesForConfig'],
-    queryFn: () =>
-      request.get('/allocation/attendance-codes').then((res: any) => res || []),
-  });
-
-  // 更新配置
-  const updateMutation = useMutation({
-    mutationFn: (data: any) =>
-      request.put('/allocation/general-config', data),
-    onSuccess: () => {
-      message.success('保存成功');
-      queryClient.invalidateQueries({ queryKey: ['allocationGeneralConfig'] });
-    },
-    onError: (error: any) => {
-      message.error(error.response?.data?.message || '保存失败');
-    },
-  });
-
-  // 当配置加载完成后设置表单值
-  if (config && !form.isFieldsTouched()) {
-    form.setFieldsValue(config);
-  }
-
-  const handleSubmit = async () => {
-    try {
-      const values = await form.validateFields();
-      updateMutation.mutate(values);
-    } catch (error) {
-      console.error('表单验证失败:', error);
-    }
-  };
-
-  return (
-    <div>
-      <Card
-        title="通用配置"
-        extra={
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            onClick={handleSubmit}
-            loading={updateMutation.isPending}
-          >
-            保存配置
-          </Button>
-        }
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{
-            actualHoursAllocationCode: null,
-            indirectHoursAllocationCode: null,
-          }}
-        >
-          <Row gutter={24}>
-            <Col span={12}>
-              <Form.Item
-                label="按实际工时方式分配的工时代码"
-                name="actualHoursAllocationCode"
-                tooltip="用于标识按实际工时比例分配间接工时后生成的工时记录"
-                rules={[{ required: true, message: '请选择工时代码' }]}
-              >
-                <Select
-                  placeholder="请选择工时代码"
-                  loading={isLoading}
-                  showSearch
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={attendanceCodes?.map((code: any) => ({
-                    label: `${code.name} (${code.code})`,
-                    value: code.code,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="间接工时分配后的工时代码"
-                name="indirectHoursAllocationCode"
-                tooltip="用于标识间接工时分配完成后生成的工时记录代码"
-                rules={[{ required: true, message: '请选择工时代码' }]}
-              >
-                <Select
-                  placeholder="请选择工时代码"
-                  loading={isLoading}
-                  showSearch
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={attendanceCodes?.map((code: any) => ({
-                    label: `${code.name} (${code.code})`,
-                    value: code.code,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Card>
-    </div>
-  );
-};
-
-// ============ 主页面组件 ============
-const ProductConfigPage: React.FC = () => {
-  const tabItems = [
-    {
-      key: 'product',
-      label: '产品配置',
-      children: <ProductConfigTab />,
-    },
-    {
-      key: 'general',
-      label: '通用配置',
-      children: <GeneralConfigTab />,
-    },
-  ];
-
-  return (
-    <div>
-      <Tabs items={tabItems} />
     </div>
   );
 };

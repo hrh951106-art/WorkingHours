@@ -3,56 +3,139 @@
 > vite
 
 
-  VITE v5.4.21  ready in 323 ms
+  VITE v5.4.21  ready in 447 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
-12:40:56 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:42:08 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:43:53 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:45:09 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:45:17 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:45:26 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:45:29 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:45:37 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:47:01 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:47:04 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:47:06 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:47:15 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:52:08 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:52:26 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-12:52:31 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:00:04 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:00:36 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:00:41 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:05:04 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:05:44 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:05:46 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:14:26 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:14:32 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:14:37 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:14:48 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:14:52 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:14:59 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:17:45 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:17:52 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:18:11 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:22:19 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:22:31 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:26:33 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
-13:29:47 [vite] hmr update /src/pages/DashboardPage.tsx, /src/index.css
-13:30:20 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
-13:31:33 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
-13:31:40 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
-13:31:48 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
-13:39:37 [vite] hmr update /src/pages/DashboardPage.tsx, /src/index.css
-13:40:35 [vite] hmr update /src/pages/hr/OrganizationPage.tsx, /src/index.css
-13:42:32 [vite] hmr update /src/index.css, /src/pages/auth/LoginPage.tsx, /src/pages/DashboardPage.tsx, /src/pages/hr/OrganizationPage.tsx, /src/pages/hr/EmployeeListPage.tsx, /src/components/common/DynamicSearchConditions.tsx, /src/components/common/OrganizationTreeSelect.tsx, /src/pages/system/RolePage.tsx, /src/pages/hr/ConfigPage.tsx, /src/pages/hr/components/GeneralConfig.tsx, /src/pages/hr/components/SearchConditionsConfig.tsx, /src/pages/punch/DeviceManagementPage.tsx, /src/components/common/AccountSelect.tsx, /src/pages/punch/PunchRecordPage.tsx, /src/pages/punch/DeviceGroupPage.tsx, /src/pages/allocation/LineMaintenancePage.tsx, /src/pages/shift/ShiftPage.tsx, /src/pages/shift/SchedulePage.tsx, /src/pages/account/AccountPage.tsx
-13:42:38 [vite] changed tsconfig file detected: /Users/aaron.he/Desktop/AI/JY/frontend/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
-13:44:22 [vite] vite.config.ts changed, restarting server...
-13:44:22 [vite] server restarted.
-13:51:13 [vite] hmr update /src/pages/auth/LoginPage.tsx, /src/index.css
-13:52:42 [vite] .env changed, restarting server...
-13:52:42 [vite] server restarted.
-13:56:21 [vite] vite.config.ts changed, restarting server...
-13:56:21 [vite] server restarted.
+15:54:38 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+15:55:45 [vite] hmr update /src/pages/DashboardPage.tsx, /src/index.css
+15:56:34 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:08:08 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:08:31 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:12:52 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:13:04 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:13:28 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:13:28 [vite] Pre-transform error: /Users/aaron.he/Desktop/AI/JY/frontend/src/components/layout/MultipleTabs.tsx: Unterminated string constant. (47:13)
+
+  45 |     >
+  46 |       <Tabs
+> 47 |         type="editable-card'
+     |              ^
+  48 |         activeKey={activeKey}
+  49 |         onChange={handleTabChange}
+  50 |         onEdit={handleTabEdit}
+16:13:28 [vite] Internal server error: /Users/aaron.he/Desktop/AI/JY/frontend/src/components/layout/MultipleTabs.tsx: Unterminated string constant. (47:13)
+
+  45 |     >
+  46 |       <Tabs
+> 47 |         type="editable-card'
+     |              ^
+  48 |         activeKey={activeKey}
+  49 |         onChange={handleTabChange}
+  50 |         onEdit={handleTabEdit}
+  Plugin: vite:react-babel
+  File: /Users/aaron.he/Desktop/AI/JY/frontend/src/components/layout/MultipleTabs.tsx:47:13
+  45 |      >
+  46 |        <Tabs
+  47 |          type="editable-card'
+     |               ^
+  48 |          activeKey={activeKey}
+  49 |          onChange={handleTabChange}
+      at constructor (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.jsxReadString (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4503:20)
+      at TypeScriptParserMixin.getTokenFromCode (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4788:14)
+      at TypeScriptParserMixin.getTokenFromCode (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9987:11)
+      at TypeScriptParserMixin.nextToken (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:5782:10)
+      at TypeScriptParserMixin.next (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:5692:10)
+      at TypeScriptParserMixin.eat (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:5696:12)
+      at TypeScriptParserMixin.jsxParseAttribute (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4653:23)
+      at TypeScriptParserMixin.jsxParseOpeningElementAfterName (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4667:28)
+      at TypeScriptParserMixin.jsxParseOpeningElementAfterName (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10043:18)
+      at TypeScriptParserMixin.jsxParseOpeningElementAt (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4662:17)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4686:33)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElement (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at /Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9775:39
+      at TypeScriptParserMixin.tryParse (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9775:18)
+      at /Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11675:28)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10784:23)
+      at /Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:10780:17)
+      at TypeScriptParserMixin.parseReturnStatement (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:13142:28)
+      at TypeScriptParserMixin.parseStatementContent (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:12798:21)
+      at TypeScriptParserMixin.parseStatementContent (/Users/aaron.he/Desktop/AI/JY/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+16:14:17 [vite] hmr update /src/index.css, /src/components/layout/MainLayout.tsx
+16:25:41 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:26:59 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:27:14 [vite] hmr update /src/components/layout/MultipleTabs.tsx, /src/index.css
+16:31:26 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:31:33 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:31:45 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:32:11 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:39:55 [vite] hmr update /src/router/index.tsx, /src/index.css
+16:39:55 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+16:39:55 [vite] page reload src/router/index.tsx
+16:40:53 [vite] hmr update /src/router/index.tsx, /src/index.css
+16:40:54 [vite] hmr invalidate /src/router/index.tsx Could not Fast Refresh ("default" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+16:40:54 [vite] page reload src/router/index.tsx
+16:41:10 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:41:43 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:41:56 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:42:20 [vite] hmr update /src/components/layout/MainLayout.tsx, /src/index.css
+16:51:43 [vite] hmr update /src/components/layout/MultipleTabs.tsx, /src/index.css
+16:51:51 [vite] hmr update /src/components/layout/MultipleTabs.tsx, /src/index.css
+16:52:09 [vite] hmr update /src/index.css, /src/components/layout/MainLayout.tsx, /src/components/layout/MultipleTabs.tsx, /src/pages/system/SettingsManagementPage.tsx
+16:52:28 [vite] hmr update /src/index.css, /src/components/layout/MainLayout.tsx, /src/components/layout/MultipleTabs.tsx, /src/pages/system/SettingsManagementPage.tsx
+16:53:03 [vite] hmr update /src/components/layout/MultipleTabs.tsx, /src/index.css
+16:57:08 [vite] hmr update /src/pages/system/SystemPage.tsx, /src/index.css
+16:57:12 [vite] hmr update /src/pages/system/RoleManagementPage.tsx, /src/index.css
+16:57:36 [vite] hmr update /src/pages/hr/EmployeeListPage.tsx, /src/index.css
+16:58:03 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css
+16:58:33 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+17:03:53 [vite] hmr update /src/pages/system/RolePage.tsx, /src/index.css
+17:04:09 [vite] hmr update /src/pages/allocation/AllocationBasicConfigPage.tsx, /src/index.css
+17:04:22 [vite] hmr update /src/pages/allocation/AllocationBasicConfigPage.tsx, /src/index.css
+17:04:53 [vite] hmr update /src/pages/allocation/AllocationBasicConfigPage.tsx, /src/index.css
+17:04:58 [vite] hmr update /src/pages/allocation/AllocationBasicConfigPage.tsx, /src/index.css
+17:05:10 [vite] hmr update /src/pages/allocation/AllocationBasicConfigPage.tsx, /src/index.css
+17:05:41 [vite] hmr update /src/pages/allocation/ProductConfigPage.tsx, /src/index.css
+17:05:57 [vite] hmr update /src/pages/allocation/ProductConfigPage.tsx, /src/index.css
+17:06:12 [vite] hmr update /src/pages/system/SettingsManagementPage.tsx, /src/index.css
+17:06:19 [vite] hmr update /src/pages/system/SettingsManagementPage.tsx, /src/index.css
+17:14:38 [vite] hmr update /src/index.css, /src/pages/shift/SchedulePage.tsx
+17:15:25 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css
+17:15:37 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css
+17:15:45 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css
+17:17:15 [vite] hmr update /src/pages/system/SettingsManagementPage.tsx, /src/index.css
+17:17:23 [vite] hmr update /src/pages/system/SettingsManagementPage.tsx, /src/index.css
+17:17:30 [vite] hmr update /src/pages/hr/ConfigPage.tsx, /src/index.css
+17:20:39 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css
+17:21:01 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css
+17:21:22 [vite] hmr update /src/pages/shift/SchedulePage.tsx, /src/index.css

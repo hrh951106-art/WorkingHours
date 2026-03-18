@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, Tabs, Button, Modal, Form, Input, Table, message, Space, Select, InputNumber, Row, Col, Tag, Popconfirm, Switch, Transfer } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,14 @@ import SearchConditionsConfig from './components/SearchConditionsConfig';
 import GeneralConfig from './components/GeneralConfig';
 
 const ConfigPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('datasources');
+  // 从 sessionStorage 读取要激活的页签
+  const getInitialTab = () => {
+    const savedTab = sessionStorage.getItem('hr-config-active-tab');
+    sessionStorage.removeItem('hr-config-active-tab'); // 清除已读取的值
+    return savedTab || 'datasources';
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab());
   const [dataSourceModalOpen, setDataSourceModalOpen] = useState(false);
   const [optionModalOpen, setOptionModalOpen] = useState(false);
   const [customFieldModalOpen, setCustomFieldModalOpen] = useState(false);

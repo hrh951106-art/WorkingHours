@@ -15,6 +15,8 @@ import {
   Typography,
   Alert,
   Empty,
+  Select,
+  TimePicker,
 } from 'antd';
 import {
   EditOutlined,
@@ -22,10 +24,12 @@ import {
   WarningOutlined,
   CheckCircleOutlined,
   InfoCircleOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import request from '@/utils/request';
 import dayjs from 'dayjs';
+import AccountSelect from '@/components/common/AccountSelect';
 
 const { Text } = Typography;
 
@@ -42,9 +46,12 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
 }) => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [overlapDetailModalOpen, setOverlapDetailModalOpen] = useState(false);
+  const [addPunchModalOpen, setAddPunchModalOpen] = useState(false);
   const [currentRecord, setCurrentRecord] = useState<any>(null);
   const [overlapRecords, setOverlapRecords] = useState<any[]>([]);
+  const [modifiedRecordIds, setModifiedRecordIds] = useState<Set<number>>(new Set());
   const [form] = Form.useForm();
+  const [addPunchForm] = Form.useForm();
 
   const { data: punchPairs, isLoading, refetch } = useQuery({
     queryKey: ['punchPairs', selectedDateRange.start.format('YYYY-MM-DD'), selectedDateRange.end.format('YYYY-MM-DD'), selectedEmployee],
@@ -59,14 +66,42 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
       }).then((res: any) => res.items || []),
   });
 
+  // 获取员工列表
+  const { data: employees } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => request.get('/hr/employees').then((res: any) => res.items || []),
+  });
+
+  // 获取班次列表
+  const { data: shifts } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: () => request.get('/shift/shifts').then((res: any) => res.items || []),
+  });
+
   const updateMutation = useMutation({
     mutationFn: (data: any) => request.put(`/punch/pairs/${data.id}`, data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       message.success('修改成功');
+      // 标记为已修改
+      setModifiedRecordIds(prev => new Set(prev).add(variables.id));
       setEditModalOpen(false);
       setOverlapDetailModalOpen(false);
       refetch();
       onRefresh?.();
+    },
+  });
+
+  const createPunchMutation = useMutation({
+    mutationFn: (data: any) => request.post('/punch/pairs', data),
+    onSuccess: () => {
+      message.success('新增打卡成功');
+      setAddPunchModalOpen(false);
+      addPunchForm.resetFields();
+      refetch();
+      onRefresh?.();
+    },
+    onError: (error: any) => {
+      message.error(error?.response?.data?.message || '新增打卡失败');
     },
   });
 
@@ -217,6 +252,53 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
     }
   };
 
+  const handleAddPunch = () => {
+    setAddPunchModalOpen(true);
+  };
+
+  const handleSaveAddPunch = async () => {
+    try {
+      const values = await addPunchForm.validateFields();
+
+      // 构建日期和时间
+      const punchDate = values.punchDate;
+      const startTime = values.startTime;
+      const endTime = values.endTime;
+
+      const inPunchTime = dayjs(punchDate)
+        .hour(startTime.hour())
+        .minute(startTime.minute())
+        .second(0)
+        .format('YYYY-MM-DD HH:mm:ss');
+
+      const outPunchTime = dayjs(punchDate)
+        .hour(endTime.hour())
+        .minute(endTime.minute())
+        .second(0)
+        .format('YYYY-MM-DD HH:mm:ss');
+
+      // 计算工时
+      const workHours = dayjs(outPunchTime).diff(dayjs(inPunchTime), 'hour', true);
+
+      createPunchMutation.mutate({
+        employeeNo: values.employeeNo,
+        pairDate: punchDate.format('YYYY-MM-DD'),
+        accountId: values.accountId,
+        inPunchTime,
+        outPunchTime,
+        workHours,
+        reason: values.reason || '',
+      });
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  // 检查记录是否被修改过
+  const isRecordModified = (recordId: number) => {
+    return modifiedRecordIds.has(recordId);
+  };
+
   // 处理点击交叉标记
   const handleOverlapClick = (record: any, allRecords: any[]) => {
     // 找出所有与该记录有交叉的记录，并计算交叉时间段
@@ -294,8 +376,31 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
         .overlap-current-row:hover td {
           background-color: #bae7ff !important;
         }
+        .modified-punch-row {
+          background-color: #fff7ed !important;
+        }
+        .modified-punch-row:hover td {
+          background-color: #ffedd5 !important;
+        }
       `}</style>
       <div style={{ padding: '24px' }}>
+        {/* 新增打卡按钮 */}
+        <div style={{ marginBottom: 16 }}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleAddPunch}
+            size="large"
+            style={{
+              borderRadius: 8,
+              height: 40,
+              fontWeight: 600,
+              boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+            }}
+          >
+            新增打卡
+          </Button>
+        </div>
       <Collapse
         defaultActiveKey={[]}
         ghost
@@ -341,6 +446,7 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
                   rowKey="id"
                   pagination={false}
                   size="middle"
+                  rowClassName={(record) => isRecordModified(record.id) ? 'modified-punch-row' : ''}
                   columns={[
                     {
                       title: '序号',
@@ -426,6 +532,14 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
                       width: 100,
                       render: (_: any, record: any) => {
                         const isComplete = record.inPunchTime && record.outPunchTime;
+                        const isModified = isRecordModified(record.id);
+                        if (isModified) {
+                          return (
+                            <Tag color="orange" icon={<WarningOutlined />}>
+                              已修改
+                            </Tag>
+                          );
+                        }
                         return isComplete ? (
                           <Tag color="success" icon={<CheckCircleOutlined />}>
                             完整
@@ -495,6 +609,104 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
               showTime
               format="YYYY-MM-DD HH:mm:ss"
               style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 新增打卡对话框 */}
+      <Modal
+        title="新增打卡记录"
+        open={addPunchModalOpen}
+        onOk={handleSaveAddPunch}
+        onCancel={() => {
+          setAddPunchModalOpen(false);
+          addPunchForm.resetFields();
+        }}
+        confirmLoading={createPunchMutation.isPending}
+        width={600}
+      >
+        <Form form={addPunchForm} layout="vertical" style={{ marginTop: 24 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="employeeNo"
+                label="员工"
+                rules={[{ required: true, message: '请选择员工' }]}
+              >
+                <Select
+                  placeholder="请选择员工"
+                  showSearch
+                  optionFilterProp="label"
+                  options={employees?.map((emp: any) => ({
+                    label: `${emp.name} (${emp.employeeNo})`,
+                    value: emp.employeeNo,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="punchDate"
+                label="打卡日期"
+                rules={[{ required: true, message: '请选择打卡日期' }]}
+              >
+                <DatePicker
+                  style={{ width: '100%' }}
+                  format="YYYY-MM-DD"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            name="accountId"
+            label="劳动力账户"
+            rules={[{ required: true, message: '请选择劳动力账户' }]}
+          >
+            <AccountSelect
+              placeholder="请选择劳动力账户"
+              usageType="PUNCH"
+            />
+          </Form.Item>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="startTime"
+                label="开始时间"
+                rules={[{ required: true, message: '请选择开始时间' }]}
+              >
+                <TimePicker
+                  style={{ width: '100%' }}
+                  format="HH:mm"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="endTime"
+                label="结束时间"
+                rules={[{ required: true, message: '请选择结束时间' }]}
+              >
+                <TimePicker
+                  style={{ width: '100%' }}
+                  format="HH:mm"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            name="reason"
+            label="原因"
+            rules={[{ required: true, message: '请输入原因' }]}
+          >
+            <Input.TextArea
+              placeholder="请输入新增打卡的原因"
+              rows={3}
+              maxLength={200}
+              showCount
             />
           </Form.Item>
         </Form>

@@ -182,26 +182,6 @@ const EmployeeListPage: React.FC = () => {
           新增人员
         </Button>
       }
-      stats={[
-        {
-          title: '员工总数',
-          value: allEmployees?.total || 0,
-          prefix: <TeamOutlined style={{ color: '#6366f1' }} />,
-          color: '#6366f1',
-        },
-        {
-          title: '在职员工',
-          value: data?.items?.filter((e: any) => e.status === 'ACTIVE').length || 0,
-          prefix: <CheckCircleOutlined style={{ color: '#10b981' }} />,
-          color: '#10b981',
-        },
-        {
-          title: '离职员工',
-          value: data?.items?.filter((e: any) => e.status === 'RESIGNED').length || 0,
-          prefix: <UserOutlined style={{ color: '#ef4444' }} />,
-          color: '#ef4444',
-        },
-      ]}
     >
       <Card
         style={{
