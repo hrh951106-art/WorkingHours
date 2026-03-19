@@ -93,7 +93,24 @@ export class ShiftService {
         });
       }
 
-      return this.getShift(shift.id);
+      // 在事务内查询，使用 tx 而不是 this.prisma
+      const createdShift = await tx.shift.findUnique({
+        where: { id: shift.id },
+        include: {
+          segments: {
+            include: {
+              account: true,
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+
+      if (!createdShift) {
+        throw new NotFoundException('班次创建失败');
+      }
+
+      return createdShift;
     });
   }
 

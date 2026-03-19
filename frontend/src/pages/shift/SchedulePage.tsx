@@ -52,6 +52,7 @@ interface ScheduleItem {
   adjustedStart?: string;
   adjustedEnd?: string;
   status: string;
+  isPending?: boolean; // 标记为未保存状态
   segments?: ScheduleSegmentItem[];
 }
 
@@ -244,6 +245,20 @@ const SchedulePage: React.FC = () => {
           const empInMap = employeeMap.get(empId);
 
           if (empInMap) {
+            // 处理班段覆盖信息（与后端API逻辑一致）
+            let segments = item.segments || [];
+            if (item.adjustedSegments) {
+              try {
+                const overrides = JSON.parse(item.adjustedSegments);
+                segments = segments.map((seg: any) => {
+                  const override = overrides.find((o: any) => o.id === seg.id);
+                  return override ? { ...seg, ...override } : seg;
+                });
+              } catch (e) {
+                console.error('Failed to parse adjustedSegments:', e);
+              }
+            }
+
             empInMap.schedules.push({
               id: item.id,
               scheduleDate: item.scheduleDate,
@@ -253,7 +268,8 @@ const SchedulePage: React.FC = () => {
               adjustedStart: item.adjustedStart,
               adjustedEnd: item.adjustedEnd,
               status: item.status,
-              segments: item.segments || [], // 包含班段信息（已合并覆盖数据）
+              isPending: item.isPending || false, // 从API返回的数据不包含isPending
+              segments: segments, // 包含班段信息（已合并覆盖数据）
             });
           }
         }
@@ -480,6 +496,20 @@ const SchedulePage: React.FC = () => {
                   已调整
                 </Tag>
               )}
+              {schedule.isPending && (
+                <Tag
+                  color="orange"
+                  style={{
+                    margin: '4px 0 0 0',
+                    fontSize: '10px',
+                    padding: '0 6px',
+                    borderRadius: '3px',
+                    lineHeight: '18px',
+                  }}
+                >
+                  未保存
+                </Tag>
+              )}
             </div>
           );
         },
@@ -536,6 +566,10 @@ const SchedulePage: React.FC = () => {
     let tempId = -1;
     selectedEmployeeKeys.forEach((empId) => {
       selectedDates.forEach((dateStr) => {
+        // 从 allEmployees 中查找完整的员工信息
+        const employee = (Array.isArray(allEmployees) ? allEmployees : (allEmployees?.items || []))
+          .find((e: any) => Number(e.id) === empId);
+
         const newSchedule = {
           id: tempId--, // 临时负数ID
           employeeId: empId,
@@ -544,13 +578,25 @@ const SchedulePage: React.FC = () => {
           shiftName: shift?.name || '',
           shiftColor: shift?.color || '#1890ff',
           status: 'PENDING', // 标记为待保存状态
+          isPending: true, // 标记为未保存状态
+          employee: employee ? {
+            id: employee.id,
+            employeeNo: employee.employeeNo,
+            name: employee.name,
+            org: employee.org,
+          } : undefined,
+          shift: shift ? {
+            id: shift.id,
+            name: shift.name,
+            color: shift.color,
+          } : undefined,
         };
         schedules.push(newSchedule);
       });
     });
 
-    // 添加到待保存列表（不包含临时ID）
-    const schedulesToSave = schedules.map(({ id, ...rest }) => rest);
+    // 添加到待保存列表（不包含临时ID和额外字段）
+    const schedulesToSave = schedules.map(({ id, isPending, employee, shift, ...rest }) => rest);
     setPendingChanges(prev => ({
       ...prev,
       creates: [...prev.creates, ...schedulesToSave],
@@ -562,48 +608,11 @@ const SchedulePage: React.FC = () => {
       (oldData: any) => {
         if (!oldData) return oldData;
 
-        return oldData.map((emp: any) => {
-          // 如果该员工在选中列表中
-          if (selectedEmployeeKeys.includes(emp.id)) {
-            // 为该员工添加新的排班
-            const newSchedules = schedules
-              .filter(s => s.employeeId === emp.id)
-              .map(s => ({
-                ...s,
-                // 重新生成临时ID，避免冲突
-                id: Date.now() + Math.random(),
-              }));
-
-            return {
-              ...emp,
-              schedules: [...emp.schedules, ...newSchedules],
-            };
-          }
-          return emp;
-        });
+        // 将原有数据和新数据合并
+        const existingData = Array.isArray(oldData) ? oldData : [];
+        return [...existingData, ...schedules];
       }
     );
-
-    message.success({
-      content: (
-        <Space>
-          <CheckCircleOutlined style={{ color: '#10b981', fontSize: 16 }} />
-          <span>
-            已为 {selectedEmployeeKeys.length} 位员工添加 {selectedDates.length} 天的
-            <Tag color={shift?.color} style={{ margin: '0 4px', borderRadius: 4 }}>
-              {shift?.name}
-            </Tag>
-            班次，请点击保存按钮提交
-          </span>
-        </Space>
-      ),
-      duration: 3,
-      style: {
-        marginTop: '20vh',
-        borderRadius: 12,
-        padding: '12px 20px',
-      },
-    });
 
     setBatchScheduleModalOpen(false);
     batchForm.resetFields();
@@ -625,9 +634,14 @@ const SchedulePage: React.FC = () => {
         });
 
         if (sourceSchedule) {
+          // 从 allEmployees 中查找完整的员工信息
+          const employee = (Array.isArray(allEmployees) ? allEmployees : (allEmployees?.items || []))
+            .find((e: any) => Number(e.id) === empId);
+
+          const shift = shifts?.find((s: any) => s.id === sourceSchedule.shiftId);
+
           // 复制到目标日期
           targetDates.forEach((dateStr: string) => {
-            const shift = shifts?.find((s: any) => s.id === sourceSchedule.shiftId);
             schedules.push({
               id: Date.now() + Math.random(), // 临时ID
               employeeId: empId,
@@ -636,6 +650,18 @@ const SchedulePage: React.FC = () => {
               shiftName: shift?.name || '',
               shiftColor: shift?.color || '#1890ff',
               status: 'PENDING', // 标记为待保存状态
+              isPending: true, // 标记为未保存状态
+              employee: employee ? {
+                id: employee.id,
+                employeeNo: employee.employeeNo,
+                name: employee.name,
+                org: employee.org,
+              } : undefined,
+              shift: shift ? {
+                id: shift.id,
+                name: shift.name,
+                color: shift.color,
+              } : undefined,
             });
           });
         }
@@ -647,8 +673,8 @@ const SchedulePage: React.FC = () => {
       return;
     }
 
-    // 添加到待保存列表（不包含临时ID）
-    const schedulesToSave = schedules.map(({ id, ...rest }) => rest);
+    // 添加到待保存列表（不包含临时ID和额外字段）
+    const schedulesToSave = schedules.map(({ id, isPending, employee, shift, ...rest }) => rest);
     setPendingChanges(prev => ({
       ...prev,
       creates: [...prev.creates, ...schedulesToSave],
@@ -660,22 +686,12 @@ const SchedulePage: React.FC = () => {
       (oldData: any) => {
         if (!oldData) return oldData;
 
-        return oldData.map((emp: any) => {
-          // 如果该员工在选中列表中
-          if (selectedEmployeeKeys.includes(emp.id)) {
-            // 为该员工添加新的排班
-            const newSchedules = schedules.filter(s => s.employeeId === emp.id);
-            return {
-              ...emp,
-              schedules: [...emp.schedules, ...newSchedules],
-            };
-          }
-          return emp;
-        });
+        // 将原有数据和新数据合并
+        const existingData = Array.isArray(oldData) ? oldData : [];
+        return [...existingData, ...schedules];
       }
     );
 
-    message.success(`已复制 ${schedules.length} 条排班，请点击保存按钮提交`);
     setCopyScheduleModalOpen(false);
     copyForm.resetFields();
     setSelectedEmployeeKeys([]);
@@ -693,7 +709,26 @@ const SchedulePage: React.FC = () => {
       }],
     }));
 
-    message.success('已标记更新，请点击保存按钮提交');
+    // 立即在本地数据中更新，让UI立即显示
+    queryClient.setQueryData(
+      ['schedules', filters.dateRange[0].format('YYYY-MM-DD'), filters.dateRange[1].format('YYYY-MM-DD')],
+      (oldData: any) => {
+        if (!oldData) return oldData;
+
+        const existingData = Array.isArray(oldData) ? oldData : [];
+        return existingData.map((item: any) => {
+          if (item.id === data.id) {
+            return {
+              ...item,
+              adjustedSegments: JSON.stringify(data.segments),
+              isPending: true, // 标记为未保存状态
+            };
+          }
+          return item;
+        });
+      }
+    );
+
     setEditScheduleModalOpen(false);
     editForm.resetFields();
     setEditingSchedule(null);
@@ -885,21 +920,13 @@ const SchedulePage: React.FC = () => {
       (oldData: any) => {
         if (!oldData) return oldData;
 
-        return oldData.map((emp: any) => {
-          if (emp.id === editingSchedule.employeeId) {
-            // 移除被删除的排班
-            const filteredSchedules = emp.schedules.filter((s: any) => s.id !== editingSchedule.id);
-            return {
-              ...emp,
-              schedules: filteredSchedules,
-            };
-          }
-          return emp;
+        // 过滤掉被删除的排班
+        return oldData.filter((item: any) => {
+          return item.id !== editingSchedule.id;
         });
       }
     );
 
-    message.success('已删除排班，请点击保存按钮提交');
     setEditScheduleModalOpen(false);
     editForm.resetFields();
     setEditingSchedule(null);
@@ -951,42 +978,20 @@ const SchedulePage: React.FC = () => {
       (oldData: any) => {
         if (!oldData) return oldData;
 
-        return oldData.map((emp: any) => {
-          // 如果该员工在选中列表中
-          if (selectedEmployeeKeys.includes(emp.id)) {
-            // 过滤掉被删除的排班
-            const filteredSchedules = emp.schedules.filter((s: any) => {
-              const scheduleDate = dayjs(s.scheduleDate).format('YYYY-MM-DD');
-              // 如果该排班的日期在选中日期中，且ID在删除列表中，则移除
-              if (selectedDates.includes(scheduleDate) && scheduleIds.includes(s.id)) {
-                return false;
-              }
-              return true;
-            });
-            return {
-              ...emp,
-              schedules: filteredSchedules,
-            };
-          }
-          return emp;
+        // 过滤掉被删除的排班
+        return oldData.filter((item: any) => {
+          // 如果该排班的员工在选中列表中，且日期在选中日期中，且ID在删除列表中，则过滤掉
+          if (!item.employee) return true;
+
+          const isSelectedEmployee = selectedEmployeeKeys.includes(item.employee.id);
+          const itemDate = dayjs(item.scheduleDate).format('YYYY-MM-DD');
+          const isSelectedDate = selectedDates.includes(itemDate);
+          const shouldDelete = isSelectedEmployee && isSelectedDate && scheduleIds.includes(item.id);
+
+          return !shouldDelete;
         });
       }
     );
-
-    message.success({
-      content: (
-        <Space>
-          <CheckCircleOutlined style={{ color: '#10b981', fontSize: 16 }} />
-          <span>已删除 {scheduleIds.length} 条排班，请点击保存按钮提交</span>
-        </Space>
-      ),
-      duration: 2,
-      style: {
-        marginTop: '20vh',
-        borderRadius: 12,
-        padding: '12px 20px',
-      },
-    });
 
     setSelectedEmployeeKeys([]);
     setSelectedDates([]);
@@ -1028,21 +1033,6 @@ const SchedulePage: React.FC = () => {
       selectedDates[0],
       schedulesToCopy
     );
-
-    message.success({
-      content: (
-        <Space>
-          <CheckCircleOutlined style={{ color: '#10b981', fontSize: 16 }} />
-          <span>已复制 {schedulesToCopy.length} 条排班到剪贴板</span>
-        </Space>
-      ),
-      duration: 2,
-      style: {
-        marginTop: '20vh',
-        borderRadius: 12,
-        padding: '12px 20px',
-      },
-    });
   };
 
   // 快捷键：从剪贴板粘贴排班
@@ -1065,6 +1055,10 @@ const SchedulePage: React.FC = () => {
     const schedulesToDisplay: any[] = [];
 
     selectedEmployeeKeys.forEach((empId) => {
+      // 从 allEmployees 中查找完整的员工信息
+      const employee = (Array.isArray(allEmployees) ? allEmployees : (allEmployees?.items || []))
+        .find((e: any) => Number(e.id) === empId);
+
       selectedDates.forEach((dateStr) => {
         clipboard.schedules.forEach((schedule: any) => {
           const shift = shifts?.find((s: any) => s.id === schedule.shiftId);
@@ -1076,6 +1070,18 @@ const SchedulePage: React.FC = () => {
             shiftName: shift?.name || schedule.shiftName || '',
             shiftColor: shift?.color || schedule.shiftColor || '#1890ff',
             status: 'PENDING', // 标记为待保存状态
+            isPending: true, // 标记为未保存状态
+            employee: employee ? {
+              id: employee.id,
+              employeeNo: employee.employeeNo,
+              name: employee.name,
+              org: employee.org,
+            } : undefined,
+            shift: shift ? {
+              id: shift.id,
+              name: shift.name,
+              color: shift.color,
+            } : undefined,
           };
           schedulesToDisplay.push(newSchedule);
 
@@ -1088,7 +1094,7 @@ const SchedulePage: React.FC = () => {
       });
     });
 
-    // 添加到待保存列表（不包含临时ID）
+    // 添加到待保存列表（不包含临时ID和额外字段）
     setPendingChanges(prev => ({
       ...prev,
       creates: [...prev.creates, ...schedulesToPaste],
@@ -1100,35 +1106,11 @@ const SchedulePage: React.FC = () => {
       (oldData: any) => {
         if (!oldData) return oldData;
 
-        return oldData.map((emp: any) => {
-          // 如果该员工在选中列表中
-          if (selectedEmployeeKeys.includes(emp.id)) {
-            // 为该员工添加新的排班
-            const newSchedules = schedulesToDisplay.filter(s => s.employeeId === emp.id);
-            return {
-              ...emp,
-              schedules: [...emp.schedules, ...newSchedules],
-            };
-          }
-          return emp;
-        });
+        // 将原有数据和新数据合并
+        const existingData = Array.isArray(oldData) ? oldData : [];
+        return [...existingData, ...schedulesToDisplay];
       }
     );
-
-    message.success({
-      content: (
-        <Space>
-          <CheckCircleOutlined style={{ color: '#10b981', fontSize: 16 }} />
-          <span>已粘贴 {schedulesToPaste.length} 条排班，请点击保存按钮提交</span>
-        </Space>
-      ),
-      duration: 2,
-      style: {
-        marginTop: '20vh',
-        borderRadius: 12,
-        padding: '12px 20px',
-      },
-    });
   };
 
   // 快捷键：删除选中排班
