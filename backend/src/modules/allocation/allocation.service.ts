@@ -662,8 +662,135 @@ export class AllocationService {
       this.prisma.allocationConfig.count({ where }),
     ]);
 
+    // 增强每个配置的sourceConfig数据
+    const enrichedItems = await Promise.all(
+      items.map(async (config) => {
+        if (!config.sourceConfig) {
+          return config;
+        }
+
+        // 解析employeeFilter并增强字段信息
+        const employeeFilter = JSON.parse(config.sourceConfig.employeeFilter || '{}');
+
+        // 增强employeeFilter中的fieldGroups，添加字段名称和类型信息
+        if (employeeFilter.fieldGroups && Array.isArray(employeeFilter.fieldGroups)) {
+          // 内置字段映射
+          const builtInFieldsMap: Record<string, { name: string; type: string }> = {
+            'organization': { name: '产线', type: 'organization' },
+            'employeeType': { name: '员工类型', type: 'select' },
+            'position': { name: '岗位', type: 'select' },
+          };
+
+          // 获取自定义字段配置
+          const customFields = await this.prisma.customField.findMany();
+
+          // 构建自定义字段映射
+          const customFieldsMap: Record<string, { name: string; type: string }> = {};
+          customFields.forEach((field: any) => {
+            let fieldType = 'text';
+            if (field.type === 'SELECT_SINGLE' || field.type === 'SELECT_MULTI' || field.type === 'LOOKUP') {
+              fieldType = 'select';
+            } else if (field.type === 'NUMBER') {
+              fieldType = 'number';
+            }
+            customFieldsMap[field.code] = {
+              name: field.name,
+              type: fieldType,
+            };
+          });
+
+          // 增强每个条件
+          employeeFilter.fieldGroups.forEach((group: any) => {
+            if (group.conditions && Array.isArray(group.conditions)) {
+              group.conditions = group.conditions.map((condition: any) => {
+                const fieldInfo = builtInFieldsMap[condition.fieldCode] || customFieldsMap[condition.fieldCode];
+                return {
+                  ...condition,
+                  fieldName: fieldInfo?.name || condition.fieldCode,
+                  fieldType: fieldInfo?.type || 'text',
+                };
+              });
+            }
+          });
+        }
+
+        // 解析accountFilter并增强hierarchySelections数据
+        const accountFilter = JSON.parse(config.sourceConfig.accountFilter || '{}');
+        if (accountFilter.hierarchySelections && Array.isArray(accountFilter.hierarchySelections)) {
+          // 获取所有相关的层级配置
+          const hierarchyLevelIds = accountFilter.hierarchySelections
+            .map((s: any) => s.levelId)
+            .filter((id: any) => id != null);
+
+          let hierarchyLevels: any[] = [];
+          if (hierarchyLevelIds.length > 0) {
+            hierarchyLevels = await this.prisma.accountHierarchyConfig.findMany({
+              where: { id: { in: hierarchyLevelIds } },
+            });
+          }
+
+          // 获取所有相关的账户（组织）- 只包含数字ID
+          const accountIds = accountFilter.hierarchySelections
+            .flatMap((s: any) => s.valueIds || [])
+            .filter((id: any) => id != null && typeof id === 'number');
+
+          let accounts: any[] = [];
+          if (accountIds.length > 0) {
+            accounts = await this.prisma.laborAccount.findMany({
+              where: { id: { in: accountIds } },
+            });
+          }
+
+          // 增强hierarchySelections数据，添加名称信息
+          accountFilter.hierarchySelections = accountFilter.hierarchySelections.map((selection: any) => {
+            const level = hierarchyLevels.find((l: any) => l.id === selection.levelId);
+            const valueAccounts = (selection.valueIds || []).map((valueId: any) => {
+              const account = accounts.find((a: any) => a.id === valueId);
+              return account ? { id: account.id, name: account.name, code: account.code } : valueId;
+            });
+
+            return {
+              ...selection,
+              levelName: level?.name || selection.levelName,
+              level: level?.level || selection.level,
+              valueIds: selection.valueIds || [],
+              // 添加额外的名称字段，便于前端显示
+              valueAccounts,
+            };
+          });
+        }
+
+        // 解析attendanceCodes并增强数据，添加名称信息
+        const attendanceCodes = JSON.parse(config.sourceConfig.attendanceCodes || '[]');
+        const enrichedAttendanceCodes = await Promise.all(
+          attendanceCodes.map(async (code: string) => {
+            const attendanceCode = await this.prisma.attendanceCode.findFirst({
+              where: { code },
+            });
+            return attendanceCode || { code, name: code };
+          })
+        );
+
+        return {
+          ...config,
+          sourceConfig: {
+            ...config.sourceConfig,
+            employeeFilter,
+            accountFilter,
+            attendanceCodes: enrichedAttendanceCodes,
+          },
+          rules: config.rules.map(rule => ({
+            ...rule,
+            basisFilter: JSON.parse(rule.basisFilter || '{}'),
+            allocationAttendanceCodes: JSON.parse(rule.allocationAttendanceCodes || '[]'),
+            allocationHierarchyLevels: JSON.parse(rule.allocationHierarchyLevels || '[]'),
+          })),
+        };
+      })
+    );
+
     return {
-      items,
+      items: enrichedItems,
       total,
       page: +page,
       pageSize: +pageSize,
@@ -693,14 +820,118 @@ export class AllocationService {
       throw new NotFoundException('分摊配置不存在');
     }
 
-    // 解析JSON字段
+    // 解析employeeFilter并增强字段信息
+    const employeeFilter = JSON.parse(config.sourceConfig?.employeeFilter || '{}');
+
+    console.log('getAllocationConfig - 原始employeeFilter:', JSON.stringify(employeeFilter, null, 2));
+    console.log('getAllocationConfig - fieldGroups:', JSON.stringify(employeeFilter.fieldGroups, null, 2));
+
+    // 增强employeeFilter中的fieldGroups，添加字段名称和类型信息
+    if (employeeFilter.fieldGroups && Array.isArray(employeeFilter.fieldGroups)) {
+      // 内置字段映射
+      const builtInFieldsMap: Record<string, { name: string; type: string }> = {
+        'organization': { name: '产线', type: 'organization' },
+        'employeeType': { name: '员工类型', type: 'select' },
+        'position': { name: '岗位', type: 'select' },
+      };
+
+      // 获取自定义字段配置
+      const customFields = await this.prisma.customField.findMany();
+
+      // 构建自定义字段映射
+      const customFieldsMap: Record<string, { name: string; type: string }> = {};
+      customFields.forEach((field: any) => {
+        let fieldType = 'text';
+        if (field.type === 'SELECT_SINGLE' || field.type === 'SELECT_MULTI' || field.type === 'LOOKUP') {
+          fieldType = 'select';
+        } else if (field.type === 'NUMBER') {
+          fieldType = 'number';
+        }
+        customFieldsMap[field.code] = {
+          name: field.name,
+          type: fieldType,
+        };
+      });
+
+      // 增强每个条件
+      employeeFilter.fieldGroups.forEach((group: any) => {
+        if (group.conditions && Array.isArray(group.conditions)) {
+          group.conditions = group.conditions.map((condition: any) => {
+            const fieldInfo = builtInFieldsMap[condition.fieldCode] || customFieldsMap[condition.fieldCode];
+            return {
+              ...condition,
+              fieldName: fieldInfo?.name || condition.fieldCode,
+              fieldType: fieldInfo?.type || 'text',
+            };
+          });
+        }
+      });
+    }
+
+    // 解析accountFilter并增强hierarchySelections数据
+    const accountFilter = JSON.parse(config.sourceConfig?.accountFilter || '{}');
+    if (accountFilter.hierarchySelections && Array.isArray(accountFilter.hierarchySelections)) {
+      // 获取所有相关的层级配置
+      const hierarchyLevelIds = accountFilter.hierarchySelections
+        .map((s: any) => s.levelId)
+        .filter((id: any) => id != null);
+
+      let hierarchyLevels: any[] = [];
+      if (hierarchyLevelIds.length > 0) {
+        hierarchyLevels = await this.prisma.accountHierarchyConfig.findMany({
+          where: { id: { in: hierarchyLevelIds } },
+        });
+      }
+
+      // 获取所有相关的账户（组织）- 只包含数字ID
+      const accountIds = accountFilter.hierarchySelections
+        .flatMap((s: any) => s.valueIds || [])
+        .filter((id: any) => id != null && typeof id === 'number');
+
+      let accounts: any[] = [];
+      if (accountIds.length > 0) {
+        accounts = await this.prisma.laborAccount.findMany({
+          where: { id: { in: accountIds } },
+        });
+      }
+
+      // 增强hierarchySelections数据，添加名称信息
+      accountFilter.hierarchySelections = accountFilter.hierarchySelections.map((selection: any) => {
+        const level = hierarchyLevels.find((l: any) => l.id === selection.levelId);
+        const valueAccounts = (selection.valueIds || []).map((valueId: any) => {
+          const account = accounts.find((a: any) => a.id === valueId);
+          return account ? { id: account.id, name: account.name, code: account.code } : valueId;
+        });
+
+        return {
+          ...selection,
+          levelName: level?.name || selection.levelName,
+          level: level?.level || selection.level,
+          valueIds: selection.valueIds || [],
+          // 添加额外的名称字段，便于前端显示
+          valueAccounts,
+        };
+      });
+    }
+
+    // 解析attendanceCodes并增强数据，添加名称信息
+    const attendanceCodes = JSON.parse(config.sourceConfig?.attendanceCodes || '[]');
+    const enrichedAttendanceCodes = await Promise.all(
+      attendanceCodes.map(async (code: string) => {
+        const attendanceCode = await this.prisma.attendanceCode.findFirst({
+          where: { code },
+        });
+        return attendanceCode || { code, name: code };
+      })
+    );
+
     return {
       ...config,
       sourceConfig: config.sourceConfig ? {
         ...config.sourceConfig,
-        employeeFilter: JSON.parse(config.sourceConfig.employeeFilter || '{}'),
-        accountFilter: JSON.parse(config.sourceConfig.accountFilter || '{}'),
-        attendanceCodes: JSON.parse(config.sourceConfig.attendanceCodes || '[]'),
+        employeeFilter,
+        accountFilter,
+        attendanceCodes: enrichedAttendanceCodes,
       } : null,
       rules: config.rules.map(rule => ({
         ...rule,
@@ -828,10 +1059,6 @@ export class AllocationService {
       throw new NotFoundException('分摊配置不存在');
     }
 
-    if (config.status !== 'DRAFT') {
-      throw new BadRequestException('只有草稿状态的配置才能修改');
-    }
-
     const {
       configName,
       effectiveStartTime,
@@ -844,99 +1071,134 @@ export class AllocationService {
     } = dto;
 
     await this.prisma.$transaction(async (tx) => {
-      // 更新主配置
-      const updateData: any = {
-        configName,
-        description,
-      };
+      // 如果是已启用状态，只允许更新rules
+      if (config.status === 'ACTIVE') {
+        // 验证只包含rules字段
+        const allowedKeys = ['rules', 'updatedById', 'updatedByName'];
+        const providedKeys = Object.keys(dto);
+        const hasInvalidKeys = providedKeys.some(key => !allowedKeys.includes(key));
 
-      if (effectiveStartTime) updateData.effectiveStartTime = new Date(effectiveStartTime);
-      if (effectiveEndTime !== undefined) {
-        updateData.effectiveEndTime = effectiveEndTime ? new Date(effectiveEndTime) : null;
-      }
+        if (hasInvalidKeys) {
+          throw new BadRequestException('已启用的配置只能修改规则，不能修改其他字段');
+        }
 
-      if (updatedById) {
-        updateData.updatedById = updatedById;
-        updateData.updatedByName = updatedByName;
-      }
-
-      await tx.allocationConfig.update({
-        where: { id },
-        data: updateData,
-      });
-
-      // 更新或创建分摊源配置
-      if (sourceConfig) {
-        const existing = await tx.allocationSourceConfig.findUnique({
-          where: { configId: id },
-        });
-
-        const sourceData = {
-          sourceType: sourceConfig.sourceType || 'EMPLOYEE_HOURS',
-          employeeFilter: JSON.stringify(sourceConfig.employeeFilter || {}),
-          accountFilter: JSON.stringify(sourceConfig.accountFilter || {}),
-          attendanceCodes: JSON.stringify(sourceConfig.attendanceCodes || []),
-          description: sourceConfig.description,
-        };
-
-        if (existing) {
-          await tx.allocationSourceConfig.update({
+        // 只更新规则
+        if (rules && Array.isArray(rules)) {
+          // 删除旧规则
+          await tx.allocationRuleConfig.deleteMany({
             where: { configId: id },
-            data: sourceData,
           });
-        } else {
-          await tx.allocationSourceConfig.create({
+
+          // 创建新规则
+          for (const rule of rules) {
+            await tx.allocationRuleConfig.create({
+              data: {
+                configId: id,
+                ruleName: rule.ruleName,
+                ruleType: rule.ruleType,
+                allocationBasis: rule.allocationBasis,
+                allocationAttendanceCodes: JSON.stringify(rule.allocationAttendanceCodes || []),
+                allocationHierarchyLevels: JSON.stringify(rule.allocationHierarchyLevels || []),
+                allocationScopeId: rule.allocationScopeId || rule.allocationScope || null,
+                basisFilter: JSON.stringify(rule.basisFilter || {}),
+                sortOrder: rule.sortOrder || 0,
+                status: rule.status || 'ACTIVE',
+                description: rule.description,
+                effectiveStartTime: rule.effectiveStartTime ? new Date(rule.effectiveStartTime) : null,
+                effectiveEndTime: rule.effectiveEndTime ? new Date(rule.effectiveEndTime) : null,
+              },
+            });
+          }
+        }
+
+        // 更新修改人信息
+        if (updatedById) {
+          await tx.allocationConfig.update({
+            where: { id },
             data: {
-              configId: id,
-              ...sourceData,
+              updatedById,
+              updatedByName,
             },
           });
         }
-      }
+      } else {
+        // 草稿状态可以修改所有字段
+        // 更新主配置
+        const updateData: any = {
+          configName,
+          description,
+        };
 
-      // 更新分摊规则
-      if (rules && Array.isArray(rules)) {
-        // 删除旧规则
-        await tx.allocationRuleConfig.deleteMany({
-          where: { configId: id },
+        if (effectiveStartTime) updateData.effectiveStartTime = new Date(effectiveStartTime);
+        if (effectiveEndTime !== undefined) {
+          updateData.effectiveEndTime = effectiveEndTime ? new Date(effectiveEndTime) : null;
+        }
+
+        if (updatedById) {
+          updateData.updatedById = updatedById;
+          updateData.updatedByName = updatedByName;
+        }
+
+        await tx.allocationConfig.update({
+          where: { id },
+          data: updateData,
         });
 
-        // 创建新规则
-        for (const rule of rules) {
-          const ruleRecord = await tx.allocationRuleConfig.create({
-            data: {
-              configId: id,
-              ruleName: rule.ruleName,
-              ruleType: rule.ruleType,
-              allocationBasis: rule.allocationBasis,
-              allocationAttendanceCodes: JSON.stringify(rule.allocationAttendanceCodes || []),
-              allocationHierarchyLevels: JSON.stringify(rule.allocationHierarchyLevels || []),
-              allocationScopeId: rule.allocationScopeId || null,
-              basisFilter: JSON.stringify(rule.basisFilter || {}),
-              sortOrder: rule.sortOrder || 0,
-              status: rule.status || 'ACTIVE',
-              description: rule.description,
-              effectiveStartTime: rule.effectiveStartTime ? new Date(rule.effectiveStartTime) : null,
-              effectiveEndTime: rule.effectiveEndTime ? new Date(rule.effectiveEndTime) : null,
-            },
+        // 更新或创建分摊源配置
+        if (sourceConfig) {
+          const existing = await tx.allocationSourceConfig.findUnique({
+            where: { configId: id },
           });
 
-          // 创建分摊目标（向后兼容）
-          if (rule.targets && Array.isArray(rule.targets)) {
-            for (const target of rule.targets) {
-              await tx.allocationRuleTarget.create({
-                data: {
-                  ruleId: ruleRecord.id,
-                  targetType: target.targetType,
-                  targetId: target.targetId,
-                  targetName: target.targetName,
-                  targetCode: target.targetCode,
-                  weight: target.weight || 0,
-                  targetAccountId: target.targetAccountId,
-                  targetAccountName: target.targetAccountName,
-                },
-              });
-            }
+          const sourceData = {
+            sourceType: sourceConfig.sourceType || 'EMPLOYEE_HOURS',
+            employeeFilter: JSON.stringify(sourceConfig.employeeFilter || {}),
+            accountFilter: JSON.stringify(sourceConfig.accountFilter || {}),
+            attendanceCodes: JSON.stringify(sourceConfig.attendanceCodes || []),
+            description: sourceConfig.description,
+          };
+
+          if (existing) {
+            await tx.allocationSourceConfig.update({
+              where: { configId: id },
+              data: sourceData,
+            });
+          } else {
+            await tx.allocationSourceConfig.create({
+              data: {
+                configId: id,
+                ...sourceData,
+              },
+            });
+          }
+        }
+
+        // 更新分摊规则
+        if (rules && Array.isArray(rules)) {
+          // 删除旧规则
+          await tx.allocationRuleConfig.deleteMany({
+            where: { configId: id },
+          });
+
+          // 创建新规则
+          for (const rule of rules) {
+            await tx.allocationRuleConfig.create({
+              data: {
+                configId: id,
+                ruleName: rule.ruleName,
+                ruleType: rule.ruleType,
+                allocationBasis: rule.allocationBasis,
+                allocationAttendanceCodes: JSON.stringify(rule.allocationAttendanceCodes || []),
+                allocationHierarchyLevels: JSON.stringify(rule.allocationHierarchyLevels || []),
+                allocationScopeId: rule.allocationScopeId || rule.allocationScope || null,
+                basisFilter: JSON.stringify(rule.basisFilter || {}),
+                sortOrder: rule.sortOrder || 0,
+                status: rule.status || 'ACTIVE',
+                description: rule.description,
+                effectiveStartTime: rule.effectiveStartTime ? new Date(rule.effectiveStartTime) : null,
+                effectiveEndTime: rule.effectiveEndTime ? new Date(rule.effectiveEndTime) : null,
+              },
+            });
           }
         }
       }

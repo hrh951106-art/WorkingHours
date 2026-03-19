@@ -4,7 +4,6 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, SettingOutlined } from '@an
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 import SearchConditionsConfig from './components/SearchConditionsConfig';
-import GeneralConfig from './components/GeneralConfig';
 
 const ConfigPage: React.FC = () => {
   // 从 sessionStorage 读取要激活的页签
@@ -432,11 +431,6 @@ const ConfigPage: React.FC = () => {
           activeKey={activeTab}
           onChange={setActiveTab}
           items={[
-            {
-              key: 'general',
-              label: '通用配置',
-              children: <GeneralConfig />,
-            },
             {
               key: 'datasources',
               label: '查找项管理',

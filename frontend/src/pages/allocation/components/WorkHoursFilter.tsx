@@ -11,7 +11,7 @@ interface WorkHoursCondition {
     levelName: string;
     valueIds: Array<string | number>;
   }>;
-  attendanceCodes: string[];
+  attendanceCodes: Array<string | { code: string; name: string }>;  // 支持字符串或对象
 }
 
 interface WorkHoursFilterProps {
@@ -32,8 +32,29 @@ const WorkHoursFilter: React.FC<WorkHoursFilterProps> = ({
   );
 
   useEffect(() => {
+    console.log('WorkHoursFilter - value prop 变化');
+    console.log('WorkHoursFilter - value:', JSON.stringify(value, null, 2));
+    console.log('WorkHoursFilter - condition:', JSON.stringify(condition, null, 2));
+
     if (value && JSON.stringify(value) !== JSON.stringify(condition)) {
-      setCondition(value);
+      console.log('WorkHoursFilter - 开始转换数据');
+
+      // 如果attendanceCodes是对象数组（后端返回的格式），转换为字符串数组
+      const transformedValue = {
+        ...value,
+        attendanceCodes: Array.isArray(value.attendanceCodes) && value.attendanceCodes.length > 0
+          ? (typeof value.attendanceCodes[0] === 'object'
+              ? value.attendanceCodes.map((code: any) => typeof code === 'object' ? code.code : code)
+              : value.attendanceCodes)
+          : [],
+      };
+
+      console.log('WorkHoursFilter - 转换后的attendanceCodes:', transformedValue.attendanceCodes);
+      console.log('WorkHoursFilter - 转换后的value:', JSON.stringify(transformedValue, null, 2));
+
+      setCondition(transformedValue);
+    } else {
+      console.log('WorkHoursFilter - 无需更新，条件不满足');
     }
   }, [value]);
 

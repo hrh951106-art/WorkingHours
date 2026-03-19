@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Button,
   Space,
@@ -75,10 +75,34 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
   onChange,
   disabled = false,
 }) => {
+  console.log('EmployeeFieldFilter - 组件渲染，接收到的value:', JSON.stringify(value, null, 2));
+  console.log('EmployeeFieldFilter - value类型:', typeof value);
+  console.log('EmployeeFieldFilter - value是否为数组:', Array.isArray(value));
+  console.log('EmployeeFieldFilter - value长度:', value.length);
+
   // 简化为只处理单个条件组的情况
   const [conditions, setConditions] = useState<FieldCondition[]>(
     value.length > 0 && value[0]?.conditions ? value[0].conditions : []
   );
+
+  // 监听外部value的变化，更新内部状态
+  useEffect(() => {
+    console.log('EmployeeFieldFilter - useEffect触发，value:', JSON.stringify(value, null, 2));
+
+    const newConditions = value.length > 0 && value[0]?.conditions ? value[0].conditions : [];
+    console.log('EmployeeFieldFilter - 外部value变化:', value);
+    console.log('EmployeeFieldFilter - 新的conditions:', JSON.stringify(newConditions, null, 2));
+    console.log('EmployeeFieldFilter - value[0]:', value[0]);
+    console.log('EmployeeFieldFilter - value[0]?.conditions:', value[0]?.conditions);
+
+    // 只在值确实不同时才更新，避免无限循环
+    if (JSON.stringify(newConditions) !== JSON.stringify(conditions)) {
+      console.log('EmployeeFieldFilter - 更新conditions状态');
+      setConditions(newConditions);
+    } else {
+      console.log('EmployeeFieldFilter - conditions未变化，不更新');
+    }
+  }, [value]);
 
   // 获取产线树
   const { data: orgTree, isLoading: orgLoading } = useQuery({

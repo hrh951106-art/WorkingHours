@@ -53,9 +53,46 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
   });
 
   useEffect(() => {
+    console.log('WorkHoursBelongingSelector - value prop 变化');
+    console.log('WorkHoursBelongingSelector - value:', JSON.stringify(value, null, 2));
+    console.log('WorkHoursBelongingSelector - selections:', JSON.stringify(selections, null, 2));
+
     // 只在外部value变化时更新内部状态
     if (value && value.length > 0 && JSON.stringify(value) !== JSON.stringify(selections)) {
-      setSelections(value);
+      console.log('WorkHoursBelongingSelector - 开始转换数据');
+      // 处理后端返回的增强数据格式
+      const transformedValue = value.map((selection) => {
+        console.log('WorkHoursBelongingSelector - 处理selection:', selection);
+
+        // 如果valueAccounts存在且是数组，转换为ID数组
+        if (selection.valueAccounts && Array.isArray(selection.valueAccounts)) {
+          console.log('WorkHoursBelongingSelector - 发现valueAccounts:', selection.valueAccounts);
+          // valueAccounts可能包含混合类型：对象（有id字段）和原始值（字符串/数字）
+          const valueIds = selection.valueAccounts.map((item: any) => {
+            if (item && typeof item === 'object' && item.id !== undefined) {
+              return item.id;
+            }
+            return item; // 原始值（字符串或数字）
+          });
+          const transformed = {
+            ...selection,
+            valueIds,
+            // 移除valueAccounts字段
+            valueAccounts: undefined,
+          };
+          console.log('WorkHoursBelongingSelector - 转换后的selection:', transformed);
+          return transformed;
+        }
+        return selection;
+      });
+      console.log('WorkHoursBelongingSelector - 最终转换结果:', JSON.stringify(transformedValue, null, 2));
+      setSelections(transformedValue);
+    } else if (value && value.length === 0 && selections.length > 0) {
+      // 如果外部value是空数组，清空内部状态
+      console.log('WorkHoursBelongingSelector - 清空selections');
+      setSelections([]);
+    } else {
+      console.log('WorkHoursBelongingSelector - 无需更新，条件不满足');
     }
   }, [value]);
 

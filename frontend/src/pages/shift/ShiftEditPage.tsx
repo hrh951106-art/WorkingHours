@@ -64,9 +64,12 @@ const ShiftEditPage: React.FC = () => {
     },
     onSuccess: () => {
       message.success(isEdit ? '更新成功' : '创建成功');
-      // 清除列表和详情缓存
+      // 清除列表缓存
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
-      queryClient.invalidateQueries({ queryKey: ['shift', id] });
+      // 只在编辑模式下清除详情缓存
+      if (isEdit) {
+        queryClient.invalidateQueries({ queryKey: ['shift', id] });
+      }
       navigate('/shift/shifts');
     },
     onError: (error: any) => {

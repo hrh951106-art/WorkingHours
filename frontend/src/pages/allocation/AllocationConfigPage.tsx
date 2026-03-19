@@ -170,45 +170,128 @@ const AllocationConfigPage: React.FC = () => {
     setIsModalVisible(true);
   };
 
-  const handleEdit = (config: AllocationConfig) => {
+  const handleEdit = async (config: AllocationConfig) => {
+    console.log('开始编辑配置:', config);
     setEditingConfig(config);
 
-    // 转换rules数组，将后端的allocationScopeId转换为前端的allocationScope
-    const transformedRules = (config.rules || []).map((rule: any) => ({
-      ...rule,
-      allocationScope: rule.allocationScopeId || null,  // 将allocationScopeId映射为allocationScope
-      allocationScopeId: undefined,  // 删除后端使用的allocationScopeId字段
-    }));
+    // 重新获取完整的配置详情，确保数据被正确增强
+    try {
+      const fullConfig = await request.get(`/allocation/configs/${config.id}`);
+      console.log('获取的完整配置详情:', JSON.stringify(fullConfig, null, 2));
 
-    // 转换sourceConfig结构，从后端格式转换为前端表单格式
-    let transformedSourceConfig = null;
-    if (config.sourceConfig) {
-      transformedSourceConfig = {
-        filterGroups: [
-          {
-            employeeFilter: {
-              fieldGroups: config.sourceConfig.employeeFilter?.fieldGroups || []
-            },
-            workHoursFilter: {
-              hierarchySelections: config.sourceConfig.accountFilter?.hierarchySelections || [],
-              attendanceCodes: config.sourceConfig.attendanceCodes || []
+      // 转换rules数组，将后端的allocationScopeId转换为前端的allocationScope
+      const transformedRules = (fullConfig.rules || []).map((rule: any) => {
+        console.log('处理规则:', rule);
+        return {
+          ...rule,
+          allocationScope: rule.allocationScopeId || null,  // 将allocationScopeId映射为allocationScope
+          allocationScopeId: undefined,  // 删除后端使用的allocationScopeId字段
+          // 确保allocationHierarchyLevels始终是数组
+          allocationHierarchyLevels: Array.isArray(rule.allocationHierarchyLevels)
+            ? rule.allocationHierarchyLevels
+            : [],
+        };
+      });
+
+      console.log('转换后的rules:', transformedRules);
+
+      // 转换sourceConfig结构，从后端格式转换为前端表单格式
+      let transformedSourceConfig = null;
+      if (fullConfig.sourceConfig) {
+        // 转换employeeFilter.fieldGroups结构
+        // 后端存储的是: { fieldGroups: [{ id, fieldGroups: [{ id, conditions }] }] }
+        // 前端需要的是: [{ id, conditions }]
+        let transformedFieldGroups: any[] = [];
+        if (fullConfig.sourceConfig.employeeFilter?.fieldGroups) {
+          // 扁平化：提取所有嵌套的 fieldGroups
+          fullConfig.sourceConfig.employeeFilter.fieldGroups.forEach((outerGroup: any) => {
+            if (outerGroup.fieldGroups && Array.isArray(outerGroup.fieldGroups)) {
+              transformedFieldGroups = [...transformedFieldGroups, ...outerGroup.fieldGroups];
             }
-          }
-        ]
-      };
+          });
+          console.log('转换后的fieldGroups（扁平化）:', JSON.stringify(transformedFieldGroups, null, 2));
+        }
+
+        // 转换attendanceCodes：从对象数组转为字符串数组
+        const transformedAttendanceCodes = Array.isArray(fullConfig.sourceConfig.attendanceCodes)
+          ? fullConfig.sourceConfig.attendanceCodes.map((code: any) =>
+              typeof code === 'object' ? code.code : code
+            )
+          : [];
+
+        console.log('转换后的attendanceCodes:', transformedAttendanceCodes);
+
+        // 转换hierarchySelections：移除valueAccounts字段，只保留valueIds
+        const transformedHierarchySelections = (fullConfig.sourceConfig.accountFilter?.hierarchySelections || [])
+          .map((selection: any) => {
+            console.log('处理selection:', selection);
+            // 如果有valueAccounts，提取ID；否则使用原有的valueIds
+            let valueIds: any[] = [];
+            if (selection.valueAccounts && Array.isArray(selection.valueAccounts)) {
+              // valueAccounts可能包含混合类型：对象（有id字段）和原始值（字符串/数字）
+              valueIds = selection.valueAccounts.map((item: any) => {
+                if (item && typeof item === 'object' && item.id !== undefined) {
+                  return item.id;
+                }
+                return item; // 原始值（字符串或数字）
+              });
+            } else {
+              valueIds = selection.valueIds || [];
+            }
+
+            console.log('转换后的valueIds:', valueIds);
+
+            return {
+              levelId: selection.levelId,
+              level: selection.level,
+              levelName: selection.levelName,
+              valueIds,
+              // 移除valueAccounts字段，避免前端组件混淆
+            };
+          });
+
+        console.log('转换后的hierarchySelections:', JSON.stringify(transformedHierarchySelections, null, 2));
+
+        transformedSourceConfig = {
+          filterGroups: [
+            {
+              employeeFilter: {
+                fieldGroups: transformedFieldGroups
+              },
+              workHoursFilter: {
+                hierarchySelections: transformedHierarchySelections,
+                attendanceCodes: transformedAttendanceCodes
+              }
+            }
+          ]
+        };
+      }
+
+      console.log('编辑配置 - 原始sourceConfig:', JSON.stringify(fullConfig.sourceConfig, null, 2));
+      console.log('编辑配置 - employeeFilter:', JSON.stringify(fullConfig.sourceConfig.employeeFilter, null, 2));
+      console.log('编辑配置 - fieldGroups:', JSON.stringify(fullConfig.sourceConfig.employeeFilter?.fieldGroups, null, 2));
+      console.log('编辑配置 - 转换后sourceConfig:', JSON.stringify(transformedSourceConfig, null, 2));
+
+      // 设置所有表单字段
+      form.setFieldsValue({
+        configCode: fullConfig.configCode,
+        configName: fullConfig.configName,
+        description: fullConfig.description,
+        sourceConfig: transformedSourceConfig,
+        rules: transformedRules,  // 使用转换后的rules
+      });
+
+      console.log('表单值已设置:', form.getFieldsValue(true));
+      console.log('employeeFilter.fieldGroups路径的值:', form.getFieldValue(['sourceConfig', 'filterGroups', 0, 'employeeFilter', 'fieldGroups']));
+
+      // 在下一个事件循环中打开模态框，确保表单值已设置完成
+      Promise.resolve().then(() => {
+        setIsModalVisible(true);
+      });
+    } catch (error) {
+      console.error('获取配置详情失败:', error);
+      message.error('获取配置详情失败');
     }
-
-    console.log('编辑配置 - 原始sourceConfig:', config.sourceConfig);
-    console.log('编辑配置 - 转换后sourceConfig:', transformedSourceConfig);
-
-    form.setFieldsValue({
-      configCode: config.configCode,
-      configName: config.configName,
-      description: config.description,
-      sourceConfig: transformedSourceConfig,
-      rules: transformedRules,  // 使用转换后的rules
-    });
-    setIsModalVisible(true);
   };
 
   const handleDelete = (id: number) => {
@@ -1008,18 +1091,55 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
   const [rules, setRules] = useState<any[]>([]);
 
   // 获取层级配置列表（用于分配归属）
-  const { data: hierarchyLevels } = useQuery({
+  const { data: hierarchyLevels, isLoading: levelsLoading } = useQuery({
     queryKey: ['accountHierarchyLevels'],
     queryFn: () =>
       request.get('/account/hierarchy-config/levels').then((res: any) => res || []),
   });
 
-  // 初始化时从表单获取规则
+  // 监听表单rules字段的变化
   useEffect(() => {
     const currentRules = form.getFieldValue('rules') || [];
-    console.log('初始化规则:', currentRules);
+    console.log('规则发生变化:', currentRules);
+    console.log('当前层级配置:', hierarchyLevels);
     setRules(currentRules);
-  }, []);
+  }, [form]); // 监听form对象，当form的值变化时会触发
+
+  // 额外监听：当editingConfig变化时，也要更新rules
+  useEffect(() => {
+    if (editingConfig) {
+      const currentRules = form.getFieldValue('rules') || [];
+      console.log('编辑配置变化，更新规则:', currentRules);
+      console.log('规则详情:', JSON.stringify(currentRules, null, 2));
+      setRules(currentRules);
+    }
+  }, [editingConfig, form]);
+
+  // 当层级数据加载完成后，验证并更新rules中的层级ID
+  useEffect(() => {
+    if (!levelsLoading && hierarchyLevels && hierarchyLevels.length > 0) {
+      const currentRules = form.getFieldValue('rules') || [];
+      console.log('层级数据已加载，验证规则中的层级ID');
+      console.log('可用层级:', hierarchyLevels.map((h: any) => ({ id: h.id, name: h.name })));
+
+      // 验证每个规则的allocationScope和allocationHierarchyLevels是否有效
+      const validHierarchyIds = new Set(hierarchyLevels.map((h: any) => h.id));
+
+      currentRules.forEach((rule: any, index: number) => {
+        if (rule.allocationScope && !validHierarchyIds.has(rule.allocationScope)) {
+          console.warn(`规则${index}的allocationScope ${rule.allocationScope} 不在可用层级中`);
+        }
+        // 添加类型检查：确保allocationHierarchyLevels是数组
+        if (rule.allocationHierarchyLevels && Array.isArray(rule.allocationHierarchyLevels)) {
+          rule.allocationHierarchyLevels.forEach((levelId: number) => {
+            if (!validHierarchyIds.has(levelId)) {
+              console.warn(`规则${index}的allocationHierarchyLevels包含无效层级ID: ${levelId}`);
+            }
+          });
+        }
+      });
+    }
+  }, [levelsLoading, hierarchyLevels, form]);
 
   const allocationBasisOptions = [
     { value: 'ACTUAL_HOURS', label: '按实际工时比例分配', description: '根据各目标的实际工时比例分配间接工时' },
@@ -1045,6 +1165,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
       description: '',
     };
 
+    // 新增时不需要验证时间交叉，因为还没有设置时间
     const newRules = [...rules, newRule];
     console.log('新增规则:', newRule);
     console.log('新增后的rules:', newRules);
@@ -1053,12 +1174,42 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
   };
 
   const handleRemoveRule = (index: number) => {
+    const ruleToRemove = rules[index];
+
+    // 检查是否可以删除：如果当前日期 > 生效开始时间，则不允许删除
+    if (ruleToRemove.effectiveStartTime) {
+      const startDate = dayjs(ruleToRemove.effectiveStartTime);
+      const currentDate = dayjs().startOf('day');
+
+      if (currentDate.isAfter(startDate)) {
+        message.warning('该规则已经生效，不允许删除');
+        return;
+      }
+    }
+
     const newRules = rules.filter((_, i) => i !== index);
     setRules(newRules);
     form.setFieldsValue({ rules: newRules });
   };
 
   const handleUpdateRule = (index: number, field: string, value: any) => {
+    // 如果更新的是时间字段，需要验证时间交叉
+    if (field === 'effectiveStartTime' || field === 'effectiveEndTime') {
+      const currentRule = rules[index];
+      const newStartTime = field === 'effectiveStartTime' ? value : currentRule.effectiveStartTime;
+      const newEndTime = field === 'effectiveEndTime' ? value : currentRule.effectiveEndTime;
+
+      // 只有设置了开始时间才进行验证
+      if (newStartTime) {
+        const hasOverlap = validateRuleTimeOverlap(newStartTime, newEndTime, index);
+
+        if (hasOverlap) {
+          message.error('规则时间与现有规则时间交叉，请调整时间设置');
+          return;
+        }
+      }
+    }
+
     const newRules = [...rules];
     newRules[index] = {
       ...newRules[index],
@@ -1081,6 +1232,48 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
       'STANDARD_HOURS': 'purple',
     };
     return colors[basis] || 'default';
+  };
+
+  // 验证规则时间是否与现有规则交叉
+  const validateRuleTimeOverlap = (newRuleStartTime: string | null, newRuleEndTime: string | null, excludeIndex: number = -1): boolean => {
+    const newStart = newRuleStartTime ? dayjs(newRuleStartTime).startOf('day') : null;
+    const newEnd = newRuleEndTime ? dayjs(newRuleEndTime).startOf('day') : null;
+
+    // 遍历所有现有规则（除了排除的索引）
+    for (let i = 0; i < rules.length; i++) {
+      if (i === excludeIndex) continue; // 跳过当前正在编辑的规则
+
+      const rule = rules[i];
+      if (!rule.effectiveStartTime) continue; // 没有开始时间的规则跳过
+
+      const existingStart = dayjs(rule.effectiveStartTime).startOf('day');
+      const existingEnd = rule.effectiveEndTime ? dayjs(rule.effectiveEndTime).startOf('day') : null;
+
+      // 检查时间是否交叉
+      // 时间交叉的条件：
+      // 1. 新规则的开始时间在现有规则的时间范围内
+      // 2. 新规则的结束时间在现有规则的时间范围内
+      // 3. 新规则完全包含现有规则
+      // 4. 现有规则完全包含新规则
+
+      let hasOverlap = false;
+
+      if (newStart && newEnd) {
+        // 新规则有开始和结束时间
+        hasOverlap =
+          (newStart.isBefore(existingEnd || dayjs().add(100, 'years')) && newEnd.isAfter(existingStart)) ||
+          (newStart.isSame(existingStart) || newEnd.isSame(existingEnd));
+      } else if (newStart) {
+        // 新规则只有开始时间（永久有效）
+        hasOverlap = !existingEnd || newStart.isBefore(existingEnd);
+      }
+
+      if (hasOverlap) {
+        return true; // 有时间交叉
+      }
+    }
+
+    return false; // 没有时间交叉
   };
 
   return (
@@ -1129,6 +1322,14 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
                   size="small"
                   danger
                   onClick={() => handleRemoveRule(index)}
+                  disabled={
+                    rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
+                  }
+                  title={
+                    rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
+                      ? '该规则已经生效，不允许删除'
+                      : '删除此规则'
+                  }
                 >
                   删除
                 </Button>
@@ -1164,10 +1365,11 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>分摊范围（组织类型层级）</div>
                     <Select
-                      placeholder="请选择分摊范围"
+                      placeholder={levelsLoading ? "加载中..." : "请选择分摊范围"}
                       value={rule.allocationScope}
                       onChange={(val) => handleUpdateRule(index, 'allocationScope', val)}
                       style={{ width: '100%' }}
+                      loading={levelsLoading}
                       options={hierarchyLevels
                         ?.filter((level: any) => level.mappingType === 'ORG_TYPE')
                         .map((level: any) => ({
@@ -1191,10 +1393,11 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
                     <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>分配归属（产线类型层级）</div>
                     <Select
                       mode="multiple"
-                      placeholder="请选择产线类型层级"
+                      placeholder={levelsLoading ? "加载中..." : "请选择产线类型层级"}
                       value={rule.allocationHierarchyLevels}
                       onChange={(val) => handleUpdateRule(index, 'allocationHierarchyLevels', val)}
                       style={{ width: '100%' }}
+                      loading={levelsLoading}
                       options={hierarchyLevels
                         ?.filter((level: any) => level.mappingType === 'ORG' || level.mappingType === 'ORG_TYPE')
                         .map((level: any) => ({
@@ -1489,7 +1692,7 @@ const AllocationConfigDetail: React.FC<{ configId: number | null }> = ({ configI
                   </div>
                 )}
 
-                {rule.allocationHierarchyLevels && rule.allocationHierarchyLevels.length > 0 && (
+                {rule.allocationHierarchyLevels && Array.isArray(rule.allocationHierarchyLevels) && rule.allocationHierarchyLevels.length > 0 && (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>分配归属（产线类型层级）</div>
                     <Space wrap>

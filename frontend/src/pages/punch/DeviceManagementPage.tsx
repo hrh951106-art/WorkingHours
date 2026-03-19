@@ -17,7 +17,9 @@ const BindingAccountSelect: React.FC<{
   value?: number;
   onChange?: (value: number | null) => void;
   usageType: string;
-}> = ({ value, onChange, usageType }) => {
+  segmentAccountIds?: number[];
+  isEdit?: boolean;
+}> = ({ value, onChange, usageType, segmentAccountIds = [], isEdit = false }) => {
   const queryClient = useQueryClient();
 
   const handleAccountCreated = (newAccountId: number) => {
@@ -37,6 +39,8 @@ const BindingAccountSelect: React.FC<{
       allowClear={true}
       showCreateButton={true}
       onAccountCreated={handleAccountCreated}
+      segmentAccountIds={segmentAccountIds}
+      isEdit={isEdit}
     />
   );
 };
@@ -49,6 +53,7 @@ const DeviceManagementPage: React.FC = () => {
   const [searchText, setSearchText] = useState('');
   const [deviceForm] = Form.useForm();
   const [bindForm] = Form.useForm(); // 添加独立的form用于绑定账户
+  const [boundAccountIds, setBoundAccountIds] = useState<number[]>([]); // 收集所有已绑定的账户ID
   const queryClient = useQueryClient();
 
   const { data: devices, isLoading } = useQuery({
@@ -93,6 +98,7 @@ const DeviceManagementPage: React.FC = () => {
       setIsBindModalOpen(false);
       setSelectedDevice(null);
       bindForm.resetFields(); // 重置绑定表单
+      setBoundAccountIds([]); // 清空已绑定账户ID列表
     },
     onError: (error: any) => {
       const errorMsg = error?.response?.data?.message || error?.message || '绑定失败';
@@ -229,6 +235,13 @@ const DeviceManagementPage: React.FC = () => {
       effectiveDate: dayjs(b.effectiveDate),
       expiryDate: b.expiryDate ? dayjs(b.expiryDate) : undefined,
     }));
+
+    // 收集所有已绑定的账户ID，用于AccountSelect组件回显
+    const accountIds = (device.bindings || [])
+      .map((b: any) => b.accountId)
+      .filter((id: number | null) => id != null);
+    setBoundAccountIds(accountIds);
+
     bindForm.setFieldsValue({ bindings });
     setIsBindModalOpen(true);
   };
@@ -327,6 +340,7 @@ const DeviceManagementPage: React.FC = () => {
     setIsBindModalOpen(false);
     setSelectedDevice(null);
     bindForm.resetFields();
+    setBoundAccountIds([]); // 清空已绑定账户ID列表
   };
 
   // 过滤设备数据
@@ -447,7 +461,18 @@ const DeviceManagementPage: React.FC = () => {
           </div>
         </div>
 
-        <Form form={bindForm} layout="vertical">
+        <Form
+          form={bindForm}
+          layout="vertical"
+          onValuesChange={() => {
+            // 监听表单变化，实时更新已绑定账户ID列表
+            const bindings = bindForm.getFieldValue('bindings') || [];
+            const accountIds = bindings
+              .map((b: DeviceBinding) => b.accountId)
+              .filter((id: number | null | undefined) => id != null);
+            setBoundAccountIds(accountIds);
+          }}
+        >
           <Form.List name="bindings">
             {(fields, { add, remove }) => (
               <>
@@ -473,7 +498,11 @@ const DeviceManagementPage: React.FC = () => {
                           rules={[{ required: true, message: '请选择子劳动力账户' }]}
                           style={{ marginBottom: 0 }}
                         >
-                          <BindingAccountSelect usageType="DEVICE" />
+                          <BindingAccountSelect
+                            usageType="DEVICE"
+                            segmentAccountIds={boundAccountIds}
+                            isEdit={true}
+                          />
                         </Form.Item>
                       </Col>
                       <Col span={5}>
