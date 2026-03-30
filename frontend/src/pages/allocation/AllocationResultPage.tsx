@@ -365,7 +365,7 @@ const AllocationResultPage: React.FC = () => {
 
   return (
     <div>
-      <AntCard title="工时分摊结果查询">
+      <AntCard title="工时管理结果查询">
         <Form form={form} layout="inline" style={{ marginBottom: 16 }}>
           <Form.Item label="批次号" name="batchNo">
             <Input placeholder="请输入批次号" style={{ width: 180 }} />

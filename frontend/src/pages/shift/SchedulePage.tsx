@@ -1315,7 +1315,7 @@ const SchedulePage: React.FC = () => {
       description={
         <Space>
           <span>管理员工的排班信息，支持批量排班、复制排班等功能</span>
-          <Badge count="NEW" style={{ backgroundColor: '#6366f1', fontSize: '11px' }} />
+          <Badge count="NEW" style={{ backgroundColor: '#22B970', fontSize: '11px' }} />
         </Space>
       }
       breadcrumb={[

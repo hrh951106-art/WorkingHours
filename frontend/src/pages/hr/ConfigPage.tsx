@@ -38,6 +38,9 @@ const ConfigPage: React.FC = () => {
     queryFn: () => request.get('/hr/custom-fields').then((res: any) => res || []),
   });
 
+  // 过滤掉系统内置字段，只显示用户创建的自定义字段
+  const userCustomFields = customFields.filter((f: any) => !f.isSystem);
+
   // 数据源操作
   const createDataSourceMutation = useMutation({
     mutationFn: (data: any) => request.post('/hr/data-sources', data),
@@ -266,7 +269,6 @@ const ConfigPage: React.FC = () => {
           DATE: '日期',
           SELECT_SINGLE: '单选',
           SELECT_MULTI: '多选',
-          LOOKUP: '查找项',
         };
         return typeMap[type] || type;
       },
@@ -276,7 +278,7 @@ const ConfigPage: React.FC = () => {
       key: 'dataSource',
       width: 120,
       render: (_: any, record: any) => {
-        if (record.type === 'LOOKUP' && record.dataSource) {
+        if ((record.type === 'SELECT_SINGLE' || record.type === 'SELECT_MULTI') && record.dataSource) {
           return record.dataSource.name;
         }
         return '-';
@@ -556,7 +558,7 @@ const ConfigPage: React.FC = () => {
                   </div>
                   <Table
                     columns={customFieldColumns}
-                    dataSource={customFields}
+                    dataSource={userCustomFields}
                     rowKey="id"
                     pagination={false}
                   />
@@ -729,7 +731,6 @@ const ConfigPage: React.FC = () => {
                   <Select.Option value="DATE">日期</Select.Option>
                   <Select.Option value="SELECT_SINGLE">单选</Select.Option>
                   <Select.Option value="SELECT_MULTI">多选</Select.Option>
-                  <Select.Option value="LOOKUP">查找项</Select.Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -754,7 +755,7 @@ const ConfigPage: React.FC = () => {
             }
           >
             {({ getFieldValue }) =>
-              getFieldValue('type') === 'LOOKUP' ? (
+              (getFieldValue('type') === 'SELECT_SINGLE' || getFieldValue('type') === 'SELECT_MULTI') ? (
                 <Form.Item
                   name="dataSourceId"
                   label="关联数据源"

@@ -1,28 +1,30 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Dropdown, Avatar, theme, Button, Space, Badge } from 'antd';
+import { Layout, Dropdown, Avatar, Button, Space, Badge } from 'antd';
 import {
-  DashboardOutlined,
-  TeamOutlined,
   UserOutlined,
-  ApartmentOutlined,
   ClockCircleOutlined,
   CalendarOutlined,
   CalculatorOutlined,
   FileTextOutlined,
   LogoutOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   SettingOutlined,
   BellOutlined,
-  ControlOutlined,
+  ApartmentOutlined,
+  DashboardOutlined,
+  TeamOutlined,
   PieChartOutlined,
+  SearchOutlined,
+  EditOutlined,
+  DatabaseOutlined,
+  PlayCircleOutlined,
+  FundOutlined,
 } from '@ant-design/icons';
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useTabsStore } from '@/stores/tabsStore';
 import MultipleTabs from './MultipleTabs';
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content } = Layout;
 
 interface MenuItem {
   key: string;
@@ -38,22 +40,27 @@ const menuItems: MenuItem[] = [
   { key: '/hr/employees', icon: <UserOutlined />, label: '人员管理', path: '/hr/employees' },
   { key: '/punch/records', icon: <FileTextOutlined />, label: '打卡记录', path: '/punch/records' },
   { key: '/shift/schedules', icon: <CalendarOutlined />, label: '排班管理', path: '/shift/schedules' },
+  { key: '/calculate/pairing-results', icon: <PlayCircleOutlined />, label: '摆卡结果', path: '/calculate/pairing-results' },
+  { key: '/calculate/work-hour-results', icon: <CalculatorOutlined />, label: '工时结果', path: '/calculate/work-hour-results' },
+  { key: '/calculate/config/punch-rules', icon: <SettingOutlined />, label: '打卡规则', path: '/calculate/config/punch-rules' },
+  { key: '/calculate/config/attendance-codes', icon: <FundOutlined />, label: '出勤代码', path: '/calculate/config/attendance-codes' },
   { key: '/attendance/workhour-details', icon: <FileTextOutlined />, label: '工时明细管理', path: '/attendance/workhour-details' },
   { key: '/allocation/line-maintenance', icon: <CalendarOutlined />, label: '开线维护', path: '/allocation/line-maintenance' },
   { key: '/allocation/production-records', icon: <FileTextOutlined />, label: '产量记录', path: '/allocation/production-records' },
   { key: '/allocation/config', icon: <SettingOutlined />, label: '分摊规则', path: '/allocation/config' },
   { key: '/allocation/calculate', icon: <CalculatorOutlined />, label: '分摊计算', path: '/allocation/calculate' },
+  { key: '/allocation/results', icon: <PieChartOutlined />, label: '分摊结果查询', path: '/allocation/results' },
+  { key: '/hr/data-source-management', icon: <DatabaseOutlined />, label: '查找项管理', path: '/hr/data-source-management' },
+  { key: '/hr/custom-field-config', icon: <EditOutlined />, label: '自定义字段配置', path: '/hr/custom-field-config' },
+  { key: '/hr/employee-info-config', icon: <TeamOutlined />, label: '人事信息配置', path: '/hr/employee-info-config' },
+  { key: '/hr/search-conditions-config', icon: <SearchOutlined />, label: '查询条件配置', path: '/hr/search-conditions-config' },
 ];
 
 const MainLayout: React.FC = () => {
-  const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, clearAuth } = useAuthStore();
   const { addTab, setActiveKey } = useTabsStore();
-  const {
-    token: { borderRadiusLG },
-  } = theme.useToken();
 
   const handleMenuClick = ({ key }: { key: string }) => {
     const findItem = (items: MenuItem[], targetKey: string): MenuItem | null => {
@@ -111,15 +118,6 @@ const MainLayout: React.FC = () => {
     navigate('/login');
   };
 
-  const getSelectedKeys = () => {
-    return [location.pathname];
-  };
-
-  const getOpenKeys = () => {
-    // 没有子菜单，返回空数组
-    return [];
-  };
-
   const userMenuItems = [
     {
       key: 'profile',
@@ -139,257 +137,230 @@ const MainLayout: React.FC = () => {
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#f8fafc' }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        theme="dark"
-        trigger={null}
+      <Header
         style={{
-          overflow: 'auto',
-          height: '100vh',
-          position: 'fixed',
-          left: 0,
+          padding: '0 24px',
+          height: 64,
+          background: '#22B970',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+          position: 'sticky',
           top: 0,
-          bottom: 0,
-          background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
-          zIndex: 100,
+          zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
         }}
       >
+        {/* Logo */}
         <div
           style={{
-            height: 64,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            padding: collapsed ? '16px 12px' : '16px 20px',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-            transition: 'all 0.2s',
+            marginRight: 24,
+            gap: 12,
+            minWidth: '150px',
           }}
         >
           <div
             style={{
-              minWidth: 40,
+              width: 40,
               height: 40,
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+              borderRadius: '8px',
+              background: 'rgba(255, 255, 255, 0.25)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 20,
-              fontWeight: 700,
-              color: '#fff',
-              boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)',
-              flexShrink: 0,
+              backdropFilter: 'blur(10px)',
             }}
           >
-            {collapsed ? '工' : '精益'}
-          </div>
-          {!collapsed && (
-            <div
-              style={{
-                textAlign: 'left',
-                marginLeft: 12,
-                flex: 1,
-                minWidth: 0,
-              }}
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{ display: 'block' }}
             >
-              <div
-                style={{
-                  color: '#fff',
-                  fontSize: 15,
-                  fontWeight: 600,
-                  marginBottom: 2,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                工时管理
-              </div>
-              <div
-                style={{
-                  color: '#94a3b8',
-                  fontSize: 11,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                精益工时系统
-              </div>
-            </div>
-          )}
-        </div>
-
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={getSelectedKeys()}
-          defaultOpenKeys={getOpenKeys()}
-          onClick={handleMenuClick}
-          items={menuItems as any}
-          style={{
-            background: 'transparent',
-            border: 'none',
-          }}
-        />
-      </Sider>
-
-      <Layout style={{ marginLeft: collapsed ? 80 : 240, transition: 'all 0.2s' }}>
-        <Header
-          style={{
-            padding: '0 24px',
-            height: 'auto',
-            minHeight: 64,
-            background: '#ffffff',
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-          }}
-        >
-          {/* 第一行：折叠按钮和用户信息 */}
+              <path
+                d="M12 2L2 7L12 12L22 7L12 2Z"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2 17L12 22L22 17"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2 12L12 17L22 12"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              height: 64,
+              flexDirection: 'column',
+              alignItems: 'flex-start',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Button
-                type="text"
-                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                onClick={() => setCollapsed(!collapsed)}
-                style={{
-                  fontSize: 18,
-                  color: '#64748b',
-                }}
-              />
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: '#fff',
+                lineHeight: '24px',
+                letterSpacing: '0.5px',
+              }}
+            >
+              精益管理
             </div>
-
-            <Space size={16}>
-              <Badge count={0}>
-                <Button
-                  type="text"
-                  icon={<BellOutlined />}
-                  style={{
-                    fontSize: 18,
-                    color: '#64748b',
-                  }}
-                />
-              </Badge>
-
-              <Button
-                type="text"
-                icon={<SettingOutlined />}
-                onClick={() => {
-                  addTab({
-                    key: '/system/settings',
-                    label: '系统管理',
-                    path: '/system/settings',
-                    closable: true,
-                  });
-                  navigate('/system/settings');
-                }}
-                style={{
-                  fontSize: 18,
-                  color: '#64748b',
-                }}
-                title="系统管理"
-              />
-
-              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-                <div
-                  style={{
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    transition: 'background 0.2s',
-                    minWidth: 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#f1f5f9';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <Avatar
-                    size={32}
-                    style={{
-                      background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                      border: '2px solid #fff',
-                      boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-                      flexShrink: 0,
-                    }}
-                    icon={<UserOutlined />}
-                  />
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-end',
-                      gap: 2,
-                      minWidth: 0,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: '#1e293b',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        lineHeight: '20px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {user?.name || '用户'}
-                    </div>
-                    <div
-                      style={{
-                        color: '#64748b',
-                        fontSize: 12,
-                        lineHeight: '16px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {user?.roles && user.roles.length > 0
-                        ? user.roles.map((r) => r.name).join(', ')
-                        : '用户'}
-                    </div>
-                  </div>
-                </div>
-              </Dropdown>
-            </Space>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'rgba(255, 255, 255, 0.75)',
+                lineHeight: '14px',
+                fontWeight: 400,
+              }}
+            >
+              LEAN MANAGEMENT
+            </div>
           </div>
+        </div>
 
-          {/* 第二行：多标签页 */}
-          <MultipleTabs />
-        </Header>
-
-        <Content
+        {/* 标签页栏 */}
+        <div
           style={{
-            margin: '24px',
-            padding: '24px',
-            minHeight: 'calc(100vh - 112px)',
-            background: '#ffffff',
-            borderRadius: borderRadiusLG,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            overflow: 'auto',
+            flex: 1,
+            display: 'flex',
+            alignItems: 'flex-end',
+            height: '100%',
+            minWidth: 0,
+            overflow: 'hidden',
+            marginRight: 8,
           }}
         >
-          <Outlet />
-        </Content>
-      </Layout>
+          <MultipleTabs />
+        </div>
+
+        {/* 右侧操作区 */}
+        <Space size={16}>
+          <Badge count={0}>
+            <Button
+              type="text"
+              icon={<BellOutlined />}
+              style={{
+                fontSize: 18,
+                color: '#ffffff',
+              }}
+              className="header-text-btn"
+            />
+          </Badge>
+
+          <Button
+            type="text"
+            icon={<SettingOutlined />}
+            onClick={() => {
+              addTab({
+                key: '/system/settings',
+                label: '系统管理',
+                path: '/system/settings',
+                closable: true,
+              });
+              navigate('/system/settings');
+            }}
+            style={{
+              fontSize: 18,
+              color: '#ffffff',
+            }}
+            title="系统管理"
+            className="header-text-btn"
+          />
+
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+            <div
+              style={{
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '6px 12px',
+                borderRadius: 8,
+                transition: 'background 0.2s',
+                minWidth: 0,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <Avatar
+                size={32}
+                style={{
+                  background: '#ffffff',
+                  border: '2px solid #fff',
+                  boxShadow: '0 2px 8px rgba(255, 255, 255, 0.3)',
+                  flexShrink: 0,
+                }}
+                icon={<UserOutlined style={{ color: '#22B970' }} />}
+              />
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  gap: 2,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#ffffff',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    lineHeight: '20px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {user?.name || '用户'}
+                </div>
+                <div
+                  style={{
+                    color: 'rgba(255, 255, 255, 0.8)',
+                    fontSize: 12,
+                    lineHeight: '16px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {user?.roles && user.roles.length > 0
+                    ? user.roles.map((r) => r.name).join(', ')
+                    : '用户'}
+                </div>
+              </div>
+            </div>
+          </Dropdown>
+        </Space>
+      </Header>
+
+      <Content
+        style={{
+          padding: '24px',
+          minHeight: 'calc(100vh - 64px)',
+          background: '#f8fafc',
+          overflow: 'auto',
+        }}
+      >
+        <Outlet />
+      </Content>
     </Layout>
   );
 };

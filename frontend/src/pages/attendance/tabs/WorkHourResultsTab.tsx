@@ -449,7 +449,7 @@ const detailColumns = [
     key: 'actualHours',
     width: 100,
     render: (hours: number) => (
-      <Text strong style={{ color: '#6366f1', fontSize: 14 }}>
+      <Text strong style={{ color: '#22B970', fontSize: 14 }}>
         {hours.toFixed(2)}h
       </Text>
     ),
@@ -775,7 +775,7 @@ const CodeDetailContent: React.FC<CodeDetailContentProps> = ({
                     )}
                   </Space>
 
-                  <Text strong style={{ color: '#6366f1', fontSize: 14 }}>
+                  <Text strong style={{ color: '#22B970', fontSize: 14 }}>
                     {record.actualHours?.toFixed(2) || 0}h
                   </Text>
                 </div>

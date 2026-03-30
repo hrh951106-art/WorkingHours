@@ -77,31 +77,57 @@ model Organization {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   employees     Employee[]
+  workInfoHistory WorkInfoHistory[]
   parent        Organization?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children      Organization[] @relation("OrganizationHierarchy")
 }
 
 model Employee {
-  id           Int                 @id @default(autoincrement())
-  employeeNo   String              @unique
-  name         String
-  gender       String
-  idCard       String?             @unique
-  phone        String?
-  email        String?
-  orgId        Int
-  entryDate    DateTime
-  status       String              @default("ACTIVE")
-  customFields String              @default("{}")
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  calcResults  CalcResult[]
-  org          Organization        @relation(fields: [orgId], references: [id])
-  changeLogs   EmployeeChangeLog[]
-  accounts     LaborAccount[]
-  punchPairs   PunchPair[]
-  punchRecords PunchRecord[]
-  schedules    Schedule[]
+  id                Int      @id @default(autoincrement())
+  employeeNo        String   @unique
+  name              String
+  gender            String
+  idCard            String?  @unique
+  phone             String?
+  email             String?
+  orgId             Int
+  entryDate         DateTime
+  status            String   @default("ACTIVE")
+
+  // 基本信息页签字段
+  birthDate         DateTime? // 出生日期
+  age               Int?      // 年龄
+  maritalStatus     String?   // 婚姻状况
+  nativePlace       String?   // 籍贯
+  politicalStatus   String?   // 政治面貌
+  householdRegister String?   // 户口所在地
+  currentAddress    String?   // 现居住地址
+  photo             String?   // 照片
+  emergencyContact  String?   // 紧急联系人
+  emergencyPhone    String?   // 紧急联系电话
+  emergencyRelation String?   // 紧急联系人关系
+  homeAddress       String?   // 家庭住址
+  homePhone         String?   // 家庭电话
+
+  // 其他自定义字段（用于扩展）
+  customFields      String   @default("{}")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  calcResults       CalcResult[]
+  org               Organization @relation(fields: [orgId], references: [id])
+  changeLogs        EmployeeChangeLog[]
+  accounts          LaborAccount[]
+  punchPairs        PunchPair[]
+  punchRecords      PunchRecord[]
+  schedules         Schedule[]
+
+  // 子表关系
+  workInfoHistory   WorkInfoHistory[]
+  educations        EmployeeEducation[]
+  workExperiences   EmployeeWorkExperience[]
+  familyMembers     EmployeeFamilyMember[]
 }
 
 model EmployeeChangeLog {
@@ -156,6 +182,7 @@ model CustomField {
   defaultValue String?
   group        String      @default("默认分组")
   sort         Int         @default(0)
+  isSystem     Boolean     @default(false)
   status       String      @default("ACTIVE")
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -172,22 +199,45 @@ model EmployeeInfoTab {
   status      String                 @default("ACTIVE")
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
+  groups      EmployeeInfoTabGroup[]
   fields      EmployeeInfoTabField[]
 }
 
+model EmployeeInfoTabGroup {
+  id          Int                    @id @default(autoincrement())
+  tabId       Int
+  code        String
+  name        String
+  description String?
+  sort        Int                    @default(0)
+  status      String                 @default("ACTIVE")
+  collapsed   Boolean                @default(false)
+  isSystem    Boolean                @default(false)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  tab         EmployeeInfoTab         @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  fields      EmployeeInfoTabField[]
+
+  @@unique([tabId, code])
+}
+
 model EmployeeInfoTabField {
-  id         Int             @id @default(autoincrement())
+  id         Int                   @id @default(autoincrement())
   tabId      Int
+  groupId    Int?
   fieldCode  String
   fieldName  String
   fieldType  String
-  isRequired Boolean         @default(false)
-  sort       Int             @default(0)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  tab        EmployeeInfoTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  isRequired Boolean               @default(false)
+  isHidden   Boolean               @default(false)
+  sort       Int                   @default(0)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+  tab        EmployeeInfoTab       @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  group      EmployeeInfoTabGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
   @@unique([tabId, fieldCode])
+  @@index([groupId])
 }
 
 model LaborAccount {
@@ -256,6 +306,37 @@ model Shift {
   updatedAt     DateTime       @updatedAt
   schedules     Schedule[]
   segments      ShiftSegment[]
+  properties    ShiftProperty[]
+}
+
+model ShiftPropertyDefinition {
+  id          Int      @id @default(autoincrement())
+  propertyKey String   @unique
+  name        String
+  description String?
+  valueType   String   @default("TEXT") // TEXT, SELECT, MULTI_SELECT, NUMBER
+  options     String?  // JSON string for SELECT/MULTI_SELECT options
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+}
+
+model ShiftProperty {
+  id          Int      @id @default(autoincrement())
+  shiftId     Int
+  propertyKey String
+  propertyValue String
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shift       Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, propertyKey])
+  @@index([shiftId])
 }
 
 model ShiftSegment {
@@ -771,4 +852,122 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 
   @@index([category])
+}
+
+// 工作信息历史表（支持时间轴）
+model WorkInfoHistory {
+  id             Int      @id @default(autoincrement())
+  employeeId     Int
+  effectiveDate  DateTime @default(now())  // 异动生效日期
+  endDate        DateTime?                 // 失效日期（可选，用于标记有效期）
+
+  // 工作信息页签字段
+  changeType     String?                  // 异动类型（下拉数据源）
+  position       String?                  // 职位
+  jobLevel       String?                  // 职级
+  employeeType   String?                  // 员工类型
+  workLocation   String?                  // 工作地点
+  workAddress    String?                  // 办公地址
+  hireDate       DateTime?                // 受雇日期
+  probationStart DateTime?                // 试用期开始
+  probationEnd   DateTime?                // 试用期结束
+  probationMonths Int?                    // 试用期月数
+  regularDate    DateTime?                // 转正日期
+  resignationDate DateTime?              // 离职日期
+  resignationReason String?              // 离职原因
+  workYears      Int?                     // 工作年限
+
+  orgId          Int?                     // 所属组织
+  isCurrent      Boolean  @default(false) // 是否当前生效
+  reason         String?                  // 变更原因
+
+  // 其他自定义字段（用于扩展）
+  customFields   String   @default("{}")
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  org            Organization? @relation(fields: [orgId], references: [id])
+
+  @@index([employeeId, effectiveDate])
+  @@index([employeeId, isCurrent])
+}
+
+// 员工学历信息表
+model EmployeeEducation {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int
+
+  // 学历信息页签字段
+  school          String                     // 毕业院校
+  major           String                     // 专业
+  degree          String                     // 学位
+  educationLevel  String                     // 学历层次
+  educationType   String?                    // 学历类型
+  startDate       DateTime                   // 入学日期
+  endDate         DateTime?                  // 毕业日期
+  graduationDate  DateTime?                  // 毕业日期
+  degreeNo        String?                    // 学位证书号
+  diplomaNo       String?                    // 毕业证书号
+  isHighest       Boolean  @default(false)   // 是否最高学历
+  description     String?                    // 描述
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([employeeId, isHighest])
+}
+
+// 员工工作经历表
+model EmployeeWorkExperience {
+  id            Int      @id @default(autoincrement())
+  employeeId    Int
+
+  // 工作经历页签字段
+  company       String                    // 公司名称
+  position      String                    // 职位
+  startDate     DateTime                  // 开始日期
+  endDate       DateTime?                 // 结束日期（为空表示至今）
+  salary        String?                   // 薪资
+  reason        String?                   // 离职原因
+  description   String?                   // 工作描述
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([employeeId, startDate])
+}
+
+// 员工家庭成员表
+model EmployeeFamilyMember {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int
+
+  // 家庭信息页签字段
+  relationship    String                    // 关系
+  name            String                    // 姓名
+  gender          String?                   // 性别
+  idCard          String?                   // 身份证号
+  phone           String?                   // 联系电话
+  workUnit        String?                   // 工作单位
+  address         String?                   // 居住地址
+  dateOfBirth     DateTime?                 // 出生日期
+  age             Int?                       // 年龄
+  isEmergency     Boolean  @default(false)  // 是否紧急联系人
+  sortOrder       Int       @default(0)     // 排序
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([employeeId, isEmergency])
 }

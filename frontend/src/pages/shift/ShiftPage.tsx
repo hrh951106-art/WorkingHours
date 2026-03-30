@@ -55,7 +55,7 @@ const ShiftPage: React.FC = () => {
       key: 'standardHours',
       width: 120,
       render: (hours: number) => (
-        <span style={{ fontWeight: 600, color: '#6366f1' }}>{hours} 小时</span>
+        <span style={{ fontWeight: 600, color: '#22B970' }}>{hours} 小时</span>
       ),
     },
     {
@@ -83,7 +83,7 @@ const ShiftPage: React.FC = () => {
           type="link"
           icon={<EditOutlined />}
           onClick={() => handleEdit(record.id)}
-          style={{ color: '#6366f1', fontWeight: 500 }}
+          style={{ color: '#22B970', fontWeight: 500 }}
         >
           编辑
         </Button>
@@ -105,7 +105,7 @@ const ShiftPage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={handleAdd}
           style={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
             border: 'none',
             borderRadius: 8,
             height: 40,
@@ -120,8 +120,8 @@ const ShiftPage: React.FC = () => {
         {
           title: '班次总数',
           value: shifts?.length || 0,
-          prefix: <ClockCircleOutlined style={{ color: '#6366f1' }} />,
-          color: '#6366f1',
+          prefix: <ClockCircleOutlined style={{ color: '#22B970' }} />,
+          color: '#22B970',
         },
         {
           title: '正常班',

@@ -14,9 +14,10 @@ export class CreateEmployeeDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ description: '性别', enum: ['MALE', 'FEMALE'] })
-  @IsEnum(['MALE', 'FEMALE'])
-  gender: 'MALE' | 'FEMALE';
+  @ApiProperty({ description: '性别', required: false })
+  @IsOptional()
+  @IsString()
+  gender?: string;
 
   @ApiProperty({ description: '身份证号', required: false })
   @IsOptional()
@@ -39,12 +40,28 @@ export class CreateEmployeeDto {
   orgId: number;
 
   @ApiProperty({ description: '入职日期' })
-  @IsDateString()
+  @IsString()
+  @IsNotEmpty()
   entryDate: string;
 
   @ApiProperty({ description: '自定义字段', required: false })
   @IsOptional()
   customFields?: any;
+
+  @ApiProperty({ description: '学历信息', required: false })
+  @IsOptional()
+  educations?: any[];
+
+  @ApiProperty({ description: '工作经历', required: false })
+  @IsOptional()
+  workExperiences?: any[];
+
+  @ApiProperty({ description: '家庭成员', required: false })
+  @IsOptional()
+  familyMembers?: any[];
+
+  // 允许接收其他额外字段（不做严格验证）
+  [key: string]: any;
 }
 
 export class UpdateEmployeeDto {
@@ -55,8 +72,8 @@ export class UpdateEmployeeDto {
 
   @ApiProperty({ description: '性别', required: false })
   @IsOptional()
-  @IsEnum(['MALE', 'FEMALE'])
-  gender?: 'MALE' | 'FEMALE';
+  @IsString()
+  gender?: string;
 
   @ApiProperty({ description: '身份证号', required: false })
   @IsOptional()

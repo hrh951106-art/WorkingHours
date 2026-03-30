@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 背景 -->
+  <rect width="64" height="64" rx="12" fill="#22B970"/>
+
+  <!-- 图标 -->
+  <g transform="translate(16, 16)">
+    <!-- 上层 -->
+    <path d="M16 0L0 8L16 16L32 8L16 0Z" fill="white" opacity="0.95"/>
+    <!-- 中层 -->
+    <path d="M0 24L16 32L32 24" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9"/>
+    <!-- 下层 -->
+    <path d="M0 16L16 24L32 16" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.8"/>
+  </g>
+</svg>

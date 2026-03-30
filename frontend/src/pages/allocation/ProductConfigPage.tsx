@@ -27,8 +27,8 @@ interface Product {
   id?: number;
   code: string;
   name: string;
-  standardHours: number;
-  conversionFactor: number;
+  // standardHours: number;  // 已移除
+  // conversionFactor: number;  // 已移除
   unit?: string;
   status: 'ACTIVE' | 'INACTIVE';
 }
@@ -105,7 +105,7 @@ const ProductConfigPage: React.FC = () => {
     form.resetFields();
     form.setFieldsValue({
       status: 'ACTIVE',
-      conversionFactor: 1.0,
+      // conversionFactor: 1.0,  // 已移除
     });
     setIsModalVisible(true);
   };
@@ -174,20 +174,7 @@ const ProductConfigPage: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
     },
-    {
-      title: '标准工时',
-      dataIndex: 'standardHours',
-      key: 'standardHours',
-      width: 120,
-      render: (hours: number) => `${hours} 小时`,
-    },
-    {
-      title: '转换系数',
-      dataIndex: 'conversionFactor',
-      key: 'conversionFactor',
-      width: 120,
-      render: (factor: number) => factor ? factor.toFixed(4) : '-',
-    },
+    // 已移除标准工时和转换系数列
     {
       title: '单位',
       dataIndex: 'unit',
@@ -347,40 +334,7 @@ const ProductConfigPage: React.FC = () => {
             <Input placeholder="请输入产品名称" />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="标准工时（小时）"
-                name="standardHours"
-                rules={[{ required: true, message: '请输入标准工时' }]}
-                tooltip="生产一个单位产品所需的标准工时"
-              >
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  step={0.1}
-                  style={{ width: '100%' }}
-                  placeholder="如：2.5"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="转换系数"
-                name="conversionFactor"
-                rules={[{ required: true, message: '请输入转换系数' }]}
-                tooltip="用于将实际产量转换为同效产量，默认为1.0"
-              >
-                <InputNumber
-                  min={0}
-                  precision={4}
-                  step={0.1}
-                  style={{ width: '100%' }}
-                  placeholder="如：1.0000"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          {/* 已移除标准工时和转换系数字段 */}
 
           <Form.Item
             label="单位"

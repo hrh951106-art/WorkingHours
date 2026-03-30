@@ -521,7 +521,7 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
                       key: 'workHours',
                       width: 100,
                       render: (hours: number) => (
-                        <Text strong style={{ color: '#6366f1' }}>
+                        <Text strong style={{ color: '#22B970' }}>
                           {hours.toFixed(2)}h
                         </Text>
                       ),
@@ -836,7 +836,7 @@ const PunchResultsTab: React.FC<PunchResultsTabProps> = ({
                   width: 90,
                   align: 'center' as const,
                   render: (hours: number) => (
-                    <Text strong style={{ color: '#6366f1' }}>
+                    <Text strong style={{ color: '#22B970' }}>
                       {hours.toFixed(2)}h
                     </Text>
                   ),

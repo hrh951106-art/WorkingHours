@@ -1,12 +1,153 @@
 /* 现代化全局样式 */
 
+/* 自定义标签页样式 - 去掉圆角，无边框，底部对齐 */
+.ant-tabs.custom-tabs {
+  display: flex;
+  align-items: flex-end;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-nav {
+  border: none !important;
+  margin-bottom: 0 !important;
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-nav::before {
+  display: none !important;
+  border: none !important;
+}
+
+/* 标签页导航容器 - 支持横向滚动 */
+.ant-tabs.custom-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+  border: none !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.ant-tabs.custom-tabs > .ant-tabs-nav .ant-tabs-nav-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.ant-tabs.custom-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 标签页列表 */
+.ant-tabs.custom-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+  display: flex;
+  gap: 2px;
+}
+
+/* 工作台固定页签样式 */
+.dashboard-tab {
+  border: none !important;
+  border-radius: 0 !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  padding: 8px 16px !important;
+  margin: 0 !important;
+  margin-right: 2px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  flex-shrink: 0;
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  cursor: pointer !important;
+  transition: all 0.3s !important;
+  line-height: 1.5 !important;
+}
+
+.dashboard-tab:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #fff !important;
+}
+
+.dashboard-tab-active {
+  background: #ffffff !important;
+  color: #22B970 !important;
+  font-weight: 500 !important;
+}
+
+.dashboard-tab-active:hover {
+  background: #ffffff !important;
+  color: #22B970 !important;
+}
+
+/* 未激活的页签：透明背景，白色文字，无边框 */
+.ant-tabs.custom-tabs .ant-tabs-tab {
+  border: none !important;
+  border-radius: 0 !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  padding: 8px 16px !important;
+  margin: 0 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  flex-shrink: 0;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-tab:hover {
+  border: none !important;
+  border-radius: 0 !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #fff !important;
+}
+
+/* 激活的页签：白色背景，主题色文字，无边框 */
+.ant-tabs.custom-tabs .ant-tabs-tab-active {
+  border: none !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  color: #22B970 !important;
+}
+
+/* 激活的页签不响应悬浮效果 */
+.ant-tabs.custom-tabs .ant-tabs-tab-active:hover {
+  border: none !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  color: #22B970 !important;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #22B970 !important;
+}
+
+/* 关闭按钮样式 - 主题色，透明 */
+.ant-tabs.custom-tabs .ant-tabs-tab-remove {
+  color: rgba(34, 185, 112, 0.7) !important;
+  margin-left: 8px !important;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-tab-remove:hover {
+  color: #22B970 !important;
+}
+
+/* 激活页签的关闭按钮保持主题色 */
+.ant-tabs.custom-tabs .ant-tabs-tab-active .ant-tabs-tab-remove {
+  color: rgba(34, 185, 112, 0.7) !important;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-tab-active .ant-tabs-tab-remove:hover {
+  color: #22B970 !important;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-ink-bar {
+  display: none !important;
+}
+
+.ant-tabs.custom-tabs .ant-tabs-content-holder {
+  display: none !important;
+}
+
 /* 配色方案 - 2025年流行趋势 */
 :root {
-  /* 主色调 - 使用现代蓝紫渐变 */
-  --primary-color: #6366f1;
-  --primary-hover: #4f46e5;
-  --primary-active: #4338ca;
-  --primary-bg: #eef2ff;
+  /* 主色调 - 使用现代绿色渐变 */
+  --primary-color: #22B970;
+  --primary-hover: #1ea864;
+  --primary-active: #178c52;
+  --primary-bg: #e8f5f0;
 
   /* 成功色 */
   --success-color: #10b981;
@@ -107,7 +248,7 @@ body {
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 2px 8px rgba(84, 210, 75, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-weight: 500;
   padding: 8px 20px;
@@ -116,7 +257,7 @@ body {
 
 .modern-btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 12px rgba(84, 210, 75, 0.4);
 }
 
 .modern-btn-secondary {
@@ -133,6 +274,151 @@ body {
 .modern-btn-secondary:hover {
   border-color: var(--primary-color);
   color: var(--primary-color);
+}
+
+/* Ant Design 按钮激活状态样式修复 */
+.ant-btn:active {
+  color: var(--text-primary) !important;
+}
+
+.ant-btn-primary:active {
+  color: #fff !important;
+  background: var(--primary-active) !important;
+  border-color: var(--primary-active) !important;
+}
+
+.ant-btn-primary:active span,
+.ant-btn-primary:active .anticon {
+  color: #fff !important;
+}
+
+.ant-btn-default:active {
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+  background: var(--bg-tertiary) !important;
+}
+
+.ant-btn-default:active span,
+.ant-btn-default:active .anticon {
+  color: var(--text-primary) !important;
+}
+
+.ant-btn-text:active {
+  color: var(--text-primary) !important;
+  background: var(--bg-tertiary) !important;
+}
+
+.ant-btn-text:active span,
+.ant-btn-text:active .anticon {
+  color: var(--text-primary) !important;
+}
+
+/* Link 按钮样式 - 使用主题色 */
+.ant-btn-link {
+  color: var(--primary-color) !important;
+}
+
+.ant-btn-link:hover {
+  color: var(--primary-hover) !important;
+}
+
+.ant-btn-link:focus {
+  color: var(--primary-hover) !important;
+}
+
+.ant-btn-link span,
+.ant-btn-link .anticon {
+  color: var(--primary-color) !important;
+}
+
+.ant-btn-link:hover span,
+.ant-btn-link:hover .anticon {
+  color: var(--primary-hover) !important;
+}
+
+.ant-btn-link:focus span,
+.ant-btn-link:focus .anticon {
+  color: var(--primary-hover) !important;
+}
+
+.ant-btn-link:active {
+  color: var(--primary-active) !important;
+}
+
+.ant-btn-link:active span,
+.ant-btn-link:active .anticon {
+  color: var(--primary-active) !important;
+}
+
+/* 确保按钮在所有状态下文字可见 */
+.ant-btn span,
+.ant-btn .anticon {
+  transition: color 0.3s;
+}
+
+.ant-btn-primary:hover span,
+.ant-btn-primary:hover .anticon {
+  color: #fff !important;
+}
+
+.ant-btn-default:hover span,
+.ant-btn-default:hover .anticon {
+  color: var(--text-primary) !important;
+}
+
+/* Header 文字按钮特殊样式 */
+.header-text-btn:active {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.header-text-btn:active span,
+.header-text-btn:active .anticon {
+  color: #fff !important;
+}
+
+/* 修复所有按钮的点击状态 */
+.ant-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* 确保 Primary 按钮在所有状态下都有正确的颜色 */
+.ant-btn-primary {
+  background: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background: var(--primary-hover) !important;
+  border-color: var(--primary-hover) !important;
+  color: #fff !important;
+}
+
+.ant-btn-primary:active {
+  background: var(--primary-active) !important;
+  border-color: var(--primary-active) !important;
+}
+
+.ant-btn-primary span,
+.ant-btn-primary .anticon {
+  color: #fff !important;
+}
+
+/* Danger 按钮样式 */
+.ant-btn-dangerous:active {
+  color: #fff !important;
+}
+
+.ant-btn-dangerous:active span,
+.ant-btn-dangerous:active .anticon {
+  color: #fff !important;
+}
+
+.ant-btn-danger:active span,
+.ant-btn-danger:active .anticon {
+  color: #fff !important;
 }
 
 /* 标签样式 */
@@ -176,7 +462,7 @@ body {
 .modern-input .ant-input:focus,
 .modern-input .ant-select-focused .ant-select-selector {
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(34, 185, 112, 0.1);
 }
 
 /* 模态框样式 */
@@ -318,4 +604,41 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
+}
+
+/* 头像上传组件样式 */
+.avatar-uploader .ant-upload {
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.avatar-uploader .ant-upload:hover {
+  border-color: var(--primary-color);
+}
+
+.avatar-uploader .ant-upload-list-item {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.avatar-uploader .ant-upload-list-item-thumbnail {
+  object-fit: cover;
+}
+
+.avatar-uploader .ant-upload-list-item-info {
+  border-radius: var(--radius-lg);
+}
+
+.avatar-uploader .ant-upload-select-picture-card i {
+  font-size: 32px;
+  color: var(--text-tertiary);
+}
+
+.avatar-uploader .ant-upload-select-picture-card .ant-upload-text {
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 14px;
 }

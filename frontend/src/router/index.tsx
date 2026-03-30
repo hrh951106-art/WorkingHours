@@ -14,14 +14,17 @@ const EmployeeListPage = lazy(() => import('@/pages/hr/EmployeeListPage'));
 const EmployeeDetailPage = lazy(() => import('@/pages/hr/EmployeeDetailPage'));
 const EmployeeCreatePage = lazy(() => import('@/pages/hr/EmployeeCreatePage'));
 const EmployeeEditPage = lazy(() => import('@/pages/hr/EmployeeEditPage'));
-const ConfigPage = lazy(() => import('@/pages/hr/ConfigPage'));
+const DataSourceManagementPage = lazy(() => import('@/pages/hr/DataSourceManagementPage'));
+const CustomFieldConfigPage = lazy(() => import('@/pages/hr/CustomFieldConfigPage'));
 const EmployeeInfoConfigPage = lazy(() => import('@/pages/hr/EmployeeInfoConfigPage'));
+const SearchConditionsConfigPage = lazy(() => import('@/pages/hr/SearchConditionsConfigPage'));
 const AccountPage = lazy(() => import('@/pages/account/AccountPage'));
 const DeviceManagementPage = lazy(() => import('@/pages/punch/DeviceManagementPage'));
 const PunchRecordPage = lazy(() => import('@/pages/punch/PunchRecordPage'));
 const DeviceGroupPage = lazy(() => import('@/pages/punch/DeviceGroupPage'));
 const ShiftPage = lazy(() => import('@/pages/shift/ShiftPage'));
 const ShiftEditPage = lazy(() => import('@/pages/shift/ShiftEditPage'));
+const ShiftPropertyConfigPage = lazy(() => import('@/pages/shift/ShiftPropertyConfigPage'));
 const SchedulePage = lazy(() => import('@/pages/shift/SchedulePage'));
 const PunchPairResultPage = lazy(() => import('@/pages/calculate/PunchPairResultPage'));
 const WorkHourResultPage = lazy(() => import('@/pages/calculate/WorkHourResultPage'));
@@ -134,10 +137,18 @@ const router = createBrowserRouter([
             ),
           },
           {
-            path: 'config',
+            path: 'data-source-management',
             element: (
               <SuspenseWrapper>
-                <ConfigPage />
+                <DataSourceManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'custom-field-config',
+            element: (
+              <SuspenseWrapper>
+                <CustomFieldConfigPage />
               </SuspenseWrapper>
             ),
           },
@@ -146,6 +157,14 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <EmployeeInfoConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'search-conditions-config',
+            element: (
+              <SuspenseWrapper>
+                <SearchConditionsConfigPage />
               </SuspenseWrapper>
             ),
           },
@@ -206,6 +225,14 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <ShiftEditPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'property-config',
+            element: (
+              <SuspenseWrapper>
+                <ShiftPropertyConfigPage />
               </SuspenseWrapper>
             ),
           },

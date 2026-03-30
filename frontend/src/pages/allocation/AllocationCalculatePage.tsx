@@ -190,7 +190,7 @@ const AllocationCalculatePage: React.FC = () => {
 
   return (
     <div>
-      <Card title="执行间接工时分摊计算">
+      <Card title="执行工时分摊计算">
         <Form form={form} layout="inline" initialValues={initialValues}>
           <Form.Item
             label="分摊配置"

@@ -14,6 +14,8 @@ import {
   Divider,
   InputNumber,
   Popconfirm,
+  Modal,
+  Tag,
 } from 'antd';
 import { ArrowLeftOutlined, DeleteOutlined, SaveOutlined, PlusOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -48,6 +50,21 @@ const ShiftEditPage: React.FC = () => {
     enabled: isEdit,
   });
 
+  // 获取班次属性定义列表
+  const { data: propertyDefinitions = [] } = useQuery({
+    queryKey: ['shiftPropertyDefinitions'],
+    queryFn: () =>
+      request.get('/shift/property-definitions').then((res: any) => res || []),
+  });
+
+  // 获取当前班次的属性（仅编辑模式）
+  const { data: shiftProperties = [], refetch: refetchProperties } = useQuery({
+    queryKey: ['shiftProperties', id],
+    queryFn: () =>
+      request.get(`/shift/shifts/${id}/properties`).then((res: any) => res || []),
+    enabled: isEdit,
+  });
+
   // 收集当前班次所有segments中的accountId，用于AccountSelect组件
   const segmentAccountIds = shiftData?.segments
     ?.map((seg: any) => seg.accountId)
@@ -55,12 +72,30 @@ const ShiftEditPage: React.FC = () => {
 
   // 创建/更新班次
   const saveMutation = useMutation({
-    mutationFn: (data: any) => {
+    mutationFn: async (data: any) => {
+      // 从数据中提取 propertyKeys，只保留 Shift 表的字段
+      const { propertyKeys, ...shiftData } = data;
+
+      let shiftId = id;
+
       if (isEdit) {
-        return request.put(`/shift/shifts/${id}`, data);
+        await request.put(`/shift/shifts/${id}`, shiftData);
       } else {
-        return request.post('/shift/shifts', data);
+        const result = await request.post('/shift/shifts', shiftData);
+        shiftId = result.id;
       }
+
+      // 保存班次属性（如果有选择）
+      if (propertyKeys && propertyKeys.length > 0) {
+        await request.put(`/shift/shifts/${shiftId}/properties`, {
+          properties: propertyKeys.map((key: string) => ({
+            propertyKey: key,
+            propertyValue: '是', // 固定值为"是"表示该班次具有此属性
+          })),
+        });
+      }
+
+      return shiftId;
     },
     onSuccess: () => {
       message.success(isEdit ? '更新成功' : '创建成功');
@@ -69,6 +104,7 @@ const ShiftEditPage: React.FC = () => {
       // 只在编辑模式下清除详情缓存
       if (isEdit) {
         queryClient.invalidateQueries({ queryKey: ['shift', id] });
+        queryClient.invalidateQueries({ queryKey: ['shiftProperties', id] });
       }
       navigate('/shift/shifts');
     },
@@ -96,14 +132,14 @@ const ShiftEditPage: React.FC = () => {
       form.setFieldsValue({
         code: shiftData.code,
         name: shiftData.name,
-        type: shiftData.type,
         color: shiftData.color,
+        propertyKeys: shiftProperties?.map((p: any) => p.propertyKey) || [],
       });
-      setShiftType(shiftData.type);
+      setShiftType(shiftData.type || 'NORMAL');
 
       // 初始化班段数据
       if (shiftData.segments && shiftData.segments.length > 0) {
-        const initialSegments = shiftData.segments.map((seg: any, _index: number) => ({
+        const initialSegments = shiftData.segments.map((seg: any) => ({
           key: seg.id.toString(),
           type: seg.type,
           startDate: seg.startDate,
@@ -119,7 +155,7 @@ const ShiftEditPage: React.FC = () => {
         setSegments([]);
       }
     }
-  }, [shiftData, form]);
+  }, [shiftData, shiftProperties, form]);
 
   // 计算班段时长
   const calculateDuration = (segment: ShiftSegment): number => {
@@ -204,7 +240,7 @@ const ShiftEditPage: React.FC = () => {
       }
 
       // 验证休息班只能有休息类型的班段
-      if (values.type === 'REST') {
+      if (shiftType === 'REST') {
         const hasNonRest = segments.some(seg => seg.type !== 'REST');
         if (hasNonRest) {
           message.error('休息班只允许添加休息类型的班段');
@@ -431,30 +467,47 @@ const ShiftEditPage: React.FC = () => {
                 <Input placeholder="请输入班次名称" />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item
-                name="type"
-                label="班次类型"
-                rules={[{ required: true, message: '请选择班次类型' }]}
-              >
-                <Select
-                  placeholder="请选择班次类型"
-                  onChange={(value) => setShiftType(value)}
-                >
-                  <Select.Option value="NORMAL">正常班</Select.Option>
-                  <Select.Option value="REST">休息班</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
           </Row>
 
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
+                name="propertyKeys"
+                label="班次属性"
+                tooltip="选择后为班次打上标签，可多选"
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="请选择班次属性"
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                >
+                  {propertyDefinitions
+                    .filter((prop: any) => prop.status === 'ACTIVE')
+                    .map((prop: any) => (
+                      <Select.Option
+                        key={prop.propertyKey}
+                        value={prop.propertyKey}
+                        label={prop.name}
+                      >
+                        <div>
+                          <div>{prop.name}</div>
+                          <div style={{ fontSize: 12, color: '#999' }}>
+                            {prop.propertyKey}
+                          </div>
+                        </div>
+                      </Select.Option>
+                    ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
                 name="color"
                 label="显示颜色"
-                initialValue="#6366f1"
-                rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: '请输入有效的颜色值，如 #6366f1' }]}
+                initialValue="#22B970"
+                rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: '请输入有效的颜色值，如 #22B970' }]}
               >
                 <Input type="color" style={{ width: '100%', height: 32 }} />
               </Form.Item>

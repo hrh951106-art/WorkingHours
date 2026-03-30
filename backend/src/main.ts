@@ -15,17 +15,22 @@ async function bootstrap() {
       'http://localhost:5173',
       'http://localhost:5174',
       'http://localhost:5175',
-      process.env.FRONTEND_URL
+      'http://localhost:5176', // 移动端H5
+      process.env.FRONTEND_URL,
+      process.env.MOBILE_URL,
     ].filter(Boolean),
     credentials: true,
   });
 
   // 验证管道
+  // whitelist: false - 不过滤额外属性（人员信息模版是动态配置的，需要接收所有字段）
+  // transform: 自动转换类型（如字符串转数字）
+  // forbidNonWhitelisted: false - 不禁止额外属性
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
+      whitelist: false,
       transform: true,
-      forbidNonWhitelisted: true,
+      forbidNonWhitelisted: false,
     }),
   );
 

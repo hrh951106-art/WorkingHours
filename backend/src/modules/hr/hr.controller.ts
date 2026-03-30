@@ -83,6 +83,41 @@ export class HrController {
     return this.hrService.getEmployeeChangeLogs(+id);
   }
 
+  @Get('employees/:id/work-info-versions')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取工作信息版本列表' })
+  async getWorkInfoVersions(@Param('id') id: string) {
+    return this.hrService.getWorkInfoVersions(+id);
+  }
+
+  @Get('employees/:id/work-info/:version')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取指定版本的工作信息' })
+  async getWorkInfoByVersion(@Param('id') id: string, @Param('version') version: string) {
+    return this.hrService.getWorkInfoByVersion(+id, version);
+  }
+
+  @Put('employees/:id/work-info/current')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '更新当前工作信息' })
+  async updateCurrentWorkInfo(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateCurrentWorkInfo(+id, dto);
+  }
+
+  @Post('employees/:id/work-info-versions')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '创建工作信息新版本' })
+  async createWorkInfoVersion(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.createWorkInfoVersion(+id, dto);
+  }
+
+  @Put('employees/:id/work-info/:historyId')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '更新指定的工作信息历史记录' })
+  async updateWorkInfoHistory(@Param('id') id: string, @Param('historyId') historyId: string, @Body() dto: any) {
+    return this.hrService.updateWorkInfoHistory(+historyId, dto);
+  }
+
   @Post('employees')
   @RequirePermissions('hr:emp:edit')
   @ApiOperation({ summary: '创建人员' })
@@ -318,5 +353,121 @@ export class HrController {
   @ApiOperation({ summary: '根据层级ID获取组织列表' })
   async getOrganizationsByHierarchyLevel(@Param('hierarchyLevelId') hierarchyLevelId: string) {
     return this.hrService.getOrganizationsByHierarchyLevel(hierarchyLevelId);
+  }
+
+  // ==================== 工作信息历史 ====================
+  @Get('employees/:id/work-info-history')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取工作信息历史列表' })
+  async getWorkInfoHistoryList(@Param('id') id: string) {
+    return this.hrService.getWorkInfoHistoryList(+id);
+  }
+
+  @Post('employees/:id/work-info-history')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '创建工作信息历史记录' })
+  async createWorkInfoHistory(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.createWorkInfoHistory(+id, dto);
+  }
+
+  @Put('work-info-history/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '更新工作信息历史记录' })
+  async updateWorkInfoHistory(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateWorkInfoHistory(+id, dto);
+  }
+
+  @Delete('work-info-history/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '删除工作信息历史记录' })
+  async deleteWorkInfoHistory(@Param('id') id: string) {
+    return this.hrService.deleteWorkInfoHistory(+id);
+  }
+
+  // ==================== 学历信息 ====================
+  @Get('employees/:id/educations')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取员工学历列表' })
+  async getEmployeeEducations(@Param('id') id: string) {
+    return this.hrService.getEmployeeEducations(+id);
+  }
+
+  @Post('employees/:id/educations')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '创建学历信息' })
+  async createEmployeeEducation(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.createEmployeeEducation(+id, dto);
+  }
+
+  @Put('educations/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '更新学历信息' })
+  async updateEmployeeEducation(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateEmployeeEducation(+id, dto);
+  }
+
+  @Delete('educations/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '删除学历信息' })
+  async deleteEmployeeEducation(@Param('id') id: string) {
+    return this.hrService.deleteEmployeeEducation(+id);
+  }
+
+  // ==================== 工作经历 ====================
+  @Get('employees/:id/work-experiences')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取员工工作经历列表' })
+  async getEmployeeWorkExperiences(@Param('id') id: string) {
+    return this.hrService.getEmployeeWorkExperiences(+id);
+  }
+
+  @Post('employees/:id/work-experiences')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '创建工作经历' })
+  async createEmployeeWorkExperience(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.createEmployeeWorkExperience(+id, dto);
+  }
+
+  @Put('work-experiences/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '更新工作经历' })
+  async updateEmployeeWorkExperience(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateEmployeeWorkExperience(+id, dto);
+  }
+
+  @Delete('work-experiences/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '删除工作经历' })
+  async deleteEmployeeWorkExperience(@Param('id') id: string) {
+    return this.hrService.deleteEmployeeWorkExperience(+id);
+  }
+
+  // ==================== 家庭成员 ====================
+  @Get('employees/:id/family-members')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取员工家庭成员列表' })
+  async getEmployeeFamilyMembers(@Param('id') id: string) {
+    return this.hrService.getEmployeeFamilyMembers(+id);
+  }
+
+  @Post('employees/:id/family-members')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '创建家庭成员' })
+  async createEmployeeFamilyMember(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.createEmployeeFamilyMember(+id, dto);
+  }
+
+  @Put('family-members/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '更新家庭成员' })
+  async updateEmployeeFamilyMember(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateEmployeeFamilyMember(+id, dto);
+  }
+
+  @Delete('family-members/:id')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '删除家庭成员' })
+  async deleteEmployeeFamilyMember(@Param('id') id: string) {
+    return this.hrService.deleteEmployeeFamilyMember(+id);
   }
 }

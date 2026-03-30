@@ -281,12 +281,12 @@ const OrganizationPage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={handleAdd}
           style={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
             border: 'none',
             borderRadius: 8,
             height: 40,
             fontWeight: 500,
-            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+            boxShadow: '0 2px 8px rgba(34, 185, 112, 0.3)',
           }}
         >
           新建组织
@@ -296,8 +296,8 @@ const OrganizationPage: React.FC = () => {
         {
           title: '组织总数',
           value: flattenOrgs(orgs).length,
-          prefix: <ApartmentOutlined style={{ color: '#6366f1' }} />,
-          color: '#6366f1',
+          prefix: <ApartmentOutlined style={{ color: '#22B970' }} />,
+          color: '#22B970',
         },
         {
           title: '激活组织',
@@ -380,7 +380,7 @@ const OrganizationPage: React.FC = () => {
                             handleSelect(nodeData.data);
                             handleEdit();
                           }}
-                          style={{ color: '#6366f1' }}
+                          style={{ color: '#22B970' }}
                         />
                         <Button
                           type="text"
@@ -437,7 +437,7 @@ const OrganizationPage: React.FC = () => {
                           onClick={handleSubmit}
                           loading={createMutation.isPending || updateMutation.isPending}
                           style={{
-                            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
                             border: 'none',
                             borderRadius: 8,
                           }}

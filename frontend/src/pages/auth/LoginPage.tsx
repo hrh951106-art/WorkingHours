@@ -88,7 +88,7 @@ const LoginPage: React.FC = () => {
               width: 80,
               height: 80,
               margin: '0 auto 20px',
-              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)',
+              background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 50%, #178c52 100%)',
               borderRadius: 20,
               display: 'flex',
               alignItems: 'center',
@@ -107,7 +107,7 @@ const LoginPage: React.FC = () => {
               fontSize: 32,
               fontWeight: 700,
               marginBottom: 8,
-              background: 'linear-gradient(135deg, #1e293b 0%, #6366f1 100%)',
+              background: 'linear-gradient(135deg, #1e293b 0%, #22B970 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               letterSpacing: '-0.5px',
@@ -116,7 +116,7 @@ const LoginPage: React.FC = () => {
             精益工时管理系统
           </h1>
           <p style={{ color: '#64748b', fontSize: 14, margin: 0 }}>
-            <ThunderboltOutlined style={{ marginRight: 4, color: '#6366f1' }} />
+            <ThunderboltOutlined style={{ marginRight: 4, color: '#22B970' }} />
             智能工时管理平台
           </p>
         </div>
@@ -127,7 +127,7 @@ const LoginPage: React.FC = () => {
           size="large"
           initialValues={{
             username: 'admin',
-            password: 'admin123',
+            password: '1qaz2wsx',
           }}
         >
           <Form.Item
@@ -135,7 +135,7 @@ const LoginPage: React.FC = () => {
             rules={[{ required: true, message: '请输入用户名' }]}
           >
             <Input
-              prefix={<UserOutlined style={{ color: '#6366f1' }} />}
+              prefix={<UserOutlined style={{ color: '#22B970' }} />}
               placeholder="用户名"
               style={{
                 borderRadius: 12,
@@ -152,7 +152,7 @@ const LoginPage: React.FC = () => {
             rules={[{ required: true, message: '请输入密码' }]}
           >
             <Input.Password
-              prefix={<LockOutlined style={{ color: '#6366f1' }} />}
+              prefix={<LockOutlined style={{ color: '#22B970' }} />}
               placeholder="密码"
               style={{
                 borderRadius: 12,
@@ -175,7 +175,7 @@ const LoginPage: React.FC = () => {
                 borderRadius: 12,
                 fontSize: 16,
                 fontWeight: 600,
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
                 border: 'none',
                 boxShadow: '0 4px 16px rgba(99, 102, 241, 0.4)',
                 transition: 'all 0.3s',
@@ -200,7 +200,7 @@ const LoginPage: React.FC = () => {
             默认登录账号
           </div>
           <div style={{ color: '#1e293b', fontSize: 14, fontWeight: 600 }}>
-            admin / admin123
+            admin / 1qaz2wsx
           </div>
         </div>
       </Card>
@@ -244,13 +244,13 @@ const LoginPage: React.FC = () => {
 
         .ant-input:focus,
         .ant-input-password:focus {
-          border-color: #6366f1 !important;
+          border-color: #22B970 !important;
           box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
         }
 
         .ant-input:hover,
         .ant-input-password:hover {
-          border-color: #6366f1 !important;
+          border-color: #22B970 !important;
         }
 
         .ant-btn-primary:hover {

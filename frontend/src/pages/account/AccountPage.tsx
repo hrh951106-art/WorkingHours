@@ -91,7 +91,7 @@ const AccountPage: React.FC = () => {
 
   const handleAddLevel = () => {
     const newLevel = {
-      id: Date.now(), // 临时ID
+      id: `temp_${Date.now()}`, // 使用临时ID标识未保存状态
       name: '',
       mappingType: undefined,
       mappingValue: undefined,
@@ -153,6 +153,11 @@ const AccountPage: React.FC = () => {
     saveHierarchyMutation.mutate(hierarchyConfig);
   };
 
+  // 判断是否为未保存的层级（临时ID）
+  const isUnsavedLevel = (record: any) => {
+    return typeof record.id === 'string' && record.id.startsWith('temp_');
+  };
+
   const levelColumns = [
     {
       title: '',
@@ -201,7 +206,9 @@ const AccountPage: React.FC = () => {
       dataIndex: 'mappingType',
       key: 'mappingType',
       render: (text: string, record: any) => {
-        const hasMapping = !!text; // 如果已选择映射类型
+        const isUnsaved = isUnsavedLevel(record);
+        const hasMapping = !!text;
+
         return (
           <Select
             value={text}
@@ -211,7 +218,7 @@ const AccountPage: React.FC = () => {
             }}
             style={{ width: 150 }}
             placeholder="请选择"
-            disabled={hasMapping} // 已映射后禁止修改
+            disabled={!isUnsaved && hasMapping} // 已保存的层级禁止修改映射类型
           >
             <Select.Option value="ORG_TYPE">组织类型</Select.Option>
             {dropdownFields.map((field: any) => (
@@ -228,6 +235,8 @@ const AccountPage: React.FC = () => {
       dataIndex: 'mappingValue',
       key: 'mappingValue',
       render: (text: string, record: any) => {
+        const isUnsaved = isUnsavedLevel(record);
+
         if (record.mappingType === 'ORG_TYPE') {
           return (
             <Select
@@ -235,6 +244,7 @@ const AccountPage: React.FC = () => {
               onChange={(value) => handleLevelChange(record.id, 'mappingValue', value)}
               style={{ width: 200 }}
               placeholder="选择组织类型"
+              disabled={!isUnsaved && !!text} // 已保存的层级禁止修改映射值
             >
               {orgTypes?.map((type: any) => (
                 <Select.Option key={type.code} value={type.code}>

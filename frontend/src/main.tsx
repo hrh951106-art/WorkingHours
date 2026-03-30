@@ -23,8 +23,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       locale={zhCN}
       theme={{
         token: {
-          // 主色调 - 使用现代蓝紫色
-          colorPrimary: '#6366f1',
+          // 主色调 - 使用现代绿色
+          colorPrimary: '#22B970',
+          colorPrimaryHover: '#1ea864',
+          colorPrimaryActive: '#178c52',
           colorSuccess: '#10b981',
           colorWarning: '#f59e0b',
           colorError: '#ef4444',
@@ -66,8 +68,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           },
           Menu: {
             darkItemBg: '#1e293b',
-            darkItemSelectedBg: '#6366f1',
-            darkItemHoverBg: '#334155',
+            darkItemSelectedBg: '#22B970',
+            darkItemHoverBg: 'rgba(255, 255, 255, 0.2)',
           },
           Card: {
             colorBgContainer: '#ffffff',
@@ -81,13 +83,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           Input: {
             colorBgContainer: '#ffffff',
             colorBorder: '#e2e8f0',
-            hoverBorderColor: '#6366f1',
-            activeBorderColor: '#6366f1',
+            hoverBorderColor: '#22B970',
+            activeBorderColor: '#22B970',
           },
           Button: {
-            colorPrimary: '#6366f1',
-            colorPrimaryHover: '#4f46e5',
-            colorPrimaryActive: '#4338ca',
+            colorPrimary: '#22B970',
+            colorPrimaryHover: '#1ea864',
+            colorPrimaryActive: '#178c52',
             primaryShadow: '0 2px 0 rgba(0, 0, 0, 0.045)',
           },
         },

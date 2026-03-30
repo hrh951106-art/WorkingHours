@@ -557,4 +557,83 @@ export class ShiftService {
       data: dto,
     });
   }
+
+  // ============ 班次属性管理 ============
+
+  /**
+   * 获取班次的所有属性
+   */
+  async getShiftProperties(shiftId: number) {
+    const properties = await this.prisma.shiftProperty.findMany({
+      where: { shiftId },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return properties;
+  }
+
+  /**
+   * 创建或更新班次属性
+   */
+  async upsertShiftProperty(shiftId: number, dto: any) {
+    const { propertyKey, propertyValue, description, sortOrder } = dto;
+
+    return this.prisma.shiftProperty.upsert({
+      where: {
+        shiftId_propertyKey: {
+          shiftId,
+          propertyKey,
+        },
+      },
+      create: {
+        shiftId,
+        propertyKey,
+        propertyValue,
+        description,
+        sortOrder: sortOrder || 0,
+      },
+      update: {
+        propertyValue,
+        description,
+        sortOrder,
+      },
+    });
+  }
+
+  /**
+   * 批量保存班次属性
+   */
+  async batchSaveShiftProperties(shiftId: number, properties: any[]) {
+    // 删除现有属性
+    await this.prisma.shiftProperty.deleteMany({
+      where: { shiftId },
+    });
+
+    // 批量创建新属性
+    if (properties && properties.length > 0) {
+      await this.prisma.shiftProperty.createMany({
+        data: properties.map((prop, index) => ({
+          shiftId,
+          propertyKey: prop.propertyKey,
+          propertyValue: prop.propertyValue,
+          description: prop.description,
+          sortOrder: prop.sortOrder !== undefined ? prop.sortOrder : index,
+        })),
+      });
+    }
+
+    return this.getShiftProperties(shiftId);
+  }
+
+  /**
+   * 删除班次属性
+   */
+  async deleteShiftProperty(shiftId: number, propertyKey: string) {
+    return this.prisma.shiftProperty.deleteMany({
+      where: {
+        shiftId,
+        propertyKey,
+      },
+    });
+  }
 }

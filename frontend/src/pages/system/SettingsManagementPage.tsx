@@ -45,27 +45,19 @@ const SettingsManagementPage: React.FC = () => {
       color: '#0ea5e9',
       items: [
         {
-          key: '/hr/config/datasources',
+          key: '/hr/data-source-management',
           label: '查找项管理',
-          path: '/hr/config',
+          path: '/hr/data-source-management',
           icon: <SettingOutlined />,
           description: '管理下拉选项数据源',
           color: '#0ea5e9',
         },
         {
-          key: '/hr/config/custom-fields',
+          key: '/hr/custom-field-config',
           label: '自定义字段配置',
-          path: '/hr/config',
+          path: '/hr/custom-field-config',
           icon: <SettingOutlined />,
           description: '配置自定义字段',
-          color: '#0ea5e9',
-        },
-        {
-          key: '/hr/config/search-conditions',
-          label: '查询条件配置',
-          path: '/hr/config',
-          icon: <SettingOutlined />,
-          description: '配置查询条件字段',
           color: '#0ea5e9',
         },
         {
@@ -74,6 +66,14 @@ const SettingsManagementPage: React.FC = () => {
           path: '/hr/employee-info-config',
           icon: <SettingOutlined />,
           description: '配置员工信息字段',
+          color: '#0ea5e9',
+        },
+        {
+          key: '/hr/search-conditions-config',
+          label: '查询条件配置',
+          path: '/hr/search-conditions-config',
+          icon: <SettingOutlined />,
+          description: '配置查询条件字段',
           color: '#0ea5e9',
         },
       ],
@@ -116,13 +116,21 @@ const SettingsManagementPage: React.FC = () => {
           description: '管理工作班次',
           color: '#52c41a',
         },
+        {
+          key: '/shift/property-config',
+          label: '班次属性配置',
+          path: '/shift/property-config',
+          icon: <SettingOutlined />,
+          description: '配置班次属性',
+          color: '#52c41a',
+        },
       ],
     },
     {
       key: 'calculate',
       title: '计算管理',
       icon: <CalculatorOutlined />,
-      color: '#8b5cf6',
+      color: 'rgba(255, 255, 255, 0.2)',
       items: [
         {
           key: '/calculate/config/punch-rules',
@@ -130,7 +138,7 @@ const SettingsManagementPage: React.FC = () => {
           path: '/calculate/config/punch-rules',
           icon: <SettingOutlined />,
           description: '配置打卡规则',
-          color: '#8b5cf6',
+          color: 'rgba(255, 255, 255, 0.2)',
         },
         {
           key: '/calculate/config/attendance-codes',
@@ -138,7 +146,7 @@ const SettingsManagementPage: React.FC = () => {
           path: '/calculate/config/attendance-codes',
           icon: <SettingOutlined />,
           description: '配置出勤代码',
-          color: '#8b5cf6',
+          color: 'rgba(255, 255, 255, 0.2)',
         },
         {
           key: '/calculate/pairing-results',
@@ -146,7 +154,7 @@ const SettingsManagementPage: React.FC = () => {
           path: '/calculate/pairing-results',
           icon: <CalculatorOutlined />,
           description: '查看摆卡结果',
-          color: '#8b5cf6',
+          color: 'rgba(255, 255, 255, 0.2)',
         },
         {
           key: '/calculate/work-hour-results',
@@ -154,30 +162,22 @@ const SettingsManagementPage: React.FC = () => {
           path: '/calculate/work-hour-results',
           icon: <ClockCircleOutlined />,
           description: '查看工时结果',
-          color: '#8b5cf6',
+          color: 'rgba(255, 255, 255, 0.2)',
         },
       ],
     },
     {
       key: 'allocation',
-      title: '工时分摊',
+      title: '工时管理',
       icon: <PieChartOutlined />,
       color: '#ec4899',
       items: [
         {
           key: '/allocation/basic-config',
-          label: '通用配置',
+          label: '工时基础配置',
           path: '/allocation/basic-config',
           icon: <SettingOutlined />,
-          description: '配置分摊通用参数',
-          color: '#ec4899',
-        },
-        {
-          key: '/allocation/product-config',
-          label: '产品配置',
-          path: '/allocation/product-config',
-          icon: <SettingOutlined />,
-          description: '配置产品信息',
+          description: '配置工时基础参数',
           color: '#ec4899',
         },
         {
@@ -210,7 +210,7 @@ const SettingsManagementPage: React.FC = () => {
       key: 'system',
       title: '用户与角色',
       icon: <ControlOutlined />,
-      color: '#6366f1',
+      color: '#22B970',
       items: [
         {
           key: '/system/users',
@@ -218,7 +218,7 @@ const SettingsManagementPage: React.FC = () => {
           path: '/system/users',
           icon: <UserOutlined />,
           description: '管理系统用户',
-          color: '#6366f1',
+          color: '#22B970',
         },
         {
           key: '/system/roles',
@@ -226,7 +226,7 @@ const SettingsManagementPage: React.FC = () => {
           path: '/system/roles',
           icon: <SettingOutlined />,
           description: '管理系统角色',
-          color: '#6366f1',
+          color: '#22B970',
         },
       ],
     },
@@ -240,23 +240,6 @@ const SettingsManagementPage: React.FC = () => {
       closable: true,
     });
     navigate(item.path);
-
-    // 如果是人事配置相关的入口，需要设置对应的页签
-    if (item.path === '/hr/config') {
-      // 延迟设置，确保页面已经加载
-      setTimeout(() => {
-        const tabKeyMap: Record<string, string> = {
-          '/hr/config/datasources': 'datasources',
-          '/hr/config/custom-fields': 'customFields',
-          '/hr/config/search-conditions': 'search-conditions',
-        };
-        const targetTab = tabKeyMap[item.key];
-        if (targetTab) {
-          // 通过sessionStorage传递要激活的页签
-          sessionStorage.setItem('hr-config-active-tab', targetTab);
-        }
-      }, 100);
-    }
   };
 
   return (

@@ -162,7 +162,7 @@ const WorkHourResultPage: React.FC = () => {
       key: 'actualHours',
       width: 100,
       render: (hours: number) => (
-        <span style={{ fontWeight: 600, color: '#6366f1' }}>
+        <span style={{ fontWeight: 600, color: '#22B970' }}>
           {hours.toFixed(2)} 小时
         </span>
       ),
@@ -229,8 +229,8 @@ const WorkHourResultPage: React.FC = () => {
         {
           title: '计算结果数',
           value: results?.items?.length || 0,
-          prefix: <CalculatorOutlined style={{ color: '#6366f1' }} />,
-          color: '#6366f1',
+          prefix: <CalculatorOutlined style={{ color: '#22B970' }} />,
+          color: '#22B970',
         },
         {
           title: '总工时',
@@ -294,7 +294,7 @@ const WorkHourResultPage: React.FC = () => {
                   onClick={handleCalculate}
                   loading={calculateMutation.isPending}
                   style={{
-                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                    background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
                     border: 'none',
                     borderRadius: 8,
                     fontWeight: 500,
@@ -359,7 +359,7 @@ const WorkHourResultPage: React.FC = () => {
                 key: '1',
                 label: (
                   <Space>
-                    <InfoCircleOutlined style={{ color: '#6366f1' }} />
+                    <InfoCircleOutlined style={{ color: '#22B970' }} />
                     <span style={{ fontWeight: 500 }}>工时分摊说明</span>
                   </Space>
                 ),

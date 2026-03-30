@@ -597,14 +597,47 @@ export class AllocationService {
 
     const results = {
       success: 0,
+      updated: 0,
       failed: 0,
       errors: [] as any[],
     };
 
     for (const record of records) {
       try {
-        await this.createProductionRecord(record);
-        results.success++;
+        const { recordDate, orgId, shiftId, productId } = record;
+
+        // 检查是否已存在相同的记录
+        const existing = await this.prisma.productionRecord.findFirst({
+          where: {
+            recordDate: new Date(recordDate),
+            orgId: +orgId,
+            shiftId: +shiftId,
+            productId: +productId,
+            deletedAt: null,
+          },
+        });
+
+        if (existing) {
+          // 存在则更新
+          await this.prisma.productionRecord.update({
+            where: { id: existing.id },
+            data: {
+              plannedQty: record.plannedQty || 0,
+              actualQty: record.actualQty || 0,
+              qualifiedQty: record.qualifiedQty || record.actualQty || 0,
+              unqualifiedQty: record.unqualifiedQty || 0,
+              standardHours: record.standardHours || 0,
+              totalStdHours: (record.actualQty || 0) * (record.standardHours || 0),
+              workHours: record.workHours,
+              description: record.description,
+            },
+          });
+          results.updated++;
+        } else {
+          // 不存在则创建
+          await this.createProductionRecord(record);
+          results.success++;
+        }
       } catch (error) {
         results.failed++;
         results.errors.push({

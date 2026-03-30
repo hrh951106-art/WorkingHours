@@ -220,7 +220,7 @@ const PunchPairResultPage: React.FC = () => {
             onClick={handleManualPairing}
             loading={manualPairingMutation.isPending}
             style={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+              background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
               border: 'none',
               borderRadius: 8,
               fontWeight: 500,
@@ -234,8 +234,8 @@ const PunchPairResultPage: React.FC = () => {
         {
           title: '摆卡结果数',
           value: punchPairs?.items?.length || 0,
-          prefix: <ClockCircleOutlined style={{ color: '#6366f1' }} />,
-          color: '#6366f1',
+          prefix: <ClockCircleOutlined style={{ color: '#22B970' }} />,
+          color: '#22B970',
         },
         {
           title: '完整配对',

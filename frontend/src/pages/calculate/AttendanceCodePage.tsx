@@ -299,7 +299,7 @@ const AttendanceCodePage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={() => handleModalOpen()}
           style={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
             border: 'none',
             borderRadius: 8,
             height: 40,
@@ -314,8 +314,8 @@ const AttendanceCodePage: React.FC = () => {
         {
           title: '出勤代码总数',
           value: attendanceCodes?.length || 0,
-          prefix: <CalculatorOutlined style={{ color: '#6366f1' }} />,
-          color: '#6366f1',
+          prefix: <CalculatorOutlined style={{ color: '#22B970' }} />,
+          color: '#22B970',
         },
         {
           title: '启用中',

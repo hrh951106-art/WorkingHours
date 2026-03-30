@@ -1144,8 +1144,9 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
   const allocationBasisOptions = [
     { value: 'ACTUAL_HOURS', label: '按实际工时比例分配', description: '根据各目标的实际工时比例分配间接工时' },
     { value: 'ACTUAL_YIELDS', label: '按实际产量比例分配', description: '根据各目标的实际产量比例分配间接工时' },
-    { value: 'EQUIVALENT_YIELDS', label: '按同效产量比例分配', description: '根据各目标的同效产量比例分配间接工时' },
-    { value: 'STANDARD_HOURS', label: '按标准工时比例分配', description: '根据各目标的标准工时比例分配间接工时' },
+    // 隐藏以下两种分配方式，但逻辑保留
+    // { value: 'EQUIVALENT_YIELDS', label: '按同效产量比例分配', description: '根据各目标的同效产量比例分配间接工时' },
+    // { value: 'STANDARD_HOURS', label: '按标准工时比例分配', description: '根据各目标的标准工时比例分配间接工时' },
   ];
 
   const handleAddRule = () => {
@@ -1228,8 +1229,8 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
     const colors: Record<string, string> = {
       'ACTUAL_HOURS': 'blue',
       'ACTUAL_YIELDS': 'green',
-      'EQUIVALENT_YIELDS': 'orange',
-      'STANDARD_HOURS': 'purple',
+      // 'EQUIVALENT_YIELDS': 'orange',  // 隐藏
+      // 'STANDARD_HOURS': 'purple',  // 隐藏
     };
     return colors[basis] || 'default';
   };
@@ -1541,8 +1542,8 @@ const AllocationConfigDetail: React.FC<{ configId: number | null }> = ({ configI
     const basisMap: Record<string, string> = {
       'ACTUAL_HOURS': '按实际工时比例分配',
       'ACTUAL_YIELDS': '按实际产量比例分配',
-      'EQUIVALENT_YIELDS': '按同效产量比例分配',
-      'STANDARD_HOURS': '按标准工时比例分配',
+      // 'EQUIVALENT_YIELDS': '按同效产量比例分配',  // 隐藏
+      // 'STANDARD_HOURS': '按标准工时比例分配',  // 隐藏
     };
     return basisMap[basis] || basis;
   };

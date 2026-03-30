@@ -14,13 +14,19 @@ import {
   Row,
   Col,
   TreeSelect,
+  Upload,
+  Alert,
+  Progress,
+  Tag,
 } from 'antd';
-import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, ReloadOutlined, UploadOutlined, FileExcelOutlined, InboxOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import request from '@/utils/request';
+import * as XLSX from 'xlsx';
 
 const { RangePicker } = DatePicker;
+const { Dragger } = Upload;
 
 interface ProductionRecord {
   id?: number;
@@ -44,16 +50,19 @@ interface ProductionRecord {
   source?: string;
   recorderId: number;
   recorderName?: string;
-  conversionFactor: number;
-  convertedQty: number;
+  // conversionFactor: number;  // 已从界面隐藏，但后端仍返回
+  // convertedQty: number;  // 已从界面隐藏，但后端仍返回
   status?: string;
   description?: string;
 }
 
 const ProductionRecordPage: React.FC = () => {
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null);
-  const [form] = Form.useForm();
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
+  const [uploadFileList, setUploadFileList] = useState<any[]>([]);
+  const [parsedData, setParsedData] = useState<any[]>([]);
+  const [validationErrors, setValidationErrors] = useState<any[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const queryClient = useQueryClient();
 
   // 查询条件
@@ -76,7 +85,12 @@ const ProductionRecordPage: React.FC = () => {
     (c: any) => c.configKey === 'productionLineHierarchyLevel'
   )?.configValue;
 
-  // 获取配置的产线班次ID列表
+  // 获取配置的产线开线班次属性(优先使用属性配置)
+  const configuredShiftPropertyKeys = systemConfigs.find(
+    (c: any) => c.configKey === 'productionLineShiftPropertyKeys'
+  )?.configValue?.split(',').filter((key: string) => key) || [];
+
+  // 获取配置的产线班次ID列表(兼容旧数据)
   const configuredShiftIds = systemConfigs.find(
     (c: any) => c.configKey === 'productionLineShiftIds'
   )?.configValue?.split(',').map((id: string) => parseInt(id)) || [];
@@ -112,15 +126,41 @@ const ProductionRecordPage: React.FC = () => {
     enabled: !productionLineHierarchyLevelId,
   });
 
-  // 获取所有班次
+  // 获取所有班次及其属性
   const { data: allShifts } = useQuery({
-    queryKey: ['allShiftsForProduction'],
-    queryFn: () =>
-      request.get('/shift/shifts').then((res: any) => res?.items || res || []),
+    queryKey: ['allShiftsForProductionWithProperties'],
+    queryFn: async () => {
+      const shifts = await request.get('/shift/shifts').then((res: any) => res?.items || res || []);
+
+      // 为每个班次获取属性
+      const shiftsWithProperties = await Promise.all(
+        shifts.map(async (shift: any) => {
+          try {
+            const properties = await request.get(`/shift/shifts/${shift.id}/properties`).then((res: any) => res || []);
+            const propertyKeys = properties.map((p: any) => p.propertyKey);
+            return {
+              ...shift,
+              propertyKeys,
+            };
+          } catch (error) {
+            return {
+              ...shift,
+              propertyKeys: [],
+            };
+          }
+        })
+      );
+
+      return shiftsWithProperties;
+    },
   });
 
-  // 根据配置过滤班次
-  const shifts = configuredShiftIds.length > 0
+  // 根据配置过滤班次(优先使用属性,其次使用ID列表)
+  const shifts = configuredShiftPropertyKeys.length > 0
+    ? allShifts?.filter((s: any) =>
+        configuredShiftPropertyKeys.some((key: string) => s.propertyKeys?.includes(key))
+      )
+    : configuredShiftIds.length > 0
     ? allShifts?.filter((s: any) => configuredShiftIds.includes(s.id))
     : allShifts;
 
@@ -131,41 +171,42 @@ const ProductionRecordPage: React.FC = () => {
       request.get('/allocation/products').then((res: any) => res?.items || []),
   });
 
-  // 创建记录
-  const createMutation = useMutation({
-    mutationFn: (data: ProductionRecord) =>
-      request.post('/allocation/production-records', data),
-    onSuccess: () => {
-      message.success('创建成功');
+  // 批量导入
+  const batchImportMutation = useMutation({
+    mutationFn: (records: any[]) =>
+      request.post('/allocation/production-records/batch', { records }),
+    onSuccess: (result: any) => {
+      setIsUploading(false);
       queryClient.invalidateQueries({ queryKey: ['productionRecords'] });
-      handleCancel();
+
+      const { success, updated, failed, errors } = result;
+
+      if (failed === 0) {
+        message.success(`批量导入成功！新增 ${success} 条，更新 ${updated} 条`);
+        handleImportCancel();
+      } else {
+        message.warning(`导入完成！新增 ${success} 条，更新 ${updated} 条，失败 ${failed} 条`);
+        setValidationErrors(errors);
+      }
     },
     onError: (error: any) => {
-      message.error(error.response?.data?.message || '创建失败');
+      setIsUploading(false);
+      message.error(error.response?.data?.message || '批量导入失败');
     },
   });
 
-  // 更新记录
-  const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: ProductionRecord) =>
-      request.put(`/allocation/production-records/${id}`, data),
-    onSuccess: () => {
-      message.success('更新成功');
-      queryClient.invalidateQueries({ queryKey: ['productionRecords'] });
-      handleCancel();
-    },
-    onError: (error: any) => {
-      message.error(error.response?.data?.message || '更新失败');
-    },
-  });
+  const handleImportOpen = () => {
+    setIsImportModalVisible(true);
+    setUploadFileList([]);
+    setParsedData([]);
+    setValidationErrors([]);
+  };
 
-  const handleCreate = () => {
-    setEditingRecord(null);
-    form.resetFields();
-    form.setFieldsValue({
-      recordDate: dayjs(),
-    });
-    setIsModalVisible(true);
+  const handleImportCancel = () => {
+    setIsImportModalVisible(false);
+    setUploadFileList([]);
+    setParsedData([]);
+    setValidationErrors([]);
   };
 
   // 递归查找产线
@@ -193,68 +234,118 @@ const ProductionRecordPage: React.FC = () => {
     }));
   };
 
-  const handleSubmit = async () => {
-    try {
-      const values = await form.validateFields();
+  // 处理文件上传
+  const handleFileUpload = (file: any) => {
+    const reader = new FileReader();
+    reader.onload = (e: any) => {
+      try {
+        const data = e.target.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-      // 获取当前用户信息
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
+        if (jsonData.length === 0) {
+          message.error('Excel文件为空');
+          return;
+        }
 
-      // 获取产线信息
-      const orgInfo = findOrgById(orgTree, values.orgId);
+        // 验证和转换数据
+        const validatedData = jsonData.map((row: any, index: number) => {
+          const errors: string[] = [];
 
-      // 获取班次信息
-      const shiftInfo = shifts?.find((s: any) => s.id === values.shiftId);
+          // 验证必填字段
+          if (!row['日期']) errors.push('缺少日期');
+          if (!row['产线']) errors.push('缺少产线');
+          if (!row['产线ID'] && !row['产线名称']) errors.push('缺少产线ID或产线名称');
+          if (!row['班次']) errors.push('缺少班次');
+          if (!row['班次ID'] && !row['班次名称']) errors.push('缺少班次ID或班次名称');
+          if (!row['产品']) errors.push('缺少产品');
+          if (!row['产品ID'] && !row['产品名称']) errors.push('缺少产品ID或产品名称');
+          if (!row['实际产量'] && row['实际产量'] !== 0) errors.push('缺少实际产量');
 
-      // 获取产品信息
-      const productInfo = products?.find((p: any) => p.id === values.productId);
+          return {
+            rowIndex: index + 2, // Excel行号（从1开始，加上表头）
+            data: row,
+            errors,
+            valid: errors.length === 0,
+          };
+        });
 
-      // 获取产品标准工时
-      const standardHours = productInfo?.standardHours || 0;
+        const validData = validatedData.filter((item: any) => item.valid);
+        const invalidData = validatedData.filter((item: any) => !item.valid);
 
-      // 计算转换后产量
-      const conversionFactor = productInfo?.conversionFactor || 1.0;
-      const convertedQty = values.actualQty * conversionFactor;
+        setParsedData(validData.map((item: any) => item.data));
+        setValidationErrors(invalidData);
 
-      const data: ProductionRecord = {
-        orgId: values.orgId,
-        orgName: orgInfo?.name,
-        shiftId: values.shiftId,
-        shiftName: shiftInfo?.name,
-        productId: values.productId,
-        productName: productInfo?.name,
-        productCode: productInfo?.code || '',
-        recordDate: values.recordDate.format('YYYY-MM-DD'),
-        plannedQty: 0,
-        actualQty: values.actualQty,
-        qualifiedQty: values.actualQty, // 合格品数量默认等于实际产量
-        unqualifiedQty: 0,
-        standardHours: standardHours,
-        totalStdHours: values.actualQty * standardHours,
-        workHours: null,
-        source: 'MANUAL',
-        recorderId: user?.id || 1,
-        recorderName: user?.name || '系统管理员',
-        conversionFactor: conversionFactor,
-        convertedQty: convertedQty,
-        description: values.description || '',
-      };
-
-      if (editingRecord?.id) {
-        updateMutation.mutate({ id: editingRecord.id, ...data });
-      } else {
-        createMutation.mutate(data);
+        if (invalidData.length > 0) {
+          message.warning(`发现 ${invalidData.length} 条数据有错误，请检查`);
+        } else {
+          message.success(`成功解析 ${validData.length} 条数据`);
+        }
+      } catch (error) {
+        message.error('文件解析失败，请确保文件格式正确');
+        console.error('解析错误:', error);
       }
-    } catch (error) {
-      console.error('表单验证失败:', error);
-    }
+    };
+    reader.readAsBinaryString(file);
+    return false; // 阻止自动上传
   };
 
-  const handleCancel = () => {
-    setIsModalVisible(false);
-    setEditingRecord(null);
-    form.resetFields();
+  // 执行批量导入
+  const handleBatchImport = async () => {
+    if (parsedData.length === 0) {
+      message.error('没有可导入的数据');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: parsedData.length });
+
+    // 转换数据格式
+    const userStr = localStorage.getItem('user');
+    const user = userStr ? JSON.parse(userStr) : null;
+
+    const records = parsedData.map((row: any) => {
+      // 查找产线
+      const orgInfo = productionLineOrgs.find((org: any) => org.name === row['产线'] || org.id == row['产线ID'])
+        || (orgTree && findOrgById(orgTree, row['产线ID']));
+
+      // 查找班次
+      const shiftInfo = shifts?.find((s: any) => s.name === row['班次'] || s.id == row['班次ID']);
+
+      // 查找产品
+      const productInfo = products?.find((p: any) => p.name === row['产品'] || p.code === row['产品'] || p.id == row['产品ID']);
+
+      // 解析日期
+      const recordDate = row['日期'] instanceof Date
+        ? dayjs(row['日期']).format('YYYY-MM-DD')
+        : dayjs(row['日期'], 'YYYY-MM-DD').format('YYYY-MM-DD');
+
+      return {
+        recordDate,
+        orgId: orgInfo?.id || row['产线ID'],
+        orgName: orgInfo?.name || row['产线'],
+        shiftId: shiftInfo?.id || row['班次ID'],
+        shiftName: shiftInfo?.name || row['班次'],
+        productId: productInfo?.id || row['产品ID'],
+        productCode: productInfo?.code || '',
+        productName: productInfo?.name || row['产品'],
+        plannedQty: row['计划产量'] || 0,
+        actualQty: row['实际产量'] || 0,
+        qualifiedQty: row['合格产量'] || row['实际产量'] || 0,
+        unqualifiedQty: row['不合格产量'] || 0,
+        standardHours: productInfo?.standardHours || 0,
+        totalStdHours: (row['实际产量'] || 0) * (productInfo?.standardHours || 0),
+        workHours: row['工作工时'] || null,
+        source: 'BATCH_IMPORT',
+        recorderId: user?.id || 1,
+        recorderName: user?.name || '系统管理员',
+        description: row['备注'] || row['描述'] || '',
+      };
+    });
+
+    batchImportMutation.mutate(records);
   };
 
   // 重置查询
@@ -303,22 +394,6 @@ const ProductionRecordPage: React.FC = () => {
       render: (qty: number) => qty.toLocaleString(),
     },
     {
-      title: '转换系数',
-      dataIndex: 'conversionFactor',
-      key: 'conversionFactor',
-      width: 120,
-      align: 'right' as const,
-      render: (factor: number) => factor ? factor.toFixed(4) : '-',
-    },
-    {
-      title: '转换后产量',
-      dataIndex: 'convertedQty',
-      key: 'convertedQty',
-      width: 120,
-      align: 'right' as const,
-      render: (qty: number) => qty ? qty.toFixed(2) : '-',
-    },
-    {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
@@ -327,13 +402,38 @@ const ProductionRecordPage: React.FC = () => {
     },
   ];
 
+  // 下载Excel模板
+  const downloadTemplate = () => {
+    const template = [
+      {
+        '日期': '2024-01-15',
+        '产线': '产线A',
+        '产线ID': '1',
+        '班次': '白班',
+        '班次ID': '1',
+        '产品': '产品A',
+        '产品ID': '1',
+        '计划产量': 1000,
+        '实际产量': 950,
+        '合格产量': 950,
+        '不合格产量': 0,
+        '备注': '示例数据',
+      },
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(template);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '产量记录');
+    XLSX.writeFile(workbook, '产量记录导入模板.xlsx');
+  };
+
   return (
     <div>
       <Card
         title="产量记录"
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新增产量记录
+          <Button type="primary" icon={<UploadOutlined />} onClick={handleImportOpen}>
+            批量导入
           </Button>
         }
       >
@@ -440,109 +540,115 @@ const ProductionRecordPage: React.FC = () => {
         />
       </Card>
 
+      {/* 批量导入模态框 */}
       <Modal
-        title={editingRecord ? '编辑产量记录' : '新增产量记录'}
-        open={isModalVisible}
-        onOk={handleSubmit}
-        onCancel={handleCancel}
-        width={600}
-        confirmLoading={createMutation.isPending || updateMutation.isPending}
+        title="批量导入产量记录"
+        open={isImportModalVisible}
+        onCancel={handleImportCancel}
+        width={800}
+        footer={null}
       >
-        <Form form={form} layout="vertical">
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="记录日期"
-                name="recordDate"
-                rules={[{ required: true, message: '请选择日期' }]}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="班次"
-                name="shiftId"
-                rules={[{ required: true, message: '请选择班次' }]}
-              >
-                <Select placeholder="请选择班次">
-                  {shifts?.map((shift: any) => (
-                    <Select.Option key={shift.id} value={shift.id}>
-                      {shift.name}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+        <Space direction="vertical" style={{ width: '100%' }} size="large">
+          {/* 步骤说明 */}
+          <Alert
+            message="导入说明"
+            description={
+              <div>
+                <p>1. 下载Excel模板，按照模板格式填写数据</p>
+                <p>2. 上传填写好的Excel文件</p>
+                <p>3. 系统自动验证数据，同一天同一产线同一班次同一产品的记录会被更新，否则新增</p>
+                <p>4. 确认无误后点击"开始导入"</p>
+              </div>
+            }
+            type="info"
+            showIcon
+          />
 
-          <Form.Item
-            label="产线"
-            name="orgId"
-            rules={[{ required: true, message: '请选择产线' }]}
+          {/* 下载模板 */}
+          <Button
+            type="default"
+            icon={<FileExcelOutlined />}
+            onClick={downloadTemplate}
           >
-            {productionLineHierarchyLevelId && productionLineOrgs.length > 0 ? (
-              <Select
-                placeholder="请选择产线"
-                showSearch
-                optionFilterProp="label"
-                allowClear
-              >
-                {productionLineOrgs.map((org: any) => (
-                  <Select.Option key={org.id} value={org.id} label={org.name}>
-                    {org.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            ) : (
-              <TreeSelect
-                placeholder="请选择产线"
-                treeData={orgTree ? renderTreeNodes(orgTree) : []}
-                showSearch
-                allowClear
-                style={{ width: '100%' }}
-              />
-            )}
-          </Form.Item>
+            下载Excel模板
+          </Button>
 
-          <Form.Item
-            label="产品"
-            name="productId"
-            rules={[{ required: true, message: '请选择产品' }]}
+          {/* 文件上传 */}
+          <Dragger
+            fileList={uploadFileList}
+            beforeUpload={handleFileUpload}
+            onRemove={() => {
+              setUploadFileList([]);
+              setParsedData([]);
+              setValidationErrors([]);
+            }}
+            accept=".xlsx,.xls"
+            maxCount={1}
           >
-            <Select placeholder="请选择产品" showSearch>
-              {products?.map((product: any) => (
-                <Select.Option key={product.id} value={product.id}>
-                  {product.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
+            <p className="ant-upload-drag-icon">
+              <InboxOutlined />
+            </p>
+            <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
+            <p className="ant-upload-hint">支持 .xlsx 或 .xls 格式的Excel文件</p>
+          </Dragger>
 
-          <Form.Item
-            label="实际产量"
-            name="actualQty"
-            rules={[
-              { required: true, message: '请输入实际产量' },
-              { type: 'number', min: 0, message: '产量不能为负数' },
-            ]}
-          >
-            <InputNumber
-              min={0}
-              precision={2}
-              step={1}
-              style={{ width: '100%' }}
-              placeholder="请输入实际产量"
+          {/* 数据验证结果 */}
+          {parsedData.length > 0 && (
+            <Alert
+              message={`成功解析 ${parsedData.length} 条数据`}
+              type="success"
+              showIcon
             />
-          </Form.Item>
+          )}
 
-          <Form.Item
-            label="描述"
-            name="description"
-          >
-            <Input.TextArea placeholder="请输入描述" rows={3} />
-          </Form.Item>
-        </Form>
+          {validationErrors.length > 0 && (
+            <Alert
+              message={`发现 ${validationErrors.length} 条数据有错误`}
+              description={
+                <div style={{ maxHeight: 200, overflow: 'auto' }}>
+                  {validationErrors.map((error: any, index: number) => (
+                    <div key={index} style={{ marginBottom: 8 }}>
+                      <Tag color="red">第 {error.rowIndex} 行</Tag>
+                      {error.errors.join(', ')}
+                    </div>
+                  ))}
+                </div>
+              }
+              type="error"
+              showIcon
+            />
+          )}
+
+          {/* 导入进度 */}
+          {isUploading && (
+            <div>
+              <div style={{ marginBottom: 8 }}>
+                正在导入数据... ({parsedData.length} 条)
+              </div>
+              <Progress
+                percent={Math.round((uploadProgress.current / uploadProgress.total) * 100)}
+                status="active"
+              />
+            </div>
+          )}
+
+          {/* 操作按钮 */}
+          <div style={{ textAlign: 'right' }}>
+            <Space>
+              <Button onClick={handleImportCancel}>
+                取消
+              </Button>
+              <Button
+                type="primary"
+                onClick={handleBatchImport}
+                disabled={parsedData.length === 0 || isUploading}
+                loading={isUploading}
+              >
+                开始导入
+              </Button>
+            </Space>
+          </div>
+        </Space>
       </Modal>
     </div>
   );

@@ -62,7 +62,12 @@ const LineMaintenancePage: React.FC = () => {
     (c: any) => c.configKey === 'productionLineHierarchyLevel'
   )?.configValue;
 
-  // 获取配置的产线班次ID列表
+  // 获取配置的产线开线班次属性(优先使用属性配置)
+  const configuredShiftPropertyKeys = systemConfigs.find(
+    (c: any) => c.configKey === 'productionLineShiftPropertyKeys'
+  )?.configValue?.split(',').filter((key: string) => key) || [];
+
+  // 获取配置的产线班次ID列表(兼容旧数据)
   const configuredShiftIds = systemConfigs.find(
     (c: any) => c.configKey === 'productionLineShiftIds'
   )?.configValue?.split(',').map((id: string) => parseInt(id)) || [];
@@ -75,15 +80,41 @@ const LineMaintenancePage: React.FC = () => {
     enabled: !!productionLineHierarchyLevelId,
   });
 
-  // 获取所有班次
+  // 获取所有班次及其属性
   const { data: allShifts } = useQuery({
-    queryKey: ['allShifts'],
-    queryFn: () =>
-      request.get('/shift/shifts').then((res: any) => res?.items || res || []),
+    queryKey: ['allShiftsWithProperties'],
+    queryFn: async () => {
+      const shifts = await request.get('/shift/shifts').then((res: any) => res?.items || res || []);
+
+      // 为每个班次获取属性
+      const shiftsWithProperties = await Promise.all(
+        shifts.map(async (shift: any) => {
+          try {
+            const properties = await request.get(`/shift/shifts/${shift.id}/properties`).then((res: any) => res || []);
+            const propertyKeys = properties.map((p: any) => p.propertyKey);
+            return {
+              ...shift,
+              propertyKeys,
+            };
+          } catch (error) {
+            return {
+              ...shift,
+              propertyKeys: [],
+            };
+          }
+        })
+      );
+
+      return shiftsWithProperties;
+    },
   });
 
-  // 根据配置过滤班次
-  const shifts = configuredShiftIds.length > 0
+  // 根据配置过滤班次(优先使用属性,其次使用ID列表)
+  const shifts = configuredShiftPropertyKeys.length > 0
+    ? allShifts?.filter((s: any) =>
+        configuredShiftPropertyKeys.some((key: string) => s.propertyKeys?.includes(key))
+      )
+    : configuredShiftIds.length > 0
     ? allShifts?.filter((s: any) => configuredShiftIds.includes(s.id))
     : allShifts;
 

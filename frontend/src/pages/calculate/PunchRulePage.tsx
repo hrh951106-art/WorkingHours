@@ -213,7 +213,7 @@ const PunchRulePage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={() => handleModalOpen()}
           style={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
             border: 'none',
             borderRadius: 8,
             fontWeight: 500,
@@ -226,7 +226,7 @@ const PunchRulePage: React.FC = () => {
         {
           title: '规则总数',
           value: punchRules?.length || 0,
-          color: '#6366f1',
+          color: '#22B970',
         },
         {
           title: '启用中',

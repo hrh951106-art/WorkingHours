@@ -148,7 +148,7 @@ const EmployeeListPage: React.FC = () => {
             size="small"
             icon={<EyeOutlined />}
             onClick={() => navigate(`/hr/employees/${record.id}`)}
-            style={{ color: '#6366f1' }}
+            style={{ color: '#22B970' }}
           >
             查看
           </Button>
@@ -171,12 +171,12 @@ const EmployeeListPage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={() => navigate('/hr/employees/create')}
           style={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
             border: 'none',
             borderRadius: 8,
             height: 40,
             fontWeight: 500,
-            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+            boxShadow: '0 2px 8px rgba(34, 185, 112, 0.3)',
           }}
         >
           新增人员

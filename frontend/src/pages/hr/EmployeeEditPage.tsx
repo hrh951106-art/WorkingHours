@@ -41,7 +41,7 @@ const EmployeeEditPage: React.FC = () => {
 
   const { data: tabs, isLoading: tabsLoading } = useQuery({
     queryKey: ['employeeInfoTabs'],
-    queryFn: () => request.get('/hr/employee-info-tabs').then((res: any) => res || []),
+    queryFn: () => request.get('/hr/employee-info-tabs/for-display').then((res: any) => res || []),
   });
 
   const { data: customFields } = useQuery({
