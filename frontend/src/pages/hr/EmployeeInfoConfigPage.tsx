@@ -154,7 +154,7 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
   onMoveToGroup,
   availableGroups = [],
 }) => {
-  const isSystemField = field.fieldType === 'SYSTEM';
+  const isSystemField = field.isSystem === true;
 
   const {
     attributes,

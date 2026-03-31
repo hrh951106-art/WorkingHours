@@ -97,22 +97,9 @@ async function diagnoseBatch() {
       scheduleDate: new Date(targetDate),
       deletedAt: null,
     },
-    include: {
-      line: {
-        select: {
-          id: true,
-          name: true,
-          code: true,
-          orgId: true,
-          orgName: true,
-          workshopId: true,
-          workshopName: true,
-        },
-      },
-    },
     orderBy: [
       { shiftId: 'asc' },
-      { lineId: 'asc' },
+      { orgId: 'asc' },
     ],
   });
 
@@ -131,10 +118,7 @@ async function diagnoseBatch() {
     console.log(`【${shiftName}】(ID: ${shiftId})`);
 
     for (const ls of shiftLines) {
-      const line = ls.line;
-      console.log(`  - ${line.name} (${line.code})`);
-      console.log(`    工厂: ${line.orgName} (ID: ${line.orgId})`);
-      console.log(`    车间: ${line.workshopName} (ID: ${line.workshopId})`);
+      console.log(`  - ${ls.orgName} (ID: ${ls.orgId})`);
     }
     console.log();
   }
@@ -157,7 +141,7 @@ async function diagnoseBatch() {
 
     const l3LineShifts = await prisma.lineShift.findMany({
       where: {
-        lineId: l3Line.id,
+        orgId: l3Line.orgId,
         scheduleDate: new Date(targetDate),
         deletedAt: null,
       },
@@ -177,40 +161,26 @@ async function diagnoseBatch() {
   console.log('问题分析');
   console.log('========================================\n');
 
-  // 统计3月11日开线的产线及其工厂归属
-  const uniqueLinesMap = new Map<number, any>();
+  // 统计3月11日开线的组织及其工厂归属
+  const uniqueOrgsMap = new Map<number, any>();
   for (const ls of lineShifts) {
-    if (ls.line && !uniqueLinesMap.has(ls.line.id)) {
-      uniqueLinesMap.set(ls.line.id, ls.line);
+    if (ls.orgId && !uniqueOrgsMap.has(ls.orgId)) {
+      uniqueOrgsMap.set(ls.orgId, { id: ls.orgId, name: ls.orgName });
     }
   }
-  const uniqueLines = Array.from(uniqueLinesMap.values());
+  const uniqueOrgs = Array.from(uniqueOrgsMap.values());
 
-  console.log(`3月11日共有 ${uniqueLines.length} 条产线开线:`);
+  console.log(`3月11日共有 ${uniqueOrgs.length} 个组织开线:`);
 
-  const linesByFactory = new Map<number, any[]>();
-  for (const line of uniqueLines) {
-    if (!linesByFactory.has(line.orgId)) {
-      linesByFactory.set(line.orgId, []);
-    }
-    linesByFactory.get(line.orgId)!.push(line);
-  }
-
-  for (const [orgId, lines] of linesByFactory.entries()) {
-    const factoryName = lines[0].orgName;
-    console.log(`\n【${factoryName}】(ID: ${orgId}) - ${lines.length}条产线:`);
-    for (const line of lines) {
-      const isL3 = line.code === 'L3';
-      const marker = isL3 ? ' ⚠️ L3线体' : '';
-      console.log(`  - ${line.name} (${line.code})${marker}`);
-    }
+  for (const org of uniqueOrgs) {
+    console.log(`\n【${org.name}】(ID: ${org.id})`);
   }
 
   // 检查L3是否在开线列表中
-  const l3InOpenLines = uniqueLines.find(l => l.code === 'L3');
+  const l3InOpenLines = uniqueOrgs.find(o => o.id === l3Line.orgId);
   if (l3InOpenLines) {
     console.log('\n✅ L3线体在3月11日已开线');
-    console.log(`   L3所属工厂: ${l3InOpenLines.orgName} (ID: ${l3InOpenLines.orgId})`);
+    console.log(`   L3所属工厂: ${l3InOpenLines.name} (ID: ${l3InOpenLines.id})`);
 
     // 检查分摊结果中是否包含L3
     const hasL3Result = results.some(r => r.targetName.includes('L3') || r.targetName.includes('L3线体'));

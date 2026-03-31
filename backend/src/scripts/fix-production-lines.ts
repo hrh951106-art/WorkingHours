@@ -72,14 +72,8 @@ async function fixProductionLines() {
       },
     });
 
-    if (line && !ls.lineId) {
-      await prisma.lineShift.update({
-        where: { id: ls.id },
-        data: { lineId: line.id },
-      });
-      console.log(`✓ 更新开线记录 ${ls.id}: 关联产线 ${line.code} (ID: ${line.id})`);
-    } else if (ls.lineId) {
-      console.log(`开线记录 ${ls.id} 已关联产线`);
+    if (line) {
+      console.log(`✓ 开线记录 ${ls.id} 已关联组织 ${ls.orgName} (产线: ${line.code})`);
     } else {
       console.log(`❌ 开线记录 ${ls.id}: 未找到对应的产线 (组织ID: ${ls.orgId})`);
     }

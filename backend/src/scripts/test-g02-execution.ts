@@ -97,14 +97,11 @@ async function testG02Execution() {
       participateInAllocation: true,
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`找到 ${lineShifts.length} 条开线计划`);
   for (const lineShift of lineShifts) {
-    console.log(`- 产线: ${lineShift.line?.name || 'N/A'} (ID: ${lineShift.lineId}), 工厂: ${lineShift.line?.orgName || 'N/A'}`);
+    console.log(`- 组织: ${lineShift.orgName || 'N/A'} (ID: ${lineShift.orgId})`);
   }
 
   // 5. 尝试执行分摊计算

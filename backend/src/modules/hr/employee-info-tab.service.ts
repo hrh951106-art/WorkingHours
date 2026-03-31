@@ -68,12 +68,32 @@ export class EmployeeInfoTabService {
           orderBy: { sort: 'asc' },
           include: {
             fields: {
+              include: {
+                dataSource: {
+                  include: {
+                    options: {
+                      where: { isActive: true },
+                      orderBy: { sort: 'asc' },
+                    },
+                  },
+                },
+              },
               orderBy: { sort: 'asc' },
             },
           },
         },
         fields: {
           where: { groupId: null },
+          include: {
+            dataSource: {
+              include: {
+                options: {
+                  where: { isActive: true },
+                  orderBy: { sort: 'asc' },
+                },
+              },
+            },
+          },
           orderBy: { sort: 'asc' },
         },
       },
@@ -89,6 +109,17 @@ export class EmployeeInfoTabService {
               orderBy: { sort: 'asc' },
             },
           },
+        },
+      },
+    });
+
+    // 获取所有数据源（用于系统内置字段）
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        options: {
+          where: { isActive: true },
+          orderBy: { sort: 'asc' },
         },
       },
     });
@@ -123,6 +154,16 @@ export class EmployeeInfoTabService {
   }
 
   private enrichFieldWithType(field: any, customFields: any[]) {
+    // 系统内置字段：直接使用 EmployeeInfoTabField.dataSource
+    if (field.isSystem) {
+      return {
+        ...field,
+        type: field.fieldType === 'SELECT' ? 'SELECT' : 'TEXT',
+        dataSource: field.dataSource || null,
+      };
+    }
+
+    // 自定义字段：从 CustomField 中查找数据源
     if (field.fieldType === 'CUSTOM') {
       const customField = customFields.find((cf) => cf.code === field.fieldCode);
       return {
@@ -131,6 +172,8 @@ export class EmployeeInfoTabService {
         dataSource: customField?.dataSource || null,
       };
     }
+
+    // 其他类型字段：直接返回
     return field;
   }
 
@@ -240,6 +283,16 @@ export class EmployeeInfoTabService {
       orderBy: { sort: 'asc' },
       include: {
         fields: {
+          include: {
+            dataSource: {
+              include: {
+                options: {
+                  where: { isActive: true },
+                  orderBy: { sort: 'asc' },
+                },
+              },
+            },
+          },
           orderBy: { sort: 'asc' },
         },
       },

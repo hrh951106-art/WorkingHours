@@ -76,7 +76,6 @@ async function checkProductionLines() {
   for (const ls of lineShifts) {
     console.log(`记录ID: ${ls.id}`);
     console.log(`  组织ID: ${ls.orgId}, 组织名称: ${ls.orgName}`);
-    console.log(`  产线ID: ${ls.lineId || 'NULL'}`);
 
     // 查找对应的产线
     const matchingLines = await prisma.productionLine.findMany({
@@ -93,11 +92,6 @@ async function checkProductionLines() {
     } else {
       matchingLines.forEach(line => {
         console.log(`    - 产线ID: ${line.id}, 编码: ${line.code}, 名称: ${line.name}`);
-        if (ls.lineId === line.id) {
-          console.log(`      已关联`);
-        } else {
-          console.log(`      未关联 (当前lineId为NULL)`);
-        }
       });
     }
     console.log();

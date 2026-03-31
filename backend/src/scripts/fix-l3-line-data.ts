@@ -114,11 +114,11 @@ async function fixL3LineData() {
   console.log('3. 更新开线记录:');
   console.log('----------------------------------------');
 
-  // 查找3月11日lineId为空的开线记录
+  // 查找3月11日orgId为空的开线记录
   const orphanLineShifts = await prisma.lineShift.findMany({
     where: {
       scheduleDate: new Date('2026-03-11'),
-      lineId: null,
+      orgId: null,
     },
   });
 
@@ -129,7 +129,6 @@ async function fixL3LineData() {
       await prisma.lineShift.update({
         where: { id: ls.id },
         data: {
-          lineId: l3Line.id,
           orgId: l3Line.orgId,
           orgName: l3Line.orgName,
         },
@@ -240,21 +239,14 @@ async function fixL3LineData() {
     where: {
       scheduleDate: new Date('2026-03-11'),
     },
-    include: {
-      line: true,
-    },
     orderBy: {
-      lineId: 'asc',
+      orgId: 'asc',
     },
   });
 
   console.log('3月11日开线记录:');
   for (const ls of march11LineShifts) {
-    if (ls.line) {
-      console.log(`  - ${ls.line.name} (${ls.line.code}), 工厂: ${ls.line.orgName}`);
-    } else {
-      console.log(`  - 未关联产线 (ID: ${ls.id})`);
-    }
+    console.log(`  - ${ls.orgName} (ID: ${ls.orgId}), 班次: ${ls.shiftName}`);
   }
   console.log();
 

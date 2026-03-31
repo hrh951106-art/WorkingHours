@@ -37,11 +37,8 @@ async function checkShiftLinesQuery() {
     where: {
       scheduleDate: new Date(targetDate),
     },
-    include: {
-      line: true,
-    },
     orderBy: {
-      lineId: 'asc',
+      orgId: 'asc',
     },
   });
 
@@ -49,8 +46,7 @@ async function checkShiftLinesQuery() {
 
   for (const ls of allLineShifts) {
     console.log(`LineShift ID: ${ls.id}`);
-    console.log(`  产线: ${ls.line ? ls.line.name : '未关联'} (${ls.line ? ls.line.code : 'N/A'})`);
-    console.log(`  产线ID: ${ls.lineId}`);
+    console.log(`  组织: ${ls.orgName || '未关联'} (ID: ${ls.orgId})`);
     console.log(`  班次: ${ls.shiftName} (ID: ${ls.shiftId})`);
     console.log(`  参与分摊: ${ls.participateInAllocation ? '是' : '否'}`);
     console.log(`  状态: ${ls.status}`);
@@ -66,19 +62,15 @@ async function checkShiftLinesQuery() {
       scheduleDate: new Date(targetDate),
       participateInAllocation: true,
     },
-    include: {
-      line: true,
-    },
     orderBy: {
-      lineId: 'asc',
+      orgId: 'asc',
     },
   });
 
   console.log(`找到 ${activeLineShifts.length} 条参与分摊的LineShift记录:\n`);
 
   for (const ls of activeLineShifts) {
-    console.log(`- ${ls.line.name} (${ls.line.code})`);
-    console.log(`  工厂: ${ls.line.orgName} (ID: ${ls.line.orgId})`);
+    console.log(`- ${ls.orgName} (ID: ${ls.orgId})`);
     console.log(`  产量: 待查询`);
   }
   console.log();
@@ -87,7 +79,7 @@ async function checkShiftLinesQuery() {
   console.log('4. 检查L3的LineShift记录:');
   console.log('----------------------------------------');
 
-  const l3LineShifts = allLineShifts.filter(ls => ls.lineId === l3Line.id);
+  const l3LineShifts = allLineShifts.filter(ls => ls.orgId === l3Line.orgId);
 
   if (l3LineShifts.length === 0) {
     console.log('❌ L3没有LineShift记录！');
@@ -98,7 +90,7 @@ async function checkShiftLinesQuery() {
 
     for (const ls of l3LineShifts) {
       console.log(`LineShift ID: ${ls.id}`);
-      console.log(`  产线: ${ls.line.name}`);
+      console.log(`  组织: ${ls.orgName}`);
       console.log(`  班次: ${ls.shiftName}`);
       console.log(`  参与分摊: ${ls.participateInAllocation ? '是' : '否'}`);
 
@@ -147,7 +139,7 @@ async function checkShiftLinesQuery() {
   console.log('问题分析');
   console.log('========================================\n');
 
-  const l3InActiveShifts = activeLineShifts.some(ls => ls.lineId === l3Line.id);
+  const l3InActiveShifts = activeLineShifts.some(ls => ls.orgId === l3Line.orgId);
   const l3HasProduction = productionByLine.has(l3Line.id);
 
   console.log(`L3产线在参与分摊的LineShift中: ${l3InActiveShifts ? '是' : '否'}`);

@@ -57,68 +57,72 @@ async function debugG02Detailed() {
 
   console.log(`开线记录数: ${lineShifts.length}\n`);
 
-  // 4. 检查每条产线的情况
-  console.log('4. 产线详细检查:');
+  // 4. 检查每个组织的情况
+  console.log('4. 组织详细检查:');
   console.log('----------------------------------------');
 
   for (const ls of lineShifts) {
-    const line = await prisma.productionLine.findUnique({
-      where: { id: ls.lineId || 0 },
+    console.log(`\n组织: ${ls.orgName} (ID: ${ls.orgId})`);
+    console.log(`  开线记录ID: ${ls.id}`);
+    console.log(`  班次: ${ls.shiftName} (ID: ${ls.shiftId})`);
+
+    // 查找该组织的所有产线
+    const lines = await prisma.productionLine.findMany({
+      where: {
+        orgId: ls.orgId,
+        deletedAt: null,
+      },
     });
 
-    if (!line) {
-      console.log(`\n⚠️  产线ID ${ls.lineId} 不存在`);
-      continue;
-    }
+    console.log(`  该组织的产线数: ${lines.length}`);
 
-    console.log(`\n产线: ${line.name} (${line.code})`);
-    console.log(`  产线ID: ${line.id}`);
-    console.log(`  orgId: ${line.orgId}`);
-    console.log(`  orgName: ${line.orgName}`);
-    console.log(`  workshopId: ${line.workshopId}`);
-    console.log(`  workshopName: ${line.workshopName}`);
+    for (const line of lines) {
+      console.log(`    - ${line.name} (${line.code})`);
+    }
 
     // 检查产线是否在分配归属层级中
     let isInHierarchy = true;
-    if (allocationHierarchyLevels.length > 0) {
-      isInHierarchy = checkLineInHierarchyLevels(line, allocationHierarchyLevels);
+    if (allocationHierarchyLevels.length > 0 && lines.length > 0) {
+      isInHierarchy = lines.some(line => checkLineInHierarchyLevels(line, allocationHierarchyLevels));
       console.log(`  在分配归属层级中: ${isInHierarchy ? '✓ 是' : '✗ 否'}`);
     } else {
       console.log(`  在分配归属层级中: ✓ 配置为空，所有产线都参与`);
     }
 
     // 检查间接设备账户
-    // 修复：使用 line.name 而不是 line.orgName
-    const accountName = `富阳工厂/W1总装车间/${line.name}////间接设备`;
-    console.log(`  查找间接设备账户: ${accountName}`);
+    // 修复：使用第一个产线的名称
+    if (lines.length > 0) {
+      const accountName = `富阳工厂/W1总装车间/${lines[0].name}////间接设备`;
+      console.log(`  查找间接设备账户: ${accountName}`);
 
-    const indirectAccount = await prisma.laborAccount.findFirst({
-      where: {
-        name: accountName,
-        status: 'ACTIVE',
-      },
-    });
-
-    if (indirectAccount) {
-      console.log(`  ✓ 找到间接设备账户 (ID: ${indirectAccount.id})`);
-    } else {
-      console.log(`  ✗ 未找到间接设备账户`);
-
-      // 尝试查找相似账户
-      const similarAccounts = await prisma.laborAccount.findMany({
+      const indirectAccount = await prisma.laborAccount.findFirst({
         where: {
-          name: {
-            contains: '间接设备',
-          },
+          name: accountName,
           status: 'ACTIVE',
         },
-        take: 10,
       });
 
-      if (similarAccounts.length > 0) {
-        console.log(`  相似的间接设备账户:`);
-        for (const acc of similarAccounts) {
-          console.log(`    - ${acc.name}`);
+      if (indirectAccount) {
+        console.log(`  ✓ 找到间接设备账户 (ID: ${indirectAccount.id})`);
+      } else {
+        console.log(`  ✗ 未找到间接设备账户`);
+
+        // 尝试查找相似账户
+        const similarAccounts = await prisma.laborAccount.findMany({
+          where: {
+            name: {
+              contains: '间接设备',
+            },
+            status: 'ACTIVE',
+          },
+          take: 10,
+        });
+
+        if (similarAccounts.length > 0) {
+          console.log(`  相似的间接设备账户:`);
+          for (const acc of similarAccounts) {
+            console.log(`    - ${acc.name}`);
+          }
         }
       }
     }
@@ -135,10 +139,13 @@ async function debugG02Detailed() {
   if (allocationHierarchyLevels.length > 0) {
     let hasMatchingLine = false;
     for (const ls of lineShifts) {
-      const line = await prisma.productionLine.findUnique({
-        where: { id: ls.lineId || 0 },
+      const lines = await prisma.productionLine.findMany({
+        where: {
+          orgId: ls.orgId,
+          deletedAt: null,
+        },
       });
-      if (line && checkLineInHierarchyLevels(line, allocationHierarchyLevels)) {
+      if (lines.some(line => checkLineInHierarchyLevels(line, allocationHierarchyLevels))) {
         hasMatchingLine = true;
         break;
       }
@@ -152,10 +159,14 @@ async function debugG02Detailed() {
   // 检查间接设备账户
   let allAccountsFound = true;
   for (const ls of lineShifts) {
-    const line = await prisma.productionLine.findUnique({
-      where: { id: ls.lineId || 0 },
+    const lines = await prisma.productionLine.findMany({
+      where: {
+        orgId: ls.orgId,
+        deletedAt: null,
+      },
     });
-    if (line) {
+    if (lines.length > 0) {
+      const line = lines[0];
       const accountName = `富阳工厂/W1总装车间/${line.name}////间接设备`;
       const indirectAccount = await prisma.laborAccount.findFirst({
         where: {

@@ -145,9 +145,6 @@ async function checkYieldAllocation() {
       status: 'ACTIVE',
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`   找到 ${lineShifts.length} 条开线计划\n`);
@@ -156,7 +153,7 @@ async function checkYieldAllocation() {
   console.log(`   其中参与分摊的产线: ${activeLines.length} 条\n`);
 
   activeLines.forEach(ls => {
-    console.log(`   - ${ls.line?.name} (班次ID: ${ls.shiftId})`);
+    console.log(`   - ${ls.orgName} (班次ID: ${ls.shiftId})`);
   });
   console.log();
 

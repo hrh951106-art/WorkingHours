@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -135,18 +135,19 @@ model EmployeeChangeLog {
 }
 
 model DataSource {
-  id           Int                @id @default(autoincrement())
-  code         String             @unique
-  name         String
-  type         String             @default("CUSTOM")
-  description  String?
-  isSystem     Boolean            @default(false)
-  status       String             @default("ACTIVE")
-  sort         Int                @default(0)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  customFields CustomField[]
-  options      DataSourceOption[]
+  id                    Int                       @id @default(autoincrement())
+  code                  String                    @unique
+  name                  String
+  type                  String                    @default("CUSTOM")
+  description           String?
+  isSystem              Boolean                   @default(false)
+  status                String                    @default("ACTIVE")
+  sort                  Int                       @default(0)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  customFields          CustomField[]
+  employeeInfoTabFields EmployeeInfoTabField[]    @relation("EmployeeInfoTabFieldDataSource")
+  options               DataSourceOption[]
 }
 
 model DataSourceOption {
@@ -214,22 +215,26 @@ model EmployeeInfoTabGroup {
 }
 
 model EmployeeInfoTabField {
-  id         Int                   @id @default(autoincrement())
-  tabId      Int
-  groupId    Int?
-  fieldCode  String
-  fieldName  String
-  fieldType  String
-  isRequired Boolean               @default(false)
-  isHidden   Boolean               @default(false)
-  sort       Int                   @default(0)
-  createdAt  DateTime              @default(now())
-  updatedAt  DateTime              @updatedAt
-  group      EmployeeInfoTabGroup? @relation(fields: [groupId], references: [id])
-  tab        EmployeeInfoTab       @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  id           Int                   @id @default(autoincrement())
+  tabId        Int
+  groupId      Int?
+  fieldCode    String
+  fieldName    String
+  fieldType    String
+  isRequired   Boolean               @default(false)
+  isHidden     Boolean               @default(false)
+  isSystem     Boolean               @default(false) // 系统内置字段标识
+  dataSourceId Int?                  // 系统内置字段直接关联数据源
+  sort         Int                   @default(0)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  group        EmployeeInfoTabGroup? @relation(fields: [groupId], references: [id])
+  tab          EmployeeInfoTab       @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  dataSource   DataSource?           @relation("EmployeeInfoTabFieldDataSource", fields: [dataSourceId], references: [id])
 
   @@unique([tabId, fieldCode])
   @@index([groupId])
+  @@index([dataSourceId])
 }
 
 model LaborAccount {
@@ -557,7 +562,6 @@ model ProductionLine {
   updatedByName     String?
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
-  lineShifts        LineShift[]
   productionRecords ProductionRecord[]
 }
 
@@ -565,7 +569,6 @@ model LineShift {
   id                      Int             @id @default(autoincrement())
   orgId                   Int
   orgName                 String
-  lineId                  Int?
   shiftId                 Int
   shiftName               String
   scheduleDate            DateTime
@@ -579,7 +582,6 @@ model LineShift {
   updatedAt               DateTime        @updatedAt
   deletedAt               DateTime?
   delayedShutdownTime     Int?
-  line                    ProductionLine? @relation(fields: [lineId], references: [id])
 
   @@unique([orgId, shiftId, scheduleDate, deletedAt])
   @@index([orgId, scheduleDate])

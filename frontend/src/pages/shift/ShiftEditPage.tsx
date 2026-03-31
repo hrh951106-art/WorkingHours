@@ -85,15 +85,13 @@ const ShiftEditPage: React.FC = () => {
         shiftId = result.id;
       }
 
-      // 保存班次属性（如果有选择）
-      if (propertyKeys && propertyKeys.length > 0) {
-        await request.put(`/shift/shifts/${shiftId}/properties`, {
-          properties: propertyKeys.map((key: string) => ({
-            propertyKey: key,
-            propertyValue: '是', // 固定值为"是"表示该班次具有此属性
-          })),
-        });
-      }
+      // 保存班次属性（无论是否选择都需要发送请求，以支持删除属性）
+      await request.put(`/shift/shifts/${shiftId}/properties`, {
+        properties: (propertyKeys || []).map((key: string) => ({
+          propertyKey: key,
+          propertyValue: '是', // 固定值为"是"表示该班次具有此属性
+        })),
+      });
 
       return shiftId;
     },
@@ -101,6 +99,8 @@ const ShiftEditPage: React.FC = () => {
       message.success(isEdit ? '更新成功' : '创建成功');
       // 清除列表缓存
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      // 清除所有班次相关的缓存
+      queryClient.invalidateQueries({ queryKey: ['shiftProperties'] });
       // 只在编辑模式下清除详情缓存
       if (isEdit) {
         queryClient.invalidateQueries({ queryKey: ['shift', id] });

@@ -134,9 +134,6 @@ async function debugG02Issue() {
       deletedAt: null,
       participateInAllocation: true,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`开线记录: ${lineShifts.length > 0 ? '✓ 有' : '✗ 无'} (${lineShifts.length} 条)`);
@@ -144,14 +141,9 @@ async function debugG02Issue() {
   if (lineShifts.length > 0) {
     console.log('\n开线记录详情:');
     for (const ls of lineShifts) {
-      const line = await prisma.productionLine.findUnique({
-        where: { id: ls.lineId || 0 },
-      });
-      if (line) {
-        console.log(`  - ${line.name} (${line.code})`);
-        console.log(`    班次: ${ls.shiftName}`);
-        console.log(`    参加分摊: ${ls.participateInAllocation ? '是' : '否'}`);
-      }
+      console.log(`  - ${ls.orgName} (ID: ${ls.orgId})`);
+      console.log(`    班次: ${ls.shiftName}`);
+      console.log(`    参加分摊: ${ls.participateInAllocation ? '是' : '否'}`);
     }
   }
   console.log();

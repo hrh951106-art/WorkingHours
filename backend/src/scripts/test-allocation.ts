@@ -38,18 +38,12 @@ async function testAllocation() {
       status: 'ACTIVE',
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`开线记录数: ${lineShifts.length}`);
   lineShifts.forEach(ls => {
-    console.log(`  ${ls.line?.name || '未关联产线'} (lineId: ${ls.lineId})`);
-    if (ls.line) {
-      console.log(`    车间ID: ${ls.line.workshopId || 'NULL'}`);
-      console.log(`    参与分摊: ${ls.participateInAllocation ? '是' : '否'}`);
-    }
+    console.log(`  ${ls.orgName || '未关联组织'} (orgId: ${ls.orgId})`);
+    console.log(`    参与分摊: ${ls.participateInAllocation ? '是' : '否'}`);
   });
   console.log();
 
@@ -74,35 +68,35 @@ async function testAllocation() {
       },
     });
 
-    // 建立班次到产线的映射
-    const shiftToLineMap: Record<number, number> = {};
+    // 建立班次到组织的映射
+    const shiftToOrgMap: Record<number, number> = {};
     lineShifts.forEach(ls => {
-      if (ls.lineId && ls.line) {
-        shiftToLineMap[ls.shiftId] = ls.line.id;
+      if (ls.orgId) {
+        shiftToOrgMap[ls.shiftId] = ls.orgId;
       }
     });
 
-    // 按产线汇总
-    const directHoursByLine: Record<number, number> = {};
+    // 按组织汇总
+    const directHoursByOrg: Record<number, number> = {};
     directResults.forEach(result => {
-      const lineId = shiftToLineMap[result.shiftId];
-      if (lineId) {
-        if (!directHoursByLine[lineId]) {
-          directHoursByLine[lineId] = 0;
+      const orgId = shiftToOrgMap[result.shiftId];
+      if (orgId) {
+        if (!directHoursByOrg[orgId]) {
+          directHoursByOrg[orgId] = 0;
         }
-        directHoursByLine[lineId] += result.actualHours;
+        directHoursByOrg[orgId] += result.actualHours;
       }
     });
 
-    console.log('按产线汇总直接工时:');
-    Object.entries(directHoursByLine).forEach(([lineId, hours]) => {
-      const line = lines.find(l => l.id === +lineId);
-      console.log(`  产线ID ${lineId} (${line?.name || 'Unknown'}): ${hours} 小时`);
-      console.log(`    车间ID: ${line?.workshopId || 'NULL'}`);
+    console.log('按组织汇总直接工时:');
+    Object.entries(directHoursByOrg).forEach(([orgId, hours]) => {
+      const line = lines.find(l => l.orgId === +orgId);
+      console.log(`  组织ID ${orgId} (${line?.orgName || 'Unknown'}): ${hours} 小时`);
+      console.log(`    组织ID: ${line?.orgId || 'NULL'}`);
     });
 
-    if (Object.keys(directHoursByLine).length === 0) {
-      console.log('  ❌ 没有产线有直接工时');
+    if (Object.keys(directHoursByOrg).length === 0) {
+      console.log('  ❌ 没有组织有直接工时');
     }
   }
   console.log();

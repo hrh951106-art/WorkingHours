@@ -38,12 +38,9 @@ async function recheckMarch11Data() {
       scheduleDate: new Date(targetDate),
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
     orderBy: [
       { shiftId: 'asc' },
-      { lineId: 'asc' },
+      { orgId: 'asc' },
     ],
   });
 
@@ -66,11 +63,7 @@ async function recheckMarch11Data() {
       console.log(`【${shiftName}】(ID: ${shiftId})`);
 
       for (const ls of shiftLines) {
-        const line = ls.line;
-        console.log(`  - ${line.name} (${line.code})`);
-        console.log(`    产线ID: ${line.id}`);
-        console.log(`    工厂: ${line.orgName} (ID: ${line.orgId})`);
-        console.log(`    车间: ${line.workshopName || '未设置'} (ID: ${line.workshopId})`);
+        console.log(`  - ${ls.orgName || 'N/A'} (组织ID: ${ls.orgId})`);
         console.log(`    参与分摊: ${ls.participateInAllocation ? '是' : '否'}`);
       }
       console.log();
@@ -186,7 +179,7 @@ async function recheckMarch11Data() {
     console.log(`  车间: ${l3Line.workshopName || '未设置'} (ID: ${l3Line.workshopId})`);
 
     // 检查L3在3月11日的开线情况
-    const l3LineShifts = lineShifts.filter(ls => ls.lineId === l3Line.id);
+    const l3LineShifts = lineShifts.filter(ls => ls.orgId === l3Line.orgId);
     console.log(`  3月11日开线数: ${l3LineShifts.length} 个班次`);
 
     // 检查L3在3月11日的产量

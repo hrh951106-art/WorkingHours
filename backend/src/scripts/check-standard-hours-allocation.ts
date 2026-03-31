@@ -57,9 +57,6 @@ async function checkStandardHoursAllocation() {
       deletedAt: null,
       status: 'ACTIVE',
     },
-    include: {
-      line: true,
-    },
     take: 10,
     orderBy: {
       scheduleDate: 'desc',
@@ -69,7 +66,7 @@ async function checkStandardHoursAllocation() {
   console.log(`   总开线记录数: ${lineShifts.length}（显示前10条）`);
   for (const lineShift of lineShifts) {
     console.log(`   - 日期: ${lineShift.scheduleDate.toISOString().split('T')[0]}, ` +
-                `产线: ${lineShift.line?.name || 'N/A'} (ID: ${lineShift.lineId}), ` +
+                `组织: ${lineShift.orgName || 'N/A'} (ID: ${lineShift.orgId}), ` +
                 `班次: ${lineShift.shiftName}, ` +
                 `参与分摊: ${lineShift.participateInAllocation}`);
   }

@@ -115,14 +115,11 @@ async function checkAllocationConfig() {
       participateInAllocation: true,
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`✓ 开线计划: ${lineShifts.length} 条`);
   lineShifts.forEach(ls => {
-    console.log(`  - ${ls.line?.name || '未关联产线'} (班次: ${ls.shiftName}, 参与分摊: 是)`);
+    console.log(`  - ${ls.orgName || '未关联组织'} (班次: ${ls.shiftName}, 参与分摊: 是)`);
   });
   console.log();
 

@@ -91,9 +91,6 @@ async function debugDirectHours() {
       status: 'ACTIVE',
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`开线记录数: ${lineShifts.length}\n`);
@@ -105,7 +102,7 @@ async function debugDirectHours() {
       .reduce((sum, r) => sum + r.actualHours, 0);
 
     console.log(`开线记录ID: ${ls.id}`);
-    console.log(`  产线: ${ls.line?.name || 'N/A'} (ID: ${ls.lineId})`);
+    console.log(`  组织: ${ls.orgName || 'N/A'} (ID: ${ls.orgId})`);
     console.log(`  班次: ${ls.shiftName} (ID: ${ls.shiftId})`);
     console.log(`  该班次直接工时: ${shiftHours}h`);
     console.log(`  参与分摊: ${ls.participateInAllocation ? '是' : '否'}`);
@@ -117,43 +114,43 @@ async function debugDirectHours() {
   console.log('问题分析');
   console.log('========================================\n');
 
-  // 建立班次到产线的映射
-  const shiftToLine: Record<number, any> = {};
+  // 建立班次到组织的映射
+  const shiftToOrg: Record<number, any> = {};
   lineShifts.forEach(ls => {
-    if (ls.line) {
-      shiftToLine[ls.shiftId] = ls.line;
+    if (ls.orgId) {
+      shiftToOrg[ls.shiftId] = { id: ls.orgId, name: ls.orgName };
     }
   });
 
-  console.log('班次到产线的映射:');
-  Object.entries(shiftToLine).forEach(([shiftId, line]) => {
+  console.log('班次到组织的映射:');
+  Object.entries(shiftToOrg).forEach(([shiftId, org]) => {
     const shiftHours = directResults
       .filter(r => r.shiftId === +shiftId)
       .reduce((sum, r) => sum + r.actualHours, 0);
-    console.log(`  班次 ${shiftId} → ${line.name} (${line.id}): ${shiftHours}h`);
+    console.log(`  班次 ${shiftId} → ${org.name} (${org.id}): ${shiftHours}h`);
   });
   console.log();
 
-  // 按产线汇总
-  const directHoursByLine: Record<number, number> = {};
+  // 按组织汇总
+  const directHoursByOrg: Record<number, number> = {};
   directResults.forEach(r => {
-    const line = shiftToLine[r.shiftId];
-    if (line) {
-      directHoursByLine[line.id] = (directHoursByLine[line.id] || 0) + r.actualHours;
+    const org = shiftToOrg[r.shiftId];
+    if (org) {
+      directHoursByOrg[org.id] = (directHoursByOrg[org.id] || 0) + r.actualHours;
     }
   });
 
-  console.log('按产线汇总直接工时:');
-  Object.entries(directHoursByLine).forEach(([lineId, hours]) => {
-    const line = Object.values(shiftToLine).find((l: any) => l.id === +lineId) as any;
-    console.log(`  ${line?.name || `产线${lineId}`}: ${hours}h`);
+  console.log('按组织汇总直接工时:');
+  Object.entries(directHoursByOrg).forEach(([orgId, hours]) => {
+    const org = Object.values(shiftToOrg).find((o: any) => o.id === +orgId) as any;
+    console.log(`  ${org?.name || `组织${orgId}`}: ${hours}h`);
   });
 
-  const missingShift = directResults.filter(r => !shiftToLine[r.shiftId]);
+  const missingShift = directResults.filter(r => !shiftToOrg[r.shiftId]);
   if (missingShift.length > 0) {
     const missingHours = missingShift.reduce((sum, r) => sum + r.actualHours, 0);
     console.log(`\n⚠️  警告: ${missingShift.length} 条记录（${missingHours}h）的班次没有对应的开线记录`);
-    console.log('   这些工时无法分摊到产线！');
+    console.log('   这些工时无法分摊到组织！');
   }
 
   console.log('\n========================================');

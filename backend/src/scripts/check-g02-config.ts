@@ -157,9 +157,6 @@ async function checkG02Config() {
       status: 'ACTIVE',
       participateInAllocation: true,
     },
-    include: {
-      line: true,
-    },
     orderBy: {
       scheduleDate: 'desc',
     },
@@ -169,8 +166,8 @@ async function checkG02Config() {
   console.log(`   找到 ${recentLineShifts.length} 条开线计划`);
   for (const lineShift of recentLineShifts) {
     console.log(`   - 日期: ${lineShift.scheduleDate.toISOString().split('T')[0]}, ` +
-                `产线: ${lineShift.line?.name || 'N/A'} (ID: ${lineShift.lineId}), ` +
-                `所属工厂: ${lineShift.line?.orgName || 'N/A'}`);
+                `组织ID: ${lineShift.orgId}, ` +
+                `组织名称: ${lineShift.orgName || 'N/A'}`);
   }
 
   // 7. 检查富阳工厂的间接设备账户

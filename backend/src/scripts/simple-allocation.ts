@@ -72,43 +72,40 @@ async function simpleAllocation() {
       status: 'ACTIVE',
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`开线计划: ${lineShifts.length} 条`);
   lineShifts.forEach(ls => {
-    console.log(`  ${ls.line?.name || 'N/A'} (班次ID: ${ls.shiftId})`);
+    console.log(`  ${ls.orgName || 'N/A'} (班次ID: ${ls.shiftId})`);
   });
   console.log();
 
-  // 4. 建立组织ID到产线的映射
-  const orgToLine: Record<number, any> = {};
+  // 4. 建立组织ID到组织信息的映射
+  const orgToInfo: Record<number, any> = {};
   lineShifts.forEach(ls => {
-    if (ls.line) {
-      orgToLine[ls.line.orgId] = ls.line;
+    if (ls.orgId) {
+      orgToInfo[ls.orgId] = { id: ls.orgId, name: ls.orgName };
     }
   });
 
-  // 5. 按产线汇总直接工时（通过员工组织ID）
-  const directHoursByLine: Record<number, number> = {};
+  // 5. 按组织汇总直接工时（通过员工组织ID）
+  const directHoursByOrg: Record<number, number> = {};
   directResults.forEach(r => {
     const orgId = r.employee.orgId;
-    const line = orgToLine[orgId];
-    if (line) {
-      directHoursByLine[line.id] = (directHoursByLine[line.id] || 0) + r.actualHours;
+    const orgInfo = orgToInfo[orgId];
+    if (orgInfo) {
+      directHoursByOrg[orgId] = (directHoursByOrg[orgId] || 0) + r.actualHours;
     }
   });
 
-  console.log('产线直接工时汇总:');
-  Object.entries(directHoursByLine).forEach(([lineId, hours]) => {
-    const line = Object.values(orgToLine).find((l: any) => l.id === +lineId) as any;
-    console.log(`  ${line?.name || `产线${lineId}`}: ${hours}h`);
+  console.log('组织直接工时汇总:');
+  Object.entries(directHoursByOrg).forEach(([orgId, hours]) => {
+    const orgInfo = Object.values(orgToInfo).find((o: any) => o.id === +orgId) as any;
+    console.log(`  ${orgInfo?.name || `组织${orgId}`}: ${hours}h`);
   });
   console.log();
 
-  const totalDirectHours = Object.values(directHoursByLine).reduce((a, b) => a + b, 0);
+  const totalDirectHours = Object.values(directHoursByOrg).reduce((a: number, b) => (a as number) + (b as number), 0);
   console.log(`总直接工时: ${totalDirectHours}h\n`);
 
   if (totalDirectHours === 0) {
@@ -149,17 +146,17 @@ async function simpleAllocation() {
 
     console.log(`  班次: ${schedule.shift?.name}, 开线数: ${shiftLines.length}`);
 
-    // 对每条产线分摊
+    // 对每个组织分摊
     for (const lineShift of shiftLines) {
-      const line = lineShift.line;
-      if (!line) continue;
+      const orgInfo = orgToInfo[lineShift.orgId];
+      if (!orgInfo) continue;
 
-      const lineDirectHours = directHoursByLine[line.id] || 0;
-      const ratio = lineDirectHours / totalDirectHours;
+      const orgDirectHours = directHoursByOrg[lineShift.orgId] || 0;
+      const ratio = (orgDirectHours as number) / totalDirectHours;
       const allocatedHours = calcResult.actualHours * ratio;
 
-      console.log(`    产线: ${line.name}`);
-      console.log(`      直接工时: ${lineDirectHours}h`);
+      console.log(`    组织: ${orgInfo.name}`);
+      console.log(`      直接工时: ${orgDirectHours}h`);
       console.log(`      分摊比例: ${(ratio * 100).toFixed(1)}%`);
       console.log(`      分摊工时: ${allocatedHours.toFixed(2)}h`);
 
@@ -179,12 +176,12 @@ async function simpleAllocation() {
             attendanceCodeId: calcResult.attendanceCodeId,
             attendanceCode: calcResult.attendanceCode?.code || '',
             sourceHours: calcResult.actualHours,
-            targetType: 'LINE',
-            targetId: line.id,
-            targetName: line.name,
+            targetType: 'ORG',
+            targetId: lineShift.orgId,
+            targetName: orgInfo.name,
             targetAccountId: 0,
             allocationBasis: 'ACTUAL_HOURS',
-            basisValue: lineDirectHours,
+            basisValue: orgDirectHours,
             weightValue: totalDirectHours,
             allocationRatio: ratio,
             allocatedHours,

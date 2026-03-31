@@ -61,23 +61,17 @@ async function findW2Lines() {
       scheduleDate: targetDate,
       deletedAt: null,
     },
-    include: {
-      line: true,
-    },
     orderBy: [
       { shiftId: 'asc' },
-      { lineId: 'asc' },
+      { orgId: 'asc' },
     ],
   });
 
   console.log(`找到 ${lineShifts.length} 条开线记录\n`);
 
   for (const ls of lineShifts) {
-    const line = ls.line;
-    console.log(`- ${line.name} (${line.code})`);
+    console.log(`- ${ls.orgName} (ID: ${ls.orgId})`);
     console.log(`  班次: ${ls.shiftName} (ID: ${ls.shiftId})`);
-    console.log(`  工厂: ${line.orgName} (ID: ${line.orgId})`);
-    console.log(`  车间: ${line.workshopName || '未设置'} (ID: ${line.workshopId || '未设置'})`);
     console.log();
   }
 
@@ -87,26 +81,16 @@ async function findW2Lines() {
 
   const linesByFactory = new Map<number, any[]>();
   for (const ls of lineShifts) {
-    const line = ls.line;
-    if (!linesByFactory.has(line.orgId)) {
-      linesByFactory.set(line.orgId, []);
+    if (!linesByFactory.has(ls.orgId)) {
+      linesByFactory.set(ls.orgId, []);
     }
-    linesByFactory.get(line.orgId)!.push(ls);
+    linesByFactory.get(ls.orgId)!.push(ls);
   }
 
   for (const [orgId, factoryLines] of linesByFactory.entries()) {
-    const factoryName = factoryLines[0].line.orgName;
+    const factoryName = factoryLines[0].orgName;
     console.log(`\n【${factoryName}】(ID: ${orgId})`);
     console.log(`  开线数: ${factoryLines.length} 条记录`);
-
-    const uniqueLinesInFactory = Array.from(
-      new Map(factoryLines.map(ls => [ls.line.id, ls.line])).values()
-    );
-    console.log(`  产线数: ${uniqueLinesInFactory.length} 条`);
-    for (const line of uniqueLinesInFactory) {
-      const shiftsForLine = factoryLines.filter(ls => ls.lineId === line.id);
-      console.log(`    - ${line.name} (${line.code}): ${shiftsForLine.length} 个班次`);
-    }
   }
 
   console.log('\n========================================');

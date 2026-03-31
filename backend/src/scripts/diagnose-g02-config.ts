@@ -223,9 +223,6 @@ async function diagnoseG02Config() {
       deletedAt: null,
       participateInAllocation: true,
     },
-    include: {
-      line: true,
-    },
   });
 
   console.log(`3月11日参与分摊的开线记录数: ${lineShifts.length}`);
@@ -233,10 +230,9 @@ async function diagnoseG02Config() {
   if (lineShifts.length === 0) {
     console.log('❌ 没有开线记录，无法执行分摊');
   } else {
-    console.log('\n开线产线:');
+    console.log('\n开线组织:');
     for (const ls of lineShifts) {
-      console.log(`  - ${ls.line.name} (${ls.line.code})`);
-      console.log(`    工厂: ${ls.line.orgName} (ID: ${ls.line.orgId})`);
+      console.log(`  - ${ls.orgName} (ID: ${ls.orgId})`);
     }
   }
   console.log();

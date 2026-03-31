@@ -87,9 +87,6 @@ async function checkAllocationDetails() {
       status: 'ACTIVE',
       participateInAllocation: true,
     },
-    include: {
-      line: true,
-    },
     orderBy: {
       scheduleDate: 'desc',
     },
@@ -99,12 +96,9 @@ async function checkAllocationDetails() {
   for (const lineShift of recentLineShifts) {
     console.log(`\n   开线记录ID: ${lineShift.id}`);
     console.log(`   - 日期: ${lineShift.scheduleDate.toISOString().split('T')[0]}`);
-    console.log(`   - 产线: ${lineShift.line?.name || '⚠️  产线为空'} (ID: ${lineShift.lineId})`);
+    console.log(`   - 组织: ${lineShift.orgName || '⚠️  组织为空'} (ID: ${lineShift.orgId})`);
     console.log(`   - 班次: ${lineShift.shiftName} (ID: ${lineShift.shiftId})`);
     console.log(`   - 参与分摊: ${lineShift.participateInAllocation}`);
-    if (lineShift.line) {
-      console.log(`   - 产线所属车间: ${lineShift.line.workshopName || 'N/A'} (ID: ${lineShift.line.workshopId})`);
-    }
   }
 
   // 4. 检查最近的待分摊工时记录

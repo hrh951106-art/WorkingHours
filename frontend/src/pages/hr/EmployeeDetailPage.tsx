@@ -913,6 +913,11 @@ const EmployeeDetailPage: React.FC = () => {
         const option = options.find((opt: any) => opt.value === value);
         return option?.label || value;
       }
+      if (fieldCode === 'educationType' || fieldCode === 'education_type') {
+        const options = getOptionsByDataSourceCode('education_type');
+        const option = options.find((opt: any) => opt.value === value);
+        return option?.label || value;
+      }
       if (fieldCode === 'maritalStatus' || fieldCode === 'marital_status') {
         const options = getOptionsByDataSourceCode('marital_status');
         const option = options.find((opt: any) => opt.value === value);
@@ -1002,6 +1007,15 @@ const EmployeeDetailPage: React.FC = () => {
         };
         return nationMap[value] || value;
       }
+      // 工作地点
+      if (fieldCode === 'workLocation' || fieldCode === 'work_location') {
+        const options = getOptionsByDataSourceCode('work_location');
+        if (options && options.length > 0) {
+          const option = options.find((opt: any) => opt.value === value);
+          return option?.label || value;
+        }
+        return value;
+      }
       // 人员类型（自定义字段A06）
       if (fieldCode === 'A06' || fieldCode === 'person_type') {
         const options = getOptionsByDataSourceCode('EmpType');
@@ -1036,6 +1050,11 @@ const EmployeeDetailPage: React.FC = () => {
 
   // 将数据库字段名映射到表单字段名
   const mapFieldName = (code: string): string => {
+    // 如果已经是驼峰格式，直接返回
+    if (!code.includes('_')) {
+      return code;
+    }
+
     const fieldMapping: Record<string, string> = {
       employee_no: 'employeeNo',
       id_card: 'idCard',
@@ -1416,32 +1435,49 @@ const EmployeeDetailPage: React.FC = () => {
 
   // 渲染自定义字段（参考新增人员页面）
   const renderCustomField = (field: any) => {
+    // 兼容不同的字段属性命名
+    const fieldName = field.fieldName || field.name;
+    const fieldCode = field.fieldCode || field.code;
+    const fieldType = field.type || field.fieldType;
+
     const commonProps = {
-      label: field.name,
-      name: field.code,
-      rules: field.isRequired ? [{ required: true, message: `请输入${field.name}` }] : undefined,
-      key: field.code,
+      label: fieldName,
+      name: fieldCode,
+      rules: field.isRequired ? [{ required: true, message: `请输入${fieldName}` }] : undefined,
+      key: fieldCode,
     };
 
-    switch (field.type) {
+    // 直接使用字段对象中包含的dataSource，而不是从全局列表查找
+    const getFieldOptions = () => {
+      if (field.dataSource && field.dataSource.options) {
+        return field.dataSource.options.map((opt: any) => ({
+          id: opt.id,
+          value: opt.value,
+          label: opt.label,
+        }));
+      }
+      return [];
+    };
+
+    switch (fieldType) {
       case 'TEXT':
         return (
           <Form.Item {...commonProps}>
-            <Input placeholder={`请输入${field.name}`} />
+            <Input placeholder={`请输入${fieldName}`} />
           </Form.Item>
         );
 
       case 'TEXTAREA':
         return (
           <Form.Item {...commonProps}>
-            <Input.TextArea rows={4} placeholder={`请输入${field.name}`} />
+            <Input.TextArea rows={4} placeholder={`请输入${fieldName}`} />
           </Form.Item>
         );
 
       case 'NUMBER':
         return (
           <Form.Item {...commonProps}>
-            <Input type="number" placeholder={`请输入${field.name}`} />
+            <Input type="number" placeholder={`请输入${fieldName}`} />
           </Form.Item>
         );
 
@@ -1461,8 +1497,8 @@ const EmployeeDetailPage: React.FC = () => {
       case 'SELECT_SINGLE':
         return (
           <Form.Item {...commonProps}>
-            <Select placeholder={`请选择${field.name}`}>
-              {getDropdownOptions(field.code).map((option: any) => (
+            <Select placeholder={`请选择${fieldName}`}>
+              {getFieldOptions().map((option: any) => (
                 <Select.Option key={option.id} value={option.value}>
                   {option.label}
                 </Select.Option>
@@ -1524,8 +1560,8 @@ const EmployeeDetailPage: React.FC = () => {
       case 'SELECT_MULTI':
         return (
           <Form.Item {...commonProps}>
-            <Select mode="multiple" placeholder={`请选择${field.name}`}>
-              {getDropdownOptions(field.code).map((option: any) => (
+            <Select mode="multiple" placeholder={`请选择${fieldName}`}>
+              {getFieldOptions().map((option: any) => (
                 <Select.Option key={option.id} value={option.value}>
                   {option.label}
                 </Select.Option>
@@ -1540,7 +1576,7 @@ const EmployeeDetailPage: React.FC = () => {
           return (
             <Form.Item {...commonProps}>
               <TreeSelect
-                placeholder={`请选择${field.name}`}
+                placeholder={`请选择${fieldName}`}
                 showSearch
                 treeDefaultExpandAll
                 treeData={renderOrgTree(orgTree)}
@@ -1551,8 +1587,8 @@ const EmployeeDetailPage: React.FC = () => {
         // 否则使用自定义数据源的选项
         return (
           <Form.Item {...commonProps}>
-            <Select placeholder={`请选择${field.name}`}>
-              {getDropdownOptions(field.code).map((option: any) => (
+            <Select placeholder={`请选择${fieldName}`}>
+              {getFieldOptions().map((option: any) => (
                 <Select.Option key={option.id} value={option.value}>
                   {option.label}
                 </Select.Option>
@@ -2022,7 +2058,7 @@ const EmployeeDetailPage: React.FC = () => {
 
                 // 获取数据源（工作信息使用当前版本，其他使用主数据）
                 // 注意：currentWorkInfo是API响应对象，真正的WorkInfoHistory数据在currentWorkInfo.currentWorkInfo中
-                const dataSource = isWorkInfo ? (currentWorkInfo?.currentWorkInfo || currentWorkInfo) : employee;
+                const dataSource = isWorkInfo ? currentWorkInfo?.currentWorkInfo : employee;
 
                 // 如果分组内没有可见字段，不显示该分组
                 if (allFields.length === 0) {
@@ -2109,11 +2145,11 @@ const EmployeeDetailPage: React.FC = () => {
                           // 从系统字段或自定义字段中获取值
                           let value;
 
-                          // 职位信息字段（从 currentWorkInfo 读取）- 使用snake_case匹配fieldCode
-                          const positionInfoFields = ['position', 'job_level', 'employee_type', 'org_id', 'work_location', 'work_address', 'change_type', 'effective_date', 'hire_date', 'probation_start', 'probation_end', 'probation_months', 'regular_date', 'resignation_date', 'resignation_reason', 'work_years'];
+                          // 职位信息字段（从 currentWorkInfo 读取）
+                          const positionInfoFields = ['position', 'jobLevel', 'job_level', 'employeeType', 'employee_type', 'orgId', 'org_id', 'workLocation', 'work_location', 'workAddress', 'work_address', 'changeType', 'change_type', 'effectiveDate', 'effective_date', 'hireDate', 'hire_date', 'probationStart', 'probation_start', 'probationEnd', 'probation_end', 'probationMonths', 'probation_months', 'regularDate', 'regular_date', 'resignationDate', 'resignation_date', 'resignationReason', 'resignation_reason', 'workYears', 'work_years'];
 
-                          // 基本信息字段（从 employee 读取）- 使用snake_case匹配fieldCode
-                          const basicInfoFields = ['employee_no', 'name', 'gender', 'id_card', 'mobile', 'email', 'birth_date', 'age', 'marital_status', 'native_place', 'political_status', 'household_register', 'current_address', 'photo', 'emergency_contact', 'emergency_phone', 'emergency_relation', 'home_address', 'home_phone'];
+                          // 基本信息字段（从 employee 读取）
+                          const basicInfoFields = ['employeeNo', 'employee_no', 'name', 'gender', 'idCard', 'id_card', 'mobile', 'phone', 'email', 'birthDate', 'birth_date', 'age', 'maritalStatus', 'marital_status', 'nativePlace', 'native_place', 'politicalStatus', 'political_status', 'householdRegister', 'household_register', 'currentAddress', 'current_address', 'photo', 'emergencyContact', 'emergency_contact', 'emergencyPhone', 'emergency_phone', 'emergencyRelation', 'emergency_relation', 'homeAddress', 'home_address', 'homePhone', 'home_phone'];
 
                           if (field.fieldType === 'SYSTEM') {
                             // 特殊处理：employee_no始终从employee读取
@@ -2216,9 +2252,9 @@ const EmployeeDetailPage: React.FC = () => {
                               return getLabelByValue(fieldCode, fieldType, val);
                             }
 
-                            // 系统字段中的下拉类型（使用snake_case格式）
+                            // 系统字段中的下拉类型
                             if (fieldType === 'SYSTEM') {
-                              const dropdownSystemFields = ['gender', 'position', 'job_level', 'employee_type', 'education_level', 'marital_status', 'political_status', 'org_id', 'emergency_relation', 'nation'];
+                              const dropdownSystemFields = ['gender', 'position', 'jobLevel', 'employeeType', 'educationLevel', 'educationType', 'maritalStatus', 'politicalStatus', 'orgId', 'org_id', 'emergencyRelation', 'emergency_relation', 'nation', 'workLocation', 'work_location'];
                               if (dropdownSystemFields.includes(fieldCode)) {
                                 return getLabelByValue(fieldCode, fieldType, val);
                               }
