@@ -24,7 +24,8 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed:datasources": "ts-node prisma/seed-datasources.ts",
     "prisma:seed:employee-tabs": "ts-node prisma/seed-employee-info-tabs.ts",
-    "prisma:seed:all": "ts-node prisma/seed-all.ts"
+    "prisma:seed:all": "ts-node prisma/seed-all.ts",
+    "generate:pg-migration": "ts-node scripts/generate-full-migration.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
