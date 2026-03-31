@@ -1,7 +1,17 @@
 # 生产环境部署指南
 
+## 📌 重要提示（2025-03-31更新）
+
+**生产环境数据库类型**: PostgreSQL
+- ✅ 项目已配置为使用 PostgreSQL
+- ✅ 提供了完整的 PostgreSQL 迁移文件
+- 📖 详细的 PostgreSQL 部署指南请参阅: [POSTGRESQL_PRODUCTION_GUIDE.md](./POSTGRESQL_PRODUCTION_GUIDE.md)
+
+**SQLite 迁移文件仍保留**，用于开发环境或本地测试。
+
 ## 目录
-- [数据库初始化](#数据库初始化)
+- [数据库选择](#数据库选择)
+- [PostgreSQL 快速部署](#postgresql-快速部署)
 - [环境变量配置](#环境变量配置)
 - [部署步骤](#部署步骤)
 - [验证部署](#验证部署)
@@ -9,7 +19,101 @@
 
 ---
 
-## 数据库初始化
+## 数据库选择
+
+### 生产环境: PostgreSQL（推荐）⭐
+
+项目已配置为使用 **PostgreSQL** 作为生产数据库。
+
+**优势**:
+- ✅ 企业级数据库，稳定可靠
+- ✅ 支持复杂查询和事务
+- ✅ 优秀的并发性能
+- ✅ 丰富的索引类型
+- ✅ 完善的备份和恢复机制
+
+**快速开始**:
+```bash
+# 1. 查看详细部署指南
+cat POSTGRESQL_PRODUCTION_GUIDE.md
+
+# 2. 或使用 Docker 快速启动
+docker run --name jy-postgres \
+  -e POSTGRES_USER=jy_user \
+  -e POSTGRES_PASSWORD=your_password \
+  -e POSTGRES_DB=jy_production \
+  -p 5432:5432 \
+  -v jy-postgres-data:/var/lib/postgresql/data \
+  --restart unless-stopped \
+  -d postgres:15-alpine
+```
+
+### 开发环境: SQLite
+
+开发环境可以使用 SQLite（无需额外安装）：
+
+```bash
+# 开发环境配置（.env）
+DATABASE_URL="file:./dev.db"
+```
+
+---
+
+## PostgreSQL 快速部署
+
+### 方式1: Docker 部署（最简单）
+
+```bash
+# 1. 启动 PostgreSQL 容器
+docker run --name jy-postgres \
+  -e POSTGRES_USER=jy_user \
+  -e POSTGRES_PASSWORD=your_secure_password \
+  -e POSTGRES_DB=jy_production \
+  -p 5432:5432 \
+  -v jy-postgres-data:/var/lib/postgresql/data \
+  --restart unless-stopped \
+  -d postgres:15-alpine
+
+# 2. 配置环境变量
+cd /path/to/JY/backend
+cp .env.production.example .env.production
+
+# 编辑 .env.production
+vi .env.production
+# 修改: DATABASE_URL="postgresql://jy_user:your_secure_password@localhost:5432/jy_production?schema=public"
+
+# 3. 应用数据库迁移
+npx prisma migrate deploy
+
+# 4. 初始化种子数据
+npm run prisma:seed:all
+
+# 5. 构建并启动
+npm run build
+pm2 start dist/main.js --name jy-backend
+```
+
+### 方式2: 系统安装 PostgreSQL
+
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install postgresql postgresql-contrib libpq-dev -y
+
+# 创建数据库和用户
+sudo -u postgres psql << EOF
+CREATE USER jy_user WITH PASSWORD 'your_secure_password';
+CREATE DATABASE jy_production OWNER jy_user;
+GRANT ALL PRIVILEGES ON DATABASE jy_production TO jy_user;
+EOF
+
+# 配置环境变量并部署（同方式1步骤2-5）
+```
+
+**详细配置**: 请参阅 [POSTGRESQL_PRODUCTION_GUIDE.md](./POSTGRESQL_PRODUCTION_GUIDE.md)
+
+---
+
+## 数据库初始化（SQLite 开发环境）
 
 ### ⚠️ 重要说明
 
