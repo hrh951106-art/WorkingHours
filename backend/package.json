@@ -23,6 +23,7 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed:datasources": "ts-node prisma/seed-datasources.ts",
+    "prisma:seed:employee-tabs": "ts-node prisma/seed-employee-info-tabs.ts",
     "prisma:seed:all": "ts-node prisma/seed-all.ts"
   },
   "dependencies": {

@@ -13,7 +13,7 @@ async function main() {
 
   try {
     // 第一步：初始化数据源（组织类型、学历、工作状态等基础数据）
-    console.log('【步骤 1/2】初始化数据源...');
+    console.log('【步骤 1/4】初始化数据源...');
     console.log('----------------------------------------');
     await import('./seed-datasources');
     console.log('✓ 数据源初始化完成\n');
@@ -21,8 +21,17 @@ async function main() {
     // 等待一下确保数据源已提交
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // 第二步：初始化主要业务数据（用户、组织、员工、班次等）
-    console.log('【步骤 2/2】初始化业务数据...');
+    // 第二步：初始化人事信息页签配置
+    console.log('【步骤 2/4】初始化人事信息页签配置...');
+    console.log('----------------------------------------');
+    await import('./seed-employee-info-tabs');
+    console.log('✓ 人事信息页签配置初始化完成\n');
+
+    // 等待一下确保页签配置已提交
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 第三步：初始化主要业务数据（用户、组织、员工、班次等）
+    console.log('【步骤 3/4】初始化业务数据...');
     console.log('----------------------------------------');
     await import('./seed');
     console.log('✓ 业务数据初始化完成\n');
@@ -41,6 +50,7 @@ async function main() {
     console.log('  - 班次：正常班（8:00-17:30）');
     console.log('  - 设备：前台考勤机');
     console.log('  - 数据源：学历、工作状态等');
+    console.log('  - 人事信息页签：5个页签，11个分组，30+字段');
     console.log('========================================\n');
   } catch (error) {
     console.error('\n========================================');
