@@ -373,7 +373,7 @@ export class HrController {
   @Put('work-info-history/:id')
   @RequirePermissions('hr:emp:edit')
   @ApiOperation({ summary: '更新工作信息历史记录' })
-  async updateWorkInfoHistory(@Param('id') id: string, @Body() dto: any) {
+  async updateWorkInfoHistoryById(@Param('id') id: string, @Body() dto: any) {
     return this.hrService.updateWorkInfoHistory(+id, dto);
   }
 
