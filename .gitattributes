@@ -1,0 +1,7 @@
+# 保留本地配置文件，不合并远程更改
+backend/prisma/schema.prisma merge=ours
+backend/.env merge=ours
+backend/.env.production merge=ours
+frontend/.env merge=ours
+frontend/.env.production merge=ours
+backend/src/modules/hr/hr.controller.ts merge=ours
