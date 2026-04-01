@@ -1283,9 +1283,9 @@ const EmployeeCreatePage: React.FC = () => {
             return null;
           }
 
-          // 过滤掉隐藏的字段
+          // 过滤掉隐藏的字段（包含SYSTEM、SELECT_SINGLE、SELECT_MULTI类型）
           const systemFields = group.fields?.filter((f: any) =>
-            f.fieldType === 'SYSTEM' && !f.isHidden
+            (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden
           ) || [];
           const groupCustomFields = group.fields?.filter((f: any) =>
             f.fieldType === 'CUSTOM' && !f.isHidden
@@ -1346,7 +1346,7 @@ const EmployeeCreatePage: React.FC = () => {
           if (group.status === 'INACTIVE') return;
 
           const requiredSystemFields = group.fields?.filter((f: any) =>
-            f.fieldType === 'SYSTEM' && !f.isHidden && f.isRequired
+            (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden && f.isRequired
           ) || [];
           const requiredCustomFields = group.fields?.filter((f: any) =>
             f.fieldType === 'CUSTOM' && !f.isHidden && f.isRequired
@@ -1389,7 +1389,7 @@ const EmployeeCreatePage: React.FC = () => {
       (tabs || []).forEach((tab: any) => {
         tab.groups?.forEach((group: any) => {
           if (group.status === 'INACTIVE') return;
-          group.fields?.filter((f: any) => f.fieldType === 'SYSTEM' && !f.isHidden)
+          group.fields?.filter((f: any) => (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden)
             .forEach((f: any) => {
               // 同时添加下划线命名和驼峰命名
               configuredSystemFields.add(f.fieldCode);
@@ -1489,7 +1489,7 @@ const EmployeeCreatePage: React.FC = () => {
         if (group.status === 'INACTIVE') return;
 
         const systemFields = group.fields?.filter((f: any) =>
-          f.fieldType === 'SYSTEM' && !f.isHidden && f.isRequired
+          (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden && f.isRequired
         ) || [];
         const customFieldCodes = group.fields?.filter((f: any) =>
           f.fieldType === 'CUSTOM' && !f.isHidden && f.isRequired
