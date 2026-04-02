@@ -1423,6 +1423,35 @@ const EmployeeDetailPage: React.FC = () => {
           </Form.Item>
         );
 
+      case 'nation':
+        const nationOptions = getOptionsByDataSourceCode('nation');
+        return (
+          <Form.Item name="nation" label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {nationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      case 'emergencyRelation':
+      case 'emergency_relation':
+        const emergencyRelationOptions = getOptionsByDataSourceCode('family_relation');
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {emergencyRelationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
       default:
         // 文本类型的字段
         return (
@@ -1503,56 +1532,6 @@ const EmployeeDetailPage: React.FC = () => {
                   {option.label}
                 </Select.Option>
               ))}
-            </Select>
-          </Form.Item>
-        );
-
-      case 'emergencyRelation':
-      case 'emergency_relation':
-        const emergencyRelationOptions = getOptionsByDataSourceCode('emergency_relation');
-        return (
-          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
-            <Select placeholder={`请选择${label}`} allowClear>
-              {emergencyRelationOptions.length > 0 ? (
-                emergencyRelationOptions.map((option: any) => (
-                  <Select.Option key={option.id} value={option.value}>
-                    {option.label}
-                  </Select.Option>
-                ))
-              ) : (
-                <>
-                  <Select.Option value="spouse">配偶</Select.Option>
-                  <Select.Option value="father">父亲</Select.Option>
-                  <Select.Option value="mother">母亲</Select.Option>
-                  <Select.Option value="child">子女</Select.Option>
-                  <Select.Option value="other">其他</Select.Option>
-                </>
-              )}
-            </Select>
-          </Form.Item>
-        );
-
-      case 'nation':
-        const nationOptions = getOptionsByDataSourceCode('nation');
-        return (
-          <Form.Item name="nation" label={label} rules={createRules()} key={fieldCode}>
-            <Select placeholder={`请选择${label}`} allowClear>
-              {nationOptions.length > 0 ? (
-                nationOptions.map((option: any) => (
-                  <Select.Option key={option.id} value={option.value}>
-                    {option.label}
-                  </Select.Option>
-                ))
-              ) : (
-                <>
-                  <Select.Option value="han">汉族</Select.Option>
-                  <Select.Option value="zhuang">壮族</Select.Option>
-                  <Select.Option value="hui">回族</Select.Option>
-                  <Select.Option value="manchu">满族</Select.Option>
-                  <Select.Option value="uygur">维吾尔族</Select.Option>
-                  <Select.Option value="miao">苗族</Select.Option>
-                </>
-              )}
             </Select>
           </Form.Item>
         );
@@ -2210,8 +2189,8 @@ const EmployeeDetailPage: React.FC = () => {
                             }
 
                             // 日期字段
-                            const dateFieldCodes = ['entry_date', 'hire_date', 'birth_date', 'probation_start', 'probation_end', 'graduation_date', 'regular_date', 'resignation_date', 'effective_date'];
-                            const isDateField = fieldType === 'DATE' || dateFieldCodes.includes(fieldCode) || fieldCode.endsWith('_date');
+                            const dateFieldCodes = ['entry_date', 'entryDate', 'hire_date', 'hireDate', 'birth_date', 'birthDate', 'probation_start', 'probationStart', 'probation_end', 'probationEnd', 'graduation_date', 'graduationDate', 'regular_date', 'regularDate', 'resignation_date', 'resignationDate', 'effective_date', 'effectiveDate'];
+                            const isDateField = fieldType === 'DATE' || dateFieldCodes.includes(fieldCode) || fieldCode.endsWith('_date') || fieldCode.endsWith('Date');
 
                             if (isDateField) {
                               if (typeof val === 'string') {

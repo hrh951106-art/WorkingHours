@@ -229,6 +229,65 @@ export class HrService {
       throw new NotFoundException('组织不存在');
     }
 
+    // 获取基本信息页签的字段配置
+    const basicInfoTab = await this.prisma.employeeInfoTab.findUnique({
+      where: { code: 'basic_info' },
+      include: {
+        groups: {
+          where: { status: 'ACTIVE' },  // 只获取启用的分组
+          include: {
+            fields: true,
+          },
+        },
+      },
+    });
+
+    // 提取字段配置
+    const hiddenFieldCodes = new Set<string>();  // 隐藏字段
+    const requiredFieldCodes = new Set<string>();  // 显示且必填的字段
+
+    // 三个核心字段：始终必填且不能隐藏
+    const coreFields = ['employeeNo', 'entryDate', 'orgId'];
+    coreFields.forEach(field => requiredFieldCodes.add(field));
+
+    if (basicInfoTab && basicInfoTab.groups) {
+      for (const group of basicInfoTab.groups) {
+        for (const field of group.fields) {
+          if (field.isHidden) {
+            // 隐藏字段（核心字段不能隐藏）
+            if (!coreFields.includes(field.fieldCode)) {
+              hiddenFieldCodes.add(field.fieldCode);
+            }
+          } else if (field.isRequired) {
+            // 显示且必填的字段
+            requiredFieldCodes.add(field.fieldCode);
+          }
+        }
+      }
+    }
+
+    console.log('创建员工 - 必填字段列表:', Array.from(requiredFieldCodes));
+    console.log('创建员工 - 隐藏字段列表:', Array.from(hiddenFieldCodes));
+
+    // 验证必填字段
+    for (const fieldCode of requiredFieldCodes) {
+      const value = (dto as any)[fieldCode];
+      if (value === undefined || value === null || value === '') {
+        // 根据字段代码查找字段名称
+        let fieldName = fieldCode;
+        if (basicInfoTab && basicInfoTab.groups) {
+          for (const group of basicInfoTab.groups) {
+            const field = group.fields.find(f => f.fieldCode === fieldCode);
+            if (field) {
+              fieldName = field.fieldName;
+              break;
+            }
+          }
+        }
+        throw new BadRequestException(`${fieldName}不能为空`);
+      }
+    }
+
     // 定义 Employee 表的字段（基本信息页签）
     const employeeFields = [
       'employeeNo', 'name', 'gender', 'idCard', 'phone', 'email', 'orgId', 'entryDate',
@@ -275,6 +334,12 @@ export class HrService {
     Object.keys(restData).forEach(key => {
       const value = restData[key];
 
+      // 跳过隐藏字段
+      if (hiddenFieldCodes.has(key)) {
+        console.log(`跳过隐藏字段: ${key}`);
+        return;
+      }
+
       if (employeeFields.includes(key)) {
         // Employee 表字段
         let finalValue = value;
@@ -298,6 +363,8 @@ export class HrService {
         finalCustomFields[key] = value;
       }
     });
+
+    console.log('处理后的 employeeData:', JSON.stringify(employeeData, null, 2));
 
     // 合并前端传递的 customFields（只保留不在表结构中的字段）
     Object.keys(parsedCustomFields).forEach(key => {
@@ -627,6 +694,38 @@ export class HrService {
       });
     }
 
+    // 获取基本信息页签的字段配置
+    const basicInfoTab = await this.prisma.employeeInfoTab.findUnique({
+      where: { code: 'basic_info' },
+      include: {
+        groups: {
+          where: { status: 'ACTIVE' },  // 只获取启用的分组
+          include: {
+            fields: true,
+          },
+        },
+      },
+    });
+
+    // 提取隐藏字段代码
+    const hiddenFieldCodes = new Set<string>();
+    const coreFields = ['employeeNo', 'entryDate', 'orgId'];  // 核心字段不能隐藏
+
+    if (basicInfoTab && basicInfoTab.groups) {
+      for (const group of basicInfoTab.groups) {
+        for (const field of group.fields) {
+          if (field.isHidden) {
+            // 核心字段不能隐藏
+            if (!coreFields.includes(field.fieldCode)) {
+              hiddenFieldCodes.add(field.fieldCode);
+            }
+          }
+        }
+      }
+    }
+
+    console.log('更新员工 - 隐藏字段列表:', Array.from(hiddenFieldCodes));
+
     // 定义 Employee 表的字段（基本信息页签）
     const employeeFields = [
       'employeeNo', 'name', 'gender', 'idCard', 'phone', 'email', 'orgId', 'entryDate',
@@ -640,6 +739,11 @@ export class HrService {
 
     const updateData: any = {};
     employeeFields.forEach(field => {
+      // 跳过隐藏字段
+      if (hiddenFieldCodes.has(field)) {
+        return;
+      }
+
       if (dto[field] !== undefined) {
         let value = dto[field];
 

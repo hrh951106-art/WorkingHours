@@ -85,8 +85,8 @@ model Organization {
 model Employee {
   id                Int                      @id @default(autoincrement())
   employeeNo        String                   @unique
-  name              String
-  gender            String
+  name              String?
+  gender            String?
   idCard            String?                  @unique
   phone             String?
   email             String?

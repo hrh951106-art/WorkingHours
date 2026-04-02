@@ -9,10 +9,10 @@ export class CreateEmployeeDto {
   @IsNotEmpty()
   employeeNo: string;
 
-  @ApiProperty({ description: '姓名' })
+  @ApiProperty({ description: '姓名', required: false })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  name: string;
+  name?: string;
 
   @ApiProperty({ description: '性别', required: false })
   @IsOptional()

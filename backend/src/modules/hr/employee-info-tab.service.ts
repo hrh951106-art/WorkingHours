@@ -142,6 +142,22 @@ export class EmployeeInfoTabService {
           fields: group.fields.map((field) => this.enrichFieldWithType(field, customFields)),
         }));
 
+        // 打印分组字段（用于调试）
+        if (tab.code === 'basic_info') {
+          console.log('=== basic_info 页签分组字段 ===');
+          groupsWithFields.forEach(group => {
+            group.fields.forEach((field: any) => {
+              if (field.fieldCode === 'nation' || field.fieldCode === 'emergencyRelation') {
+                console.log(`字段: ${field.fieldCode}`);
+                console.log('  - fieldType:', field.fieldType);
+                console.log('  - isSystem:', field.isSystem);
+                console.log('  - type:', field.type);
+                console.log('  - 完整字段对象:', JSON.stringify(field, null, 2));
+              }
+            });
+          });
+        }
+
         // 处理未分组的字段
         const ungroupedFields = tab.fields.map((field) => this.enrichFieldWithType(field, customFields));
 
@@ -154,13 +170,27 @@ export class EmployeeInfoTabService {
   }
 
   private enrichFieldWithType(field: any, customFields: any[]) {
-    // 系统内置字段：直接使用 EmployeeInfoTabField.dataSource
+    // 系统内置字段：如果有数据源，使用 SELECT_SINGLE 类型，否则使用 TEXT
     if (field.isSystem) {
-      return {
+      const hasDataSource = field.dataSource && field.dataSource.options && field.dataSource.options.length > 0;
+      const enriched = {
         ...field,
-        type: field.fieldType === 'SELECT' ? 'SELECT' : 'TEXT',
+        type: hasDataSource ? 'SELECT_SINGLE' : 'TEXT',
         dataSource: field.dataSource || null,
       };
+
+      // 打印关键字段的调试信息
+      if (field.fieldCode === 'nation' || field.fieldCode === 'emergencyRelation') {
+        console.log(`=== ${field.fieldCode} 字段 enrich 后 ===`);
+        console.log('fieldCode:', enriched.fieldCode);
+        console.log('fieldName:', enriched.fieldName);
+        console.log('isSystem:', enriched.isSystem);
+        console.log('hasDataSource:', hasDataSource);
+        console.log('type:', enriched.type);
+        console.log('dataSource:', enriched.dataSource);
+      }
+
+      return enriched;
     }
 
     // 自定义字段：从 CustomField 中查找数据源

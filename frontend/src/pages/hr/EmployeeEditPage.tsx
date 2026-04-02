@@ -1,3 +1,4 @@
+import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card,
@@ -25,6 +26,11 @@ const EmployeeEditPage: React.FC = () => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
 
+  // 在组件加载时立即弹窗
+  React.useEffect(() => {
+    alert('EmployeeEditPage 组件已加载!!!');
+  }, []);
+
   const { data: employee, isLoading: employeeLoading } = useQuery({
     queryKey: ['employee', id],
     queryFn: () => request.get(`/hr/employees/${id}`).then((res: any) => res),
@@ -41,7 +47,27 @@ const EmployeeEditPage: React.FC = () => {
 
   const { data: tabs, isLoading: tabsLoading } = useQuery({
     queryKey: ['employeeInfoTabs'],
-    queryFn: () => request.get('/hr/employee-info-tabs/for-display').then((res: any) => res || []),
+    queryFn: () => request.get('/hr/employee-info-tabs/for-display').then((res: any) => {
+      console.log('=== tabs 数据加载完成 ===');
+      console.log('tabs 数量:', res?.length || 0);
+      const basicInfo = res?.find((t: any) => t.code === 'basic_info');
+      if (basicInfo) {
+        console.log('basic_info 页签存在');
+        const allFields = [
+          ...(basicInfo.fields || []),
+          ...basicInfo.groups?.flatMap((g: any) => g.fields || []) || []
+        ];
+        console.log('basic_info 所有字段数量:', allFields.length);
+        console.log('nation 字段:', allFields.find((f: any) => f.fieldCode === 'nation'));
+        console.log('emergencyRelation 字段:', allFields.find((f: any) => f.fieldCode === 'emergencyRelation'));
+      }
+      return res || [];
+    }),
+  });
+
+  const { data: dataSources } = useQuery({
+    queryKey: ['dataSources'],
+    queryFn: () => request.get('/hr/data-sources').then((res: any) => res || []),
   });
 
   const { data: customFields } = useQuery({
@@ -114,6 +140,21 @@ const EmployeeEditPage: React.FC = () => {
     return [];
   };
 
+  // 根据数据源代码获取选项（从 EmployeeCreatePage 复制）
+  const getOptionsByDataSourceCode = (dataSourceCode: string) => {
+    const dataSource = dataSources?.find((ds: any) => ds.code === dataSourceCode);
+    if (!dataSource || !dataSource.options) {
+      return [];
+    }
+    return dataSource.options
+      .filter((opt: any) => opt.isActive)
+      .map((opt: any) => ({
+        id: opt.id,
+        value: opt.value,
+        label: opt.label,
+      }));
+  };
+
   // 渲染组织选择器（树形）
   const renderOrgTree = (organizations: any[] = []): any[] => {
     if (!organizations || organizations.length === 0) {
@@ -128,6 +169,11 @@ const EmployeeEditPage: React.FC = () => {
 
   // 渲染系统字段
   const renderSystemField = (fieldCode: string, isRequired: boolean = false) => {
+    // 用 alert 调试
+    if (fieldCode === 'nation') {
+      alert(`renderSystemField 被调用! fieldCode: ${fieldCode}`);
+    }
+
     // 字段标签映射
     const getFieldLabel = (code: string) => {
       const labels: Record<string, string> = {
@@ -297,6 +343,82 @@ const EmployeeEditPage: React.FC = () => {
           </Form.Item>
         );
 
+      case 'nation': {
+        const nationOptions = getOptionsByDataSourceCode('nation');
+        return (
+          <Form.Item
+            name="nation"
+            label="民族"
+            rules={createRules()}
+          >
+            <Select placeholder="请选择民族" allowClear showSearch>
+              {nationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+      }
+
+      case 'emergencyRelation': {
+        const relationOptions = getOptionsByDataSourceCode('family_relation');
+        return (
+          <Form.Item
+            name="emergencyRelation"
+            label="紧急联系人关系"
+            rules={createRules()}
+          >
+            <Select placeholder="请选择关系" allowClear showSearch>
+              {relationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+      }
+
+      case 'maritalStatus': {
+        const maritalOptions = getOptionsByDataSourceCode('marital_status');
+        return (
+          <Form.Item
+            name="maritalStatus"
+            label="婚姻状况"
+            rules={createRules()}
+          >
+            <Select placeholder="请选择婚姻状况" allowClear showSearch>
+              {maritalOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+      }
+
+      case 'politicalStatus': {
+        const politicalOptions = getOptionsByDataSourceCode('political_status');
+        return (
+          <Form.Item
+            name="politicalStatus"
+            label="政治面貌"
+            rules={createRules()}
+          >
+            <Select placeholder="请选择政治面貌" allowClear showSearch>
+              {politicalOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+      }
+
       default:
         return null;
     }
@@ -304,9 +426,12 @@ const EmployeeEditPage: React.FC = () => {
 
   // 渲染自定义字段
   const renderCustomField = (field: any) => {
+    // 判断是否为系统字段的下拉选择（需要直接保存到 Employee 表，而不是 customFields）
+    const isSystemDropdown = field.__isSystemField === true;
+
     const commonProps = {
       label: field.name,
-      name: ['customFields', field.code],
+      name: isSystemDropdown ? field.code : ['customFields', field.code],
       rules: field.isRequired ? [{ required: true, message: `请输入${field.name}` }] : undefined,
     };
 
@@ -340,10 +465,22 @@ const EmployeeEditPage: React.FC = () => {
         );
 
       case 'SELECT_SINGLE':
+        // 选项获取逻辑：
+        // 1. 系统字段：直接使用 field.dataSource.options
+        // 2. 自定义字段：使用 getDropdownOptions
+        let options = [];
+        if (isSystemDropdown && field.dataSource?.options) {
+          // 系统字段：直接使用 dataSource.options
+          options = field.dataSource.options;
+        } else {
+          // 自定义字段：使用 getDropdownOptions
+          options = getDropdownOptions(field.code);
+        }
+
         return (
           <Form.Item {...commonProps} key={field.code}>
             <Select placeholder={`请选择${field.name}`}>
-              {getDropdownOptions(field.code).map((option: any) => (
+              {options.map((option: any) => (
                 <Select.Option key={option.id} value={option.value}>
                   {option.label}
                 </Select.Option>
@@ -400,9 +537,24 @@ const EmployeeEditPage: React.FC = () => {
 
   // 渲染页签内容
   const renderTabContent = (tab: any) => {
+    // 收集所有字段（包括未分组的和分组内的）
+    const allFields = [
+      ...(tab.fields || []),
+      ...tab.groups?.flatMap((g: any) => g.fields || []) || []
+    ];
+
     // 分离系统字段和自定义字段
-    const systemFields = tab.fields?.filter((f: any) => f.fieldType === 'SYSTEM') || [];
-    const tabCustomFields = tab.fields?.filter((f: any) => f.fieldType === 'CUSTOM') || [];
+    const systemFields = allFields.filter((f: any) => f.fieldType === 'SYSTEM') || [];
+    const tabCustomFields = allFields.filter((f: any) => f.fieldType === 'CUSTOM') || [];
+
+    // 用 alert 调试
+    if (tab.code === 'basic_info') {
+      const nationField = systemFields.find((f: any) => f.fieldCode === 'nation');
+      alert(`basic_info 页签渲染\nsystemFields 数量: ${systemFields.length}\nnation 字段存在: ${!!nationField}`);
+      if (nationField) {
+        alert(`nation 字段:\nfieldCode: ${nationField.fieldCode}\nfieldType: ${nationField.fieldType}\ntype: ${nationField.type}`);
+      }
+    }
 
     return (
       <Row gutter={16}>
@@ -428,28 +580,45 @@ const EmployeeEditPage: React.FC = () => {
       const values = await form.validateFields();
       console.log('表单原始值:', values);
 
-      // 只保留后端允许更新的字段：name, gender, idCard, phone, email, orgId, status, customFields
-      const allowedFields = {
-        name: values.name,
-        gender: values.gender,
-        idCard: values.idCard,
-        phone: values.phone,
-        email: values.email,
-        orgId: values.orgId,
-        status: values.status,
+      // 收集所有在 tabs 中配置的系统字段代码（包括分组内的字段）
+      const configuredSystemFields = new Set<string>();
+      (tabs || []).forEach((tab: any) => {
+        // 未分组的字段
+        tab.fields?.forEach((f: any) => {
+          if (f.fieldType === 'SYSTEM' || f.type === 'SELECT_SINGLE' || f.type === 'SELECT_MULTI') {
+            configuredSystemFields.add(f.fieldCode);
+          }
+        });
+        // 分组内的字段
+        tab.groups?.forEach((group: any) => {
+          group.fields?.forEach((f: any) => {
+            if (f.fieldType === 'SYSTEM' || f.type === 'SELECT_SINGLE' || f.type === 'SELECT_MULTI') {
+              configuredSystemFields.add(f.fieldCode);
+            }
+          });
+        });
+      });
+
+      console.log('配置的系统字段:', Array.from(configuredSystemFields));
+
+      // 构建允许提交的字段
+      const allowedFields: any = {
         customFields: values.customFields ? JSON.stringify(values.customFields) : '{}',
       };
 
+      // 添加所有配置的系统字段
+      configuredSystemFields.forEach((fieldCode: string) => {
+        if (values[fieldCode] !== undefined) {
+          allowedFields[fieldCode] = values[fieldCode];
+        }
+      });
+
       // 清理空字符串的可选字段
-      if (!allowedFields.idCard) {
-        delete allowedFields.idCard;
-      }
-      if (!allowedFields.phone) {
-        delete allowedFields.phone;
-      }
-      if (!allowedFields.email) {
-        delete allowedFields.email;
-      }
+      Object.keys(allowedFields).forEach(key => {
+        if (key !== 'customFields' && allowedFields[key] === '') {
+          delete allowedFields[key];
+        }
+      });
 
       console.log('最终发送的数据:', allowedFields);
       updateMutation.mutate(allowedFields);
@@ -504,3 +673,4 @@ const EmployeeEditPage: React.FC = () => {
 };
 
 export default EmployeeEditPage;
+// Trigger reload

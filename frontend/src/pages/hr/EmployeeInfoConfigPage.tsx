@@ -156,6 +156,10 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
 }) => {
   const isSystemField = field.isSystem === true;
 
+  // 三个核心字段：不能隐藏，始终显示
+  const coreFields = ['employeeNo', 'entryDate', 'orgId'];
+  const isCoreField = coreFields.includes(field.fieldCode || field.code);
+
   const {
     attributes,
     listeners,
@@ -207,22 +211,28 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
             <Space size={1}>
               {isSystemField && (
                 <>
-                  <span style={{ fontSize: 10 }}>显示</span>
+                  <span style={{ fontSize: 10 }}>
+                    显示{isCoreField && ' (必显)'}
+                  </span>
                   <Switch
                     size="small"
                     checked={!field.isHidden}
+                    disabled={isCoreField}
                     onChange={(checked) => {
-                      if (onToggleHidden) {
+                      if (onToggleHidden && !isCoreField) {
                         onToggleHidden();
                       }
                     }}
                   />
-                  <span style={{ fontSize: 10, marginLeft: 4 }}>必填</span>
+                  <span style={{ fontSize: 10, marginLeft: 10 }}>
+                    必填{isCoreField && ' (必填)'}
+                  </span>
                   <Switch
                     size="small"
                     checked={field.isRequired}
+                    disabled={isCoreField}
                     onChange={(checked) => {
-                      if (onToggleRequired) {
+                      if (onToggleRequired && !isCoreField) {
                         onToggleRequired();
                       }
                     }}
