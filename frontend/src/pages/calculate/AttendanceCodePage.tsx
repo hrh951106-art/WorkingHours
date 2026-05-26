@@ -16,10 +16,9 @@ import {
   Row,
   Col,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CalculatorOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
-import { ModernPageLayout } from '@/components/common/ModernPageLayout';
 
 const { Option } = Select;
 
@@ -30,11 +29,11 @@ const AttendanceCodePage: React.FC = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [includeOutside, setIncludeOutside] = useState(false);
   const [onlyOutside, setOnlyOutside] = useState(false);
-  const [showInDetailPage, setShowInDetailPage] = useState(false);
+  const [selectedType, setSelectedType] = useState<string>('LEAN_HOURS');
 
   const { data: attendanceCodes, isLoading } = useQuery({
-    queryKey: ['attendanceCodes'],
-    queryFn: () => request.get('/calculate/attendance-codes').then((res: any) => res),
+    queryKey: ['calculationAttendanceCodes'],
+    queryFn: () => request.get('/calculate/calculation-attendance-codes').then((res: any) => res.data || res),
   });
 
   // 获取劳动力账户层级配置
@@ -49,33 +48,33 @@ const AttendanceCodePage: React.FC = () => {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => request.post('/calculate/attendance-codes', data),
+    mutationFn: (data: any) => request.post('/calculate/calculation-attendance-codes', data),
     onSuccess: () => {
       message.success('创建成功');
-      queryClient.invalidateQueries({ queryKey: ['attendanceCodes'] });
+      queryClient.invalidateQueries({ queryKey: ['calculationAttendanceCodes'] });
       handleModalClose();
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) =>
-      request.put(`/calculate/attendance-codes/${id}`, data),
+      request.put(`/calculate/calculation-attendance-codes/${id}`, data),
     onSuccess: () => {
       message.success('更新成功');
-      queryClient.invalidateQueries({ queryKey: ['attendanceCodes'] });
+      queryClient.invalidateQueries({ queryKey: ['calculationAttendanceCodes'] });
       handleModalClose();
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => request.delete(`/calculate/attendance-codes/${id}`),
+    mutationFn: (id: number) => request.delete(`/calculate/calculation-attendance-codes/${id}`),
     onSuccess: () => {
       message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['attendanceCodes'] });
+      queryClient.invalidateQueries({ queryKey: ['calculationAttendanceCodes'] });
     },
   });
 
-  const handleModalOpen = (record?: any) => {
+  const handleModalOpen = async (record?: any) => {
     if (record) {
       setEditingId(record.id);
       const formValues = {
@@ -92,15 +91,25 @@ const AttendanceCodePage: React.FC = () => {
       form.setFieldsValue(formValues);
       setIncludeOutside(record.includeOutside);
       setOnlyOutside(record.onlyOutside);
-      setShowInDetailPage(record.showInDetailPage || false);
+      setSelectedType(record.type || 'LEAN_HOURS');
+      setIsModalOpen(true);
     } else {
       setEditingId(null);
       form.resetFields();
       setIncludeOutside(false);
       setOnlyOutside(false);
-      setShowInDetailPage(false);
+      setSelectedType('LEAN_HOURS');
+
+      try {
+        // 自动生成编码
+        const res = await request.get('/calculate/calculation-attendance-codes/new-code');
+        form.setFieldsValue({ code: res.code });
+      } catch (error) {
+        console.error('生成编码失败:', error);
+        // 即使生成编码失败，也打开弹窗
+      }
+      setIsModalOpen(true);
     }
-    setIsModalOpen(true);
   };
 
   const handleModalClose = () => {
@@ -109,7 +118,7 @@ const AttendanceCodePage: React.FC = () => {
     form.resetFields();
     setIncludeOutside(false);
     setOnlyOutside(false);
-    setShowInDetailPage(false);
+    setSelectedType('LEAN_HOURS');
   };
 
   const handleSubmit = async () => {
@@ -163,6 +172,7 @@ const AttendanceCodePage: React.FC = () => {
       render: (type: string) => {
         const typeMap: any = {
           LEAN_HOURS: { text: '精益工时', color: 'blue' },
+          ATTENDANCE_HOURS: { text: '考勤工时', color: 'green' },
         };
         const config = typeMap[type] || { text: type, color: 'default' };
         return <Tag color={config.color}>{config.text}</Tag>;
@@ -221,37 +231,18 @@ const AttendanceCodePage: React.FC = () => {
       render: (only: boolean) => (only ? <Tag color="purple">是</Tag> : <Tag>否</Tag>),
     },
     {
-      title: '工时明细显示',
-      dataIndex: 'showInDetailPage',
-      key: 'showInDetailPage',
-      width: 100,
-      render: (show: boolean) => (show ? <Tag color="cyan">是</Tag> : <Tag>否</Tag>),
-    },
-    {
       title: '计算工时',
       dataIndex: 'calculateHours',
       key: 'calculateHours',
       width: 100,
-      render: (calculate: boolean) => (calculate ? <Tag color="green">是</Tag> : <Tag color="red">否</Tag>),
+      render: (calculate: boolean) => (calculate ? <Tag color="green">是</Tag> : <Tag>否</Tag>),
     },
     {
-      title: '优先级',
-      dataIndex: 'priority',
-      key: 'priority',
-      width: 80,
-      render: (priority: number) => <Tag color="blue">{priority}</Tag>,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (status: string) =>
-        status === 'ACTIVE' ? (
-          <Tag color="success">启用</Tag>
-        ) : (
-          <Tag color="default">禁用</Tag>
-        ),
+      title: '计算金额',
+      dataIndex: 'calculateAmount',
+      key: 'calculateAmount',
+      width: 100,
+      render: (calculate: boolean) => (calculate ? <Tag color="purple">是</Tag> : <Tag>否</Tag>),
     },
     {
       title: '操作',
@@ -270,13 +261,12 @@ const AttendanceCodePage: React.FC = () => {
           </Button>
           <Popconfirm
             title="确认删除"
-            description="出勤代码正在使用中，无法删除"
-            onConfirm={() => {}}
+            description="确定要删除这个出勤代码吗？"
+            onConfirm={() => handleDelete(record.id)}
             okText="确认"
             cancelText="取消"
-            disabled={true}
           >
-            <Button type="link" danger icon={<DeleteOutlined />} disabled style={{ padding: 0 }}>
+            <Button type="link" danger icon={<DeleteOutlined />} style={{ padding: 0 }}>
               删除
             </Button>
           </Popconfirm>
@@ -286,50 +276,18 @@ const AttendanceCodePage: React.FC = () => {
   ];
 
   return (
-    <ModernPageLayout
-      title="出勤代码定义"
-      description="配置出勤代码规则，用于工时计算。可以设置是否扣用餐时间、是否包含班外时数等参数"
-      breadcrumb={[
-        { label: '计算管理', path: '/calculate' },
-        { label: '出勤代码', path: '/calculate/config/attendance-codes' },
-      ]}
-      extra={
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => handleModalOpen()}
-          style={{
-            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
-            border: 'none',
-            borderRadius: 8,
-            height: 40,
-            fontWeight: 500,
-            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-          }}
-        >
-          新建出勤代码
-        </Button>
-      }
-      stats={[
-        {
-          title: '出勤代码总数',
-          value: attendanceCodes?.length || 0,
-          prefix: <CalculatorOutlined style={{ color: '#22B970' }} />,
-          color: '#22B970',
-        },
-        {
-          title: '启用中',
-          value: attendanceCodes?.filter((c: any) => c.status === 'ACTIVE').length || 0,
-          color: '#10b981',
-        },
-      ]}
-    >
+    <>
       <Card
-        style={{
-          borderRadius: 12,
-          border: '1px solid #e2e8f0',
-        }}
-        bodyStyle={{ padding: '24px' }}
+        title="出勤代码管理"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleModalOpen()}
+          >
+            新建
+          </Button>
+        }
       >
         <Table
           columns={columns}
@@ -356,8 +314,9 @@ const AttendanceCodePage: React.FC = () => {
             label="编码"
             name="code"
             rules={[{ required: true, message: '请输入编码' }]}
+            tooltip="系统自动生成，不可修改"
           >
-            <Input placeholder="自动生成，可手动修改" />
+            <Input placeholder="系统自动生成，保存后显示" disabled={true} />
           </Form.Item>
 
           <Form.Item
@@ -374,10 +333,104 @@ const AttendanceCodePage: React.FC = () => {
             initialValue="LEAN_HOURS"
             rules={[{ required: true, message: '请选择类型' }]}
           >
-            <Select>
+            <Select onChange={(value) => setSelectedType(value)}>
               <Option value="LEAN_HOURS">精益工时</Option>
+              <Option value="ATTENDANCE_HOURS">考勤工时</Option>
             </Select>
           </Form.Item>
+
+          {/* 精益工时需要配置劳动力账户层级 */}
+          {selectedType === 'LEAN_HOURS' && (
+            <Form.Item label="劳动力账户层级" name="accountLevels" tooltip="留空表示适用于全部层级，否则仅适用于选中的层级">
+              <Select
+                mode="multiple"
+                placeholder="选择层级，留空表示全部层级"
+                options={hierarchyLevels?.map((level: any) => ({
+                  label: level.name,
+                  value: level.sort,
+                }))}
+                tokenSeparators={[',']}
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+              />
+            </Form.Item>
+          )}
+
+          {/* 精益工时和考勤工时共有的配置 */}
+          {(selectedType === 'LEAN_HOURS' || selectedType === 'ATTENDANCE_HOURS') && (
+            <>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="是否计算工时"
+                    name="calculateHours"
+                    valuePropName="checked"
+                    initialValue={true}
+                    tooltip="该出勤代码是否参与工时计算"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </Col>
+
+                <Col span={12}>
+                  <Form.Item
+                    label="是否扣用餐"
+                    name="deductMeal"
+                    valuePropName="checked"
+                    initialValue={false}
+                    tooltip="计算工时是否扣除用餐时间"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="包含班外时数"
+                    name="includeOutside"
+                    valuePropName="checked"
+                    initialValue={false}
+                    tooltip="工时计算是否包含班外时数"
+                  >
+                    <Switch onChange={handleIncludeOutsideChange} disabled={onlyOutside} />
+                  </Form.Item>
+                </Col>
+
+                <Col span={12}>
+                  <Form.Item
+                    label="是否计算金额"
+                    name="calculateAmount"
+                    valuePropName="checked"
+                    initialValue={false}
+                    tooltip="是否计算该工时的金额"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              {/* 精益工时才显示"仅计算班外时数" */}
+              {selectedType === 'LEAN_HOURS' && (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="仅计算班外时数"
+                      name="onlyOutside"
+                      valuePropName="checked"
+                      initialValue={false}
+                      tooltip="只计算班外时数，不计算班内时数"
+                    >
+                      <Switch onChange={handleOnlyOutsideChange} disabled={includeOutside} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
+            </>
+          )}
 
           <Form.Item
             label="单位"
@@ -390,92 +443,9 @@ const AttendanceCodePage: React.FC = () => {
               <Option value="MINUTES">分钟</Option>
             </Select>
           </Form.Item>
-
-          <Form.Item label="劳动力账户层级" name="accountLevels" tooltip="留空表示适用于全部层级，否则仅适用于选中的层级">
-            <Select
-              mode="multiple"
-              placeholder="选择层级，留空表示全部层级"
-              options={hierarchyLevels?.map((level: any) => ({
-                label: level.name,
-                value: level.sort,
-              }))}
-              tokenSeparators={[',']}
-              showSearch
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-            />
-          </Form.Item>
-
-          <Form.Item
-            label="是否扣用餐"
-            name="deductMeal"
-            valuePropName="checked"
-            initialValue={false}
-          >
-            <Switch />
-          </Form.Item>
-
-          <Form.Item
-            label="包含班外时数"
-            name="includeOutside"
-            valuePropName="checked"
-            initialValue={false}
-          >
-            <Switch onChange={handleIncludeOutsideChange} disabled={onlyOutside} />
-          </Form.Item>
-
-          <Form.Item
-            label="仅计算班外时数"
-            name="onlyOutside"
-            valuePropName="checked"
-            initialValue={false}
-          >
-            <Switch onChange={handleOnlyOutsideChange} disabled={includeOutside} />
-          </Form.Item>
-
-          <Form.Item
-            label="是否在工时明细管理页面显示"
-            name="showInDetailPage"
-            valuePropName="checked"
-            initialValue={false}
-          >
-            <Switch />
-          </Form.Item>
-
-          <Form.Item
-            label="是否计算工时"
-            name="calculateHours"
-            valuePropName="checked"
-            initialValue={true}
-            tooltip="关闭后，该出勤代码将不参与工时计算"
-          >
-            <Switch />
-          </Form.Item>
-
-          <Form.Item
-            label="优先级"
-            name="priority"
-            initialValue={0}
-            rules={[{ required: true, message: '请输入优先级' }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-
-          <Form.Item
-            label="状态"
-            name="status"
-            initialValue="ACTIVE"
-            rules={[{ required: true, message: '请选择状态' }]}
-          >
-            <Select>
-              <Option value="ACTIVE">启用</Option>
-              <Option value="INACTIVE">禁用</Option>
-            </Select>
-          </Form.Item>
         </Form>
       </Modal>
-    </ModernPageLayout>
+    </>
   );
 };
 

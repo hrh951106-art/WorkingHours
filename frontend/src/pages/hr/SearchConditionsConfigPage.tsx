@@ -3,7 +3,7 @@ import SearchConditionsConfig from './components/SearchConditionsConfig';
 
 const SearchConditionsConfigPage: React.FC = () => {
   return (
-    <Card title="查询条件配置">
+    <Card title="查询条件管理">
       <SearchConditionsConfig />
     </Card>
   );

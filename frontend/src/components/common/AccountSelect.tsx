@@ -16,8 +16,8 @@ interface Account {
 }
 
 interface AccountSelectProps {
-  value?: number | null;
-  onChange?: (value: number | null) => void;
+  value?: number | number[] | null;
+  onChange?: (value: number | number[] | null) => void;
   disabled?: boolean;
   placeholder?: string;
   allowClear?: boolean;
@@ -30,6 +30,10 @@ interface AccountSelectProps {
   isEdit?: boolean;
   // 用途类型过滤：SHIFT-排班/班次转移, DEVICE-设备绑定, PUNCH-打卡记录
   usageType?: 'SHIFT' | 'DEVICE' | 'PUNCH' | null;
+  // 多选模式
+  mode?: 'multiple' | 'tags';
+  // 外部传入的账户列表（优先使用）
+  externalAccounts?: Account[];
 }
 
 const AccountSelect: React.FC<AccountSelectProps> = ({
@@ -45,6 +49,8 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
   segmentAccountIds = [],
   isEdit = false,
   usageType = null,
+  mode,
+  externalAccounts,
 }) => {
   const queryClient = useQueryClient();
   const [accountModalOpen, setAccountModalOpen] = useState(false);
@@ -52,17 +58,32 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
   const [selectedLevelValues, setSelectedLevelValues] = useState<Record<number, any>>({});
 
   // 获取最近创建的5个子劳动力账户，按usageType过滤
-  const { data: recentAccounts, refetch: refetchRecentAccounts } = useQuery({
+  const { data: recentAccounts, refetch: refetchRecentAccounts, isLoading: isLoadingRecent, error: recentError } = useQuery({
     queryKey: ['recent-accounts', usageType],
-    queryFn: () => request.get('/account/accounts', {
-      params: {
-        type: 'SUB',
-        usageType,
-        pageSize: 5,
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
-      },
-    }).then((res: any) => res.items || []),
+    queryFn: () => {
+      console.log('[AccountSelect] 正在获取账户列表...', { usageType });
+      return request.get('/account/accounts', {
+        params: {
+          type: 'SUB',
+          usageType,
+          pageSize: 5,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+        },
+      }).then((res: any) => {
+        console.log('[AccountSelect] API返回:', res);
+        const items = res?.items || [];
+        console.log('[AccountSelect] 提取的账户列表:', items);
+        return items;
+      }).catch((error) => {
+        console.error('[AccountSelect] 获取账户失败:', error);
+        throw error;
+      });
+    },
+    staleTime: 0, // 始终使用最新数据
+    gcTime: 0, // 不缓存数据（React Query v5中，之前是cacheTime）
+    refetchOnMount: 'always', // 组件挂载时总是重新查询
+    refetchOnWindowFocus: true, // 窗口聚焦时重新查询
   });
 
   // 在编辑模式下，收集当前班次所有segments中的accountId，并查询这些账户
@@ -82,20 +103,37 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
 
   // 合并最近账户和segments关联的账户，去重
   const accounts = useMemo(() => {
+    // 优先使用外部传入的账户列表
+    if (externalAccounts && externalAccounts.length > 0) {
+      console.log('[AccountSelect] 使用外部传入的账户列表:', externalAccounts);
+      return externalAccounts;
+    }
+
     const allAccounts = [...(recentAccounts || []), ...(segmentAccounts || [])];
+    console.log('[AccountSelect] 合并前的账户列表:', { recentAccounts, segmentAccounts, allAccounts });
+
+    // 使用 namePath 去重，如果 namePath 相同则只保留一个
     const uniqueAccounts = Array.from(
-      new Map(allAccounts.map((acc: Account) => [acc.id, acc])).values()
+      new Map(allAccounts.map((acc: Account) => {
+        // 优先使用 namePath 作为去重键，如果为空则使用 id
+        const dedupeKey = acc.namePath || acc.path || String(acc.id);
+        return [dedupeKey, acc];
+      })).values()
     );
+    console.log('[AccountSelect] 去重后的账户列表:', uniqueAccounts);
+
     // 按创建时间倒序排序，最近创建的在前
-    return uniqueAccounts.sort((a: Account, b: Account) =>
+    const sortedAccounts = uniqueAccounts.sort((a: Account, b: Account) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [recentAccounts, segmentAccounts]);
+    console.log('[AccountSelect] 最终的账户列表:', sortedAccounts);
+    return sortedAccounts;
+  }, [recentAccounts, segmentAccounts, externalAccounts]);
 
-  // 获取层级配置
+  // 获取层级配置（包含层级明细）
   const { data: hierarchyLevels } = useQuery({
-    queryKey: ['hierarchy-levels'],
-    queryFn: () => request.get('/account/hierarchy-config/levels').then((res: any) => res || []),
+    queryKey: ['hierarchy-levels-with-details'],
+    queryFn: () => request.get('/account/hierarchy-config/levels/with-details').then((res: any) => res || []),
   });
 
   // 获取组织架构树
@@ -214,8 +252,8 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
       };
 
       // 根据层级配置构建账户
-      const orgLevels = hierarchyLevels?.filter((l: any) => l.mappingType === 'ORG_TYPE') || [];
-      const otherLevels = hierarchyLevels?.filter((l: any) => l.mappingType !== 'ORG_TYPE') || [];
+      const orgLevels = hierarchyLevels?.filter((l: any) => l.mappingType === 'ORG' || l.mappingType === 'ORG_TYPE') || [];
+      const otherLevels = hierarchyLevels?.filter((l: any) => l.mappingType !== 'ORG' && l.mappingType !== 'ORG_TYPE') || [];
 
       const allLevels = [...orgLevels, ...otherLevels];
 
@@ -230,6 +268,14 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           break;
         }
       }
+
+      // 构建 path（层级代码路径）- 必须包含所有层级，未选择的用空字符串占位
+      const pathParts = allLevels.map((level: any) => {
+        const selectedValue = selectedLevelValues[level.id];
+        return selectedValue?.code || '';
+      });
+      // 用 "/" 连接所有层级，未选择的显示为空（会自动形成//）
+      accountData.path = pathParts.join('/');
 
       // 构建 namePath（层级名称路径）
       // 为所有层级（包括未选择的）构建显示路径
@@ -268,31 +314,32 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
 
   // 获取层级配置的显示值
   const getLevelValues = (level: any) => {
-    if (level.mappingType === 'ORG_TYPE') {
-      // 组织类型，返回组织树
+    // 组织类型：返回组织树（保持原有逻辑，需要树形结构和父子关系）
+    if (level.mappingType === 'ORG' || level.mappingType === 'ORG_TYPE') {
       return flattenOrgTree(orgTree || []);
-    } else if (level.mappingType === 'EMPLOYEE_INFO') {
-      // 人事信息类型，返回对应字段的所有值
+    }
+    // 自定义字段类型：从层级明细中获取（确保数据一致性）
+    // mappingType 可能是 "FIELD_XXX" 或 "CUSTOM_XXX" 格式
+    else if (level.mappingType?.startsWith('FIELD_') || level.mappingType?.startsWith('CUSTOM_')) {
+      // ✅ 修复：使用 details 字段而不是 levelDetails
+      if (level.details && Array.isArray(level.details)) {
+        return level.details
+          .filter((detail: any) => detail.status === 'ACTIVE')
+          .map((detail: any) => ({
+            id: detail.id,  // ✅ 修复：使用 id 而不是 optionId
+            name: detail.levelName,  // ✅ 修复：使用 levelName 而不是 optionLabel
+            code: detail.levelCode,  // ✅ 修复：使用 levelCode 而不是 optionCode
+            value: detail.id,  // ✅ 修复：使用 id 而不是 optionId
+            label: detail.levelName,  // ✅ 修复：使用 levelName 而不是 optionLabel
+          }));
+      }
+      return [];
+    }
+    // 人事信息类型：保持原有逻辑
+    else if (level.mappingType === 'EMPLOYEE_INFO') {
       const config = employeeInfoConfigs?.find((c: any) => c.field === level.mappingValue);
       if (config?.options) {
         return config.options;
-      }
-      return [];
-    } else if (level.mappingType?.startsWith('CUSTOM_')) {
-      // 自定义字段类型，从 customFields 中查找对应的字段配置
-      const fieldCode = level.mappingType.replace('CUSTOM_', '');
-      const field = customFields?.find((f: any) => f.code === fieldCode);
-
-      if (field?.dataSource?.options) {
-        // 转换选项格式为需要的格式 {id, label/name, value/code}
-        const options = field.dataSource.options.map((opt: any) => ({
-          id: opt.value,
-          name: opt.label,
-          value: opt.value,
-          label: opt.label,
-          code: opt.value,
-        }));
-        return options;
       }
       return [];
     }
@@ -342,10 +389,24 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
         return newValues;
       }
 
-      // 如果是组织类型，选择某个节点时，自动带上其所有父级节点
+      // 获取当前层级配置
       const level = hierarchyLevels?.find((l: any) => l.id === levelId);
 
-      if (level?.mappingType === 'ORG_TYPE' && value) {
+      // 验证自定义字段类型选择的值是否在层级明细中
+      if (level && (level.mappingType?.startsWith('FIELD_') || level.mappingType?.startsWith('CUSTOM_'))) {
+        // ✅ 修复：使用 details 字段而不是 levelDetails
+        const isInDetails = level.details?.some((detail: any) =>
+          detail.status === 'ACTIVE' && detail.id === value.id  // ✅ 修复：使用 id 而不是 optionId
+        );
+
+        if (!isInDetails) {
+          message.warning(`选择的值不在${level.name}的层级明细中，请先刷新层级明细`);
+          return prev;
+        }
+      }
+
+      // 如果是组织类型，选择某个节点时，自动带上其所有父级节点
+      if ((level?.mappingType === 'ORG' || level?.mappingType === 'ORG_TYPE') && value) {
         // 通过 parentId 在组织树中递归查找所有父级节点
         let currentNodeId = value.parentId;
         let levelCount = 0;
@@ -413,11 +474,19 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           allowClear={allowClear}
           showSearch
           optionFilterProp="label"
-          disabled={disabled}
+          disabled={disabled || isLoadingRecent}
           style={style}
           optionLabelProp="label"
-          notFoundContent="无匹配账户"
+          notFoundContent={recentError ? `加载失败: ${recentError.message}` : (isLoadingRecent ? '加载中...' : '无匹配账户')}
           className={className}
+          mode={mode}
+          status={recentError ? 'error' : undefined}
+          onDropdownVisibleChange={(open) => {
+            if (open) {
+              console.log('[AccountSelect] 下拉框打开，重新获取账户列表');
+              refetchRecentAccounts();
+            }
+          }}
         >
           {accounts?.map((acc: Account) => (
             <Select.Option
@@ -439,11 +508,19 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           allowClear={allowClear}
           showSearch
           optionFilterProp="label"
-          disabled={disabled}
+          disabled={disabled || isLoadingRecent}
           style={style}
           optionLabelProp="label"
-          notFoundContent="无匹配账户"
+          notFoundContent={recentError ? `加载失败: ${recentError.message}` : (isLoadingRecent ? '加载中...' : '无匹配账户')}
           className={className}
+          mode={mode}
+          status={recentError ? 'error' : undefined}
+          onDropdownVisibleChange={(open) => {
+            if (open) {
+              console.log('[AccountSelect] 下拉框打开，重新获取账户列表');
+              refetchRecentAccounts();
+            }
+          }}
           dropdownRender={(menu) => (
             <>
               {menu}
@@ -507,7 +584,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
                 {(() => {
                   // 获取所有组织类型的层级，按层级序号排序
                   const orgLevels = hierarchyLevels
-                    ?.filter((l: any) => l.mappingType === 'ORG_TYPE')
+                    ?.filter((l: any) => l.mappingType === 'ORG' || l.mappingType === 'ORG_TYPE')
                     .sort((a: any, b: any) => a.level - b.level) || [];
 
                   // 生成显示数组，每个层级都显示
@@ -518,7 +595,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
 
                   // 获取非组织类型的层级
                   const otherLevels = hierarchyLevels
-                    ?.filter((l: any) => l.mappingType !== 'ORG_TYPE')
+                    ?.filter((l: any) => l.mappingType !== 'ORG' && l.mappingType !== 'ORG_TYPE')
                     .sort((a: any, b: any) => a.level - b.level) || [];
 
                   const otherDisplayParts = otherLevels.map((level: any) => {
@@ -584,7 +661,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
                 已选择的层级
               </div>
               {hierarchyLevels
-                ?.filter((l: any) => l.mappingType === 'ORG_TYPE')
+                ?.filter((l: any) => l.mappingType === 'ORG' || l.mappingType === 'ORG_TYPE')
                 .map((level: any) => (
                   <div
                     key={level.id}
@@ -630,7 +707,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
             </div>
 
             {hierarchyLevels
-              ?.filter((l: any) => l.mappingType !== 'ORG_TYPE')
+              ?.filter((l: any) => l.mappingType !== 'ORG' && l.mappingType !== 'ORG_TYPE')
               .map((level: any) => (
                 <div key={level.id} style={{ marginBottom: 24 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

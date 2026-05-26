@@ -14,6 +14,7 @@ import {
   Tag,
   Input,
   Popconfirm,
+  Popover,
   Divider,
   Checkbox,
   InputNumber,
@@ -76,6 +77,120 @@ interface EmployeeItem {
   key: string;
 }
 
+// 快速班次选择弹出框组件
+interface QuickShiftSelectPopoverProps {
+  shifts: any[];
+  onSelect: (shiftId: number) => void;
+}
+
+const QuickShiftSelectPopover: React.FC<QuickShiftSelectPopoverProps> = ({ shifts, onSelect }) => {
+  const [searchText, setSearchText] = useState('');
+
+  // 过滤班次
+  const filteredShifts = shifts.filter((shift) => {
+    if (!searchText) return true;
+    const searchLower = searchText.toLowerCase();
+    return (
+      shift.name?.toLowerCase().includes(searchLower) ||
+      shift.code?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  // 格式化班次时间（显示第一个开始和最后一个结束）
+  const formatShiftTime = (shift: any) => {
+    if (!shift.segments || shift.segments.length === 0) {
+      return '-';
+    }
+    const firstSegment = shift.segments[0];
+    const lastSegment = shift.segments[shift.segments.length - 1];
+    return `${firstSegment.startTime} - ${lastSegment.endTime}`;
+  };
+
+  return (
+    <div style={{ width: '350px', maxHeight: '400px' }}>
+      {/* 搜索框 */}
+      <div style={{ padding: '12px 12px 8px 12px' }}>
+        <Input
+          placeholder="搜索班次名称或代码"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          allowClear
+          prefix={<span style={{ color: '#9ca3af' }}>🔍</span>}
+          size="large"
+        />
+      </div>
+
+      {/* 班次列表 */}
+      <div style={{ padding: '0 12px 12px 12px', maxHeight: '320px', overflowY: 'auto' }}>
+        {filteredShifts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#9ca3af' }}>
+            {searchText ? '未找到匹配的班次' : '暂无可用班次'}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {filteredShifts.map((shift) => (
+              <div
+                key={shift.id}
+                onClick={() => onSelect(shift.id)}
+                style={{
+                  padding: '10px 12px',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  background: 'white',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = shift.color || '#1890ff';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                  e.currentTarget.style.transform = 'translateX(2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.boxShadow = 'none';
+                  e.currentTarget.style.transform = 'translateX(0)';
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Space size={6}>
+                    <Tag
+                      color={shift.color}
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 6px',
+                        fontWeight: 500,
+                        margin: 0,
+                      }}
+                    >
+                      {shift.code || shift.name}
+                    </Tag>
+                    <span style={{ fontWeight: 500, color: '#262626', fontSize: '13px' }}>
+                      {shift.name}
+                    </span>
+                  </Space>
+                  <span style={{ fontSize: '11px', color: '#8c8c8c' }}>
+                    {shift.standardHours}h
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#595959', fontWeight: 500 }}>
+                  {formatShiftTime(shift)}
+                </div>
+
+                {shift.description && (
+                  <div style={{ fontSize: '11px', color: '#8c8c8c', marginTop: 4 }}>
+                    {shift.description}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const SchedulePage: React.FC = () => {
   const queryClient = useQueryClient();
 
@@ -101,13 +216,8 @@ const SchedulePage: React.FC = () => {
     deletes: number[];
   }>({ creates: [], updates: [], deletes: [] });
 
-  // 批量排班对话框
-  const [batchScheduleModalOpen, setBatchScheduleModalOpen] = useState(false);
-  const [batchForm] = Form.useForm();
-
-  // 复制排班对话框
-  const [copyScheduleModalOpen, setCopyScheduleModalOpen] = useState(false);
-  const [copyForm] = Form.useForm();
+  // 批量添加按钮的弹出框状态
+  const [batchAddPopoverOpen, setBatchAddPopoverOpen] = useState(false);
 
   // 编辑排班对话框
   const [editScheduleModalOpen, setEditScheduleModalOpen] = useState(false);
@@ -364,10 +474,15 @@ const SchedulePage: React.FC = () => {
     }
   };
 
-  // 处理单元格双击（编辑排班）
-  const handleCellDoubleClick = (schedule?: ScheduleItem) => {
+  // 处理单元格双击（编辑排班或快速排班）
+  const handleCellDoubleClick = (schedule?: ScheduleItem, employeeId?: number, dateStr?: string) => {
     if (schedule) {
+      // 已有排班，进入编辑模式
       handleEditSchedule(schedule);
+    } else if (employeeId && dateStr) {
+      // 没有排班，弹出快速选择班次对话框
+      setQuickScheduleTarget({ employeeId, dateStr });
+      setQuickScheduleModalOpen(true);
     }
   };
 
@@ -412,7 +527,8 @@ const SchedulePage: React.FC = () => {
         width: 90,
         align: 'center' as const,
         render: (_: any, record: EmployeeItem, rowIndex: number) => {
-          const schedule = record.schedules.find((s) => {
+          // 查找该日期的所有排班（支持多个班次）
+          const schedules = record.schedules.filter((s) => {
             // 将scheduleDate格式化为YYYY-MM-DD后再比较
             const scheduleDate = dayjs(s.scheduleDate).format('YYYY-MM-DD');
             return scheduleDate === dateStr;
@@ -423,9 +539,154 @@ const SchedulePage: React.FC = () => {
           const isDateSelected = selectedDates.includes(dateStr);
           const isCellSelected = isEmployeeSelected && isDateSelected;
 
-          if (!schedule) {
+          const cellContent = (
+            <>
+              {schedules.length === 0 && (
+                <div
+                  style={{
+                    padding: '8px 6px',
+                    minHeight: '48px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    background: isCellSelected ? '#eff6ff' : 'transparent',
+                    border: isCellSelected ? '1px solid #bfdbfe' : '1px solid #f3f4f6',
+                    borderRadius: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <span style={{ color: '#f3f4f6', fontSize: '13px' }}>-</span>
+                </div>
+              )}
+
+              {schedules.length > 1 && (
+                <div
+                  style={{
+                    padding: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    minHeight: '48px',
+                    cursor: 'pointer',
+                    background: isCellSelected ? '#eff6ff' : 'transparent',
+                    border: isCellSelected ? '1px solid #bfdbfe' : '1px solid #f3f4f6',
+                    borderRadius: '4px',
+                  }}
+                >
+                  {schedules.map((schedule, idx) => (
+                    <div
+                      key={schedule.id || idx}
+                      style={{
+                        padding: '4px 6px',
+                        background: schedule.shiftColor ? `${schedule.shiftColor}15` : '#3b82f615',
+                        color: schedule.shiftColor || '#3b82f6',
+                        fontSize: '11px',
+                        borderRadius: '3px',
+                        border: `1px solid ${schedule.shiftColor || '#3b82f6'}40`,
+                        fontWeight: 500,
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {schedule.shiftName}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {schedules.length === 1 && (() => {
+                const schedule = schedules[0];
+                return (
+                  <div
+                    style={{
+                      padding: '8px 6px',
+                      background: schedule.shiftColor ? `${schedule.shiftColor}15` : '#3b82f615',
+                      color: schedule.shiftColor || '#3b82f6',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      minHeight: '48px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'column',
+                      borderRadius: '4px',
+                      border: isCellSelected ? `2px solid ${schedule.shiftColor || '#3b82f6'}` : `1px solid ${schedule.shiftColor || '#3b82f6'}30`,
+                      transition: 'all 0.15s ease',
+                      fontWeight: 500,
+                      opacity: isCellSelected ? 1 : 0.85,
+                      boxShadow: isCellSelected ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none',
+                    }}
+                  >
+                    <div>{schedule.shiftName}</div>
+                    {(schedule.adjustedStart || schedule.adjustedEnd) && (
+                      <Tag
+                        color="gold"
+                        style={{
+                          margin: '4px 0 0 0',
+                          fontSize: '10px',
+                          padding: '0 6px',
+                          borderRadius: '3px',
+                          lineHeight: '18px',
+                        }}
+                      >
+                        已调整
+                      </Tag>
+                    )}
+                    {schedule.isPending && (
+                      <Tag
+                        color="orange"
+                        style={{
+                          margin: '4px 0 0 0',
+                          fontSize: '10px',
+                          padding: '0 6px',
+                          borderRadius: '3px',
+                          lineHeight: '18px',
+                        }}
+                      >
+                        未保存
+                      </Tag>
+                    )}
+                  </div>
+                );
+              })()}
+            </>
+          );
+
+          // 如果已有排班，直接返回（双击编辑）
+          if (schedules.length > 0) {
             return (
               <div
+                onClick={() => handleCellClick(rowIndex, i)}
+                onDoubleClick={() => handleCellDoubleClick(schedules[0], record.id, dateStr)}
+                title="双击编辑排班"
+              >
+                {cellContent}
+              </div>
+            );
+          }
+
+          // 空白单元格，使用 Popover
+          return (
+            <Popover
+              trigger="click"
+              placement="bottom"
+              content={
+                <QuickShiftSelectPopover
+                  shifts={shifts || []}
+                  onSelect={(shiftId) => {
+                    handleQuickScheduleConfirm(shiftId, record.id, dateStr);
+                  }}
+                />
+              }
+            >
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCellClick(rowIndex, i);
+                }}
                 style={{
                   padding: '8px 6px',
                   minHeight: '48px',
@@ -438,86 +699,18 @@ const SchedulePage: React.FC = () => {
                   borderRadius: '4px',
                   transition: 'all 0.15s ease',
                 }}
-                onClick={() => handleCellClick(rowIndex, i)}
-                onDoubleClick={() => handleCellDoubleClick(schedule)}
+                title="点击快速添加班次"
               >
-                <span style={{ color: '#f3f4f6', fontSize: '13px' }}>-</span>
+                <span style={{ color: '#d1d5db', fontSize: '13px' }}>+</span>
               </div>
-            );
-          }
-
-          return (
-            <div
-              style={{
-                padding: '8px 6px',
-                background: schedule.shiftColor ? `${schedule.shiftColor}15` : '#3b82f615',
-                color: schedule.shiftColor || '#3b82f6',
-                fontSize: '12px',
-                cursor: 'pointer',
-                minHeight: '48px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'column',
-                borderRadius: '4px',
-                border: isCellSelected ? `2px solid ${schedule.shiftColor || '#3b82f6'}` : `1px solid ${schedule.shiftColor || '#3b82f6'}30`,
-                transition: 'all 0.15s ease',
-                fontWeight: 500,
-                opacity: isCellSelected ? 1 : 0.85,
-                boxShadow: isCellSelected ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none',
-              }}
-              onClick={() => handleCellClick(rowIndex, i)}
-              onDoubleClick={() => handleCellDoubleClick(schedule)}
-              onMouseEnter={(e) => {
-                if (!isCellSelected) {
-                  e.currentTarget.style.opacity = '1';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isCellSelected) {
-                  e.currentTarget.style.opacity = '0.85';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }
-              }}
-            >
-              <div>{schedule.shiftName}</div>
-              {(schedule.adjustedStart || schedule.adjustedEnd) && (
-                <Tag
-                  color="gold"
-                  style={{
-                    margin: '4px 0 0 0',
-                    fontSize: '10px',
-                    padding: '0 6px',
-                    borderRadius: '3px',
-                    lineHeight: '18px',
-                  }}
-                >
-                  已调整
-                </Tag>
-              )}
-              {schedule.isPending && (
-                <Tag
-                  color="orange"
-                  style={{
-                    margin: '4px 0 0 0',
-                    fontSize: '10px',
-                    padding: '0 6px',
-                    borderRadius: '3px',
-                    lineHeight: '18px',
-                  }}
-                >
-                  未保存
-                </Tag>
-              )}
-            </div>
+            </Popover>
           );
         },
       });
     }
 
     return columns;
-  }, [filters.dateRange, selectedDates, selectedEmployeeKeys, rangeSelectionStart, isShiftPressed]);
+  }, [filters.dateRange, selectedDates, selectedEmployeeKeys, rangeSelectionStart, isShiftPressed, shifts]);
 
   // 表格列
   const columns = [
@@ -620,64 +813,41 @@ const SchedulePage: React.FC = () => {
     setSelectedDates([]);
   };
 
-  // 复制排班
-  const handleCopyScheduleConfirm = (sourceDate: string, targetDates: string[]) => {
-    const schedules: any[] = [];
+  // 快速排班确认
+  const handleQuickScheduleConfirm = (shiftId: number, employeeId: number, dateStr: string) => {
+    const shift = shifts?.find((s: any) => s.id === shiftId);
 
-    selectedEmployeeKeys.forEach((empId) => {
-      // 获取源日期的排班
-      const emp = employees.find((e) => e.id === empId);
-      if (emp) {
-        const sourceSchedule = emp.schedules.find((s) => {
-          const scheduleDate = dayjs(s.scheduleDate).format('YYYY-MM-DD');
-          return scheduleDate === sourceDate;
-        });
+    // 从 allEmployees 中查找完整的员工信息
+    const employee = (Array.isArray(allEmployees) ? allEmployees : (allEmployees?.items || []))
+      .find((e: any) => Number(e.id) === employeeId);
 
-        if (sourceSchedule) {
-          // 从 allEmployees 中查找完整的员工信息
-          const employee = (Array.isArray(allEmployees) ? allEmployees : (allEmployees?.items || []))
-            .find((e: any) => Number(e.id) === empId);
-
-          const shift = shifts?.find((s: any) => s.id === sourceSchedule.shiftId);
-
-          // 复制到目标日期
-          targetDates.forEach((dateStr: string) => {
-            schedules.push({
-              id: Date.now() + Math.random(), // 临时ID
-              employeeId: empId,
-              shiftId: sourceSchedule.shiftId,
-              scheduleDate: dateStr,
-              shiftName: shift?.name || '',
-              shiftColor: shift?.color || '#1890ff',
-              status: 'PENDING', // 标记为待保存状态
-              isPending: true, // 标记为未保存状态
-              employee: employee ? {
-                id: employee.id,
-                employeeNo: employee.employeeNo,
-                name: employee.name,
-                org: employee.org,
-              } : undefined,
-              shift: shift ? {
-                id: shift.id,
-                name: shift.name,
-                color: shift.color,
-              } : undefined,
-            });
-          });
-        }
-      }
-    });
-
-    if (schedules.length === 0) {
-      message.warning('所选员工在源日期没有排班，无法复制');
-      return;
-    }
+    const newSchedule = {
+      id: Date.now() + Math.random(), // 临时ID
+      employeeId: employeeId,
+      shiftId: shiftId,
+      scheduleDate: dateStr,
+      shiftName: shift?.name || '',
+      shiftColor: shift?.color || '#1890ff',
+      status: 'PENDING', // 标记为待保存状态
+      isPending: true, // 标记为未保存状态
+      employee: employee ? {
+        id: employee.id,
+        employeeNo: employee.employeeNo,
+        name: employee.name,
+        org: employee.org,
+      } : undefined,
+      shift: shift ? {
+        id: shift.id,
+        name: shift.name,
+        color: shift.color,
+      } : undefined,
+    };
 
     // 添加到待保存列表（不包含临时ID和额外字段）
-    const schedulesToSave = schedules.map(({ id, isPending, employee, shift, ...rest }) => rest);
+    const { id, isPending, employee: emp, shift: sh, ...scheduleToSave } = newSchedule;
     setPendingChanges(prev => ({
       ...prev,
-      creates: [...prev.creates, ...schedulesToSave],
+      creates: [...prev.creates, scheduleToSave],
     }));
 
     // 立即在本地数据中添加，让UI立即显示
@@ -688,24 +858,25 @@ const SchedulePage: React.FC = () => {
 
         // 将原有数据和新数据合并
         const existingData = Array.isArray(oldData) ? oldData : [];
-        return [...existingData, ...schedules];
+        return [...existingData, newSchedule];
       }
     );
 
-    setCopyScheduleModalOpen(false);
-    copyForm.resetFields();
-    setSelectedEmployeeKeys([]);
-    setSelectedDates([]);
+    message.success(`已为 ${employee?.name} 在 ${dateStr} 添加班次：${shift?.name}`);
   };
 
   // 更新排班
   const handleUpdateSchedule = (data: any) => {
+    console.log('=== 更新排班 ===');
+    console.log('更新数据:', data);
+    console.log('editingSegments:', data.segments);
+
     // 添加到待保存列表
     setPendingChanges(prev => ({
       ...prev,
       updates: [...prev.updates, {
         id: data.id,
-        adjustedSegments: data.segments,
+        adjustedSegments: data.segments, // 发送完整的 segments 数据，包含修改后的时间
       }],
     }));
 
@@ -718,9 +889,29 @@ const SchedulePage: React.FC = () => {
         const existingData = Array.isArray(oldData) ? oldData : [];
         return existingData.map((item: any) => {
           if (item.id === data.id) {
+            // 合并 adjustedSegments 到 segments
+            let mergedSegments = item.segments || [];
+            if (item.segments && item.segments.length > 0) {
+              const overrides = data.segments;
+              mergedSegments = item.segments.map((seg: any) => {
+                const override = overrides.find((o: any) => o.id === seg.id);
+                // 如果找到覆盖数据，合并所有字段（包括时间）
+                return override ? { ...seg, ...override } : seg;
+              });
+            }
+
+            console.log('合并后的 segments:', mergedSegments);
+
+            // 提取第一个和最后一个班段的时间用于显示
+            const firstSegment = mergedSegments[0];
+            const lastSegment = mergedSegments[mergedSegments.length - 1];
+
             return {
               ...item,
-              adjustedSegments: JSON.stringify(data.segments),
+              adjustedStart: firstSegment?.startTime,
+              adjustedEnd: lastSegment?.endTime,
+              adjustedSegments: JSON.stringify(data.segments), // 保存完整的 segments 数据
+              segments: mergedSegments, // 同时更新 segments 以便编辑时使用
               isPending: true, // 标记为未保存状态
             };
           }
@@ -735,34 +926,6 @@ const SchedulePage: React.FC = () => {
     setEditingSegments([]);
   };
 
-  // 处理批量排班
-  const handleBatchSchedule = () => {
-    if (selectedEmployeeKeys.length === 0) {
-      message.warning('请先选择要排班的员工');
-      return;
-    }
-    if (selectedDates.length === 0) {
-      message.warning('请先选择排班日期');
-      return;
-    }
-    batchForm.resetFields();
-    setBatchScheduleModalOpen(true);
-  };
-
-  // 处理复制排班
-  const handleCopySchedule = () => {
-    if (selectedEmployeeKeys.length === 0) {
-      message.warning('请先选择要复制排班的员工');
-      return;
-    }
-    if (selectedDates.length === 0) {
-      message.warning('请先选择目标日期');
-      return;
-    }
-    copyForm.resetFields();
-    setCopyScheduleModalOpen(true);
-  };
-
   // 处理编辑排班
   const handleEditSchedule = (schedule: ScheduleItem) => {
     // 获取班次信息
@@ -771,43 +934,38 @@ const SchedulePage: React.FC = () => {
     // 初始化班段数据
     let segments: ScheduleSegmentItem[] = [];
 
+    console.log('=== 编辑排班 ===');
+    console.log('schedule:', schedule);
+    console.log('schedule.segments:', schedule.segments);
+
     // 优先使用 schedule 中已经覆盖过的 segments（包含 accountId 等自定义值）
     if (schedule.segments && schedule.segments.length > 0) {
       segments = schedule.segments.map((seg: any) => ({
         id: seg.id,
         type: seg.type,
-        startDate: seg.startDate,
+        startDate: seg.startDate || '+0',
         startTime: seg.startTime,
-        endDate: seg.endDate,
+        endDate: seg.endDate || '+0',
         endTime: seg.endTime,
-        duration: seg.duration,
+        duration: 0, // 重新计算
         accountId: seg.accountId, // 使用覆盖后的子劳动力账户
       }));
+
+      console.log('从 schedule.segments 获取班段:', segments);
     } else if (shift && shift.segments) {
       // 如果 schedule 中没有 segments，从班次中获取
       segments = shift.segments.map((seg: any) => ({
         id: seg.id,
         type: seg.type,
-        startDate: seg.startDate,
+        startDate: seg.startDate || '+0',
         startTime: seg.startTime,
-        endDate: seg.endDate,
+        endDate: seg.endDate || '+0',
         endTime: seg.endTime,
-        duration: seg.duration,
+        duration: 0, // 重新计算
         accountId: seg.accountId, // 继承班次设置的子劳动力账户
       }));
-    }
 
-    // 如果有调整后的时间，需要应用调整
-    if (schedule.adjustedStart || schedule.adjustedEnd) {
-      // 这里简化处理，实际应该根据调整时间修改第一个和最后一个班段
-      if (segments.length > 0) {
-        if (schedule.adjustedStart) {
-          segments[0].startTime = schedule.adjustedStart;
-        }
-        if (schedule.adjustedEnd) {
-          segments[segments.length - 1].endTime = schedule.adjustedEnd;
-        }
-      }
+      console.log('从 shift.segments 获取班段:', segments);
     }
 
     // 如果没有班段，创建一个默认班段
@@ -820,13 +978,21 @@ const SchedulePage: React.FC = () => {
         endTime: schedule.adjustedEnd || '17:00',
         duration: 0,
       }];
+
+      console.log('创建默认班段:', segments);
     }
 
     // 重新计算时长
-    segments = segments.map((seg) => ({
-      ...seg,
-      duration: calculateSegmentDuration(seg),
-    }));
+    segments = segments.map((seg) => {
+      const duration = calculateSegmentDuration(seg);
+      console.log(`班段 ${seg.type} 时长计算: ${seg.startTime} - ${seg.endTime} = ${duration}小时`);
+      return {
+        ...seg,
+        duration,
+      };
+    });
+
+    console.log('最终班段数据:', segments);
 
     setEditingSchedule(schedule);
     setEditingSegments(segments);
@@ -866,26 +1032,6 @@ const SchedulePage: React.FC = () => {
     }
 
     setEditingSegments(newSegments);
-  };
-
-  // 提交批量排班
-  const handleBatchScheduleOk = async () => {
-    try {
-      const values = await batchForm.validateFields();
-      handleBatchScheduleConfirm(values.shiftId);
-    } catch (error) {
-      console.error('表单验证失败:', error);
-    }
-  };
-
-  // 提交复制排班
-  const handleCopyScheduleOk = async () => {
-    try {
-      const values = await copyForm.validateFields();
-      handleCopyScheduleConfirm(values.sourceDate, values.targetDates);
-    } catch (error) {
-      console.error('表单验证失败:', error);
-    }
   };
 
   // 提交编辑排班
@@ -1304,18 +1450,13 @@ const SchedulePage: React.FC = () => {
     },
   ]);
 
-  // 获取当前日期区间的所有日期选项
-  const getAllDatesInRange = () => {
-    return allDates;
-  };
-
   return (
     <ModernPageLayout
       title="排班管理"
       description={
         <Space>
           <span>管理员工的排班信息，支持批量排班、复制排班等功能</span>
-          <Badge count="NEW" style={{ backgroundColor: '#22B970', fontSize: '11px' }} />
+          <Badge count="NEW" style={{ backgroundColor: '#00B365', fontSize: '11px' }} />
         </Space>
       }
       breadcrumb={[
@@ -1336,13 +1477,10 @@ const SchedulePage: React.FC = () => {
                   <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>Shift + 点击</kbd> 范围选择
                 </Tag>
                 <Tag>
-                  <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>双击</kbd> 编辑排班
+                  <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>点击空白</kbd> 快速排班
                 </Tag>
                 <Tag>
-                  <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>Ctrl/Cmd + C</kbd> 复制
-                </Tag>
-                <Tag>
-                  <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>Ctrl/Cmd + V</kbd> 粘贴
+                  <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>双击排班</kbd> 编辑
                 </Tag>
                 <Tag>
                   <kbd style={{ fontFamily: 'monospace', padding: '2px 6px', background: '#f3f4f6', borderRadius: '4px' }}>Delete</kbd> 删除
@@ -1352,7 +1490,7 @@ const SchedulePage: React.FC = () => {
                 </Tag>
               </Space>
               <div style={{ color: '#6b7280', fontSize: '12px', marginTop: 8 }}>
-                💡 单击选择单元格 • 双击编辑排班 • Shift+点击选择区域 • 快捷键直接执行无需确认
+                💡 单击选择单元格 • 点击空白单元格或"添加"按钮快速排班 • 双击已有排班编辑 • Shift+点击选择区域
               </div>
               {pendingChanges.creates.length + pendingChanges.updates.length + pendingChanges.deletes.length > 0 && (
                 <Space style={{ color: '#f59e0b', marginTop: 8 }}>
@@ -1360,12 +1498,6 @@ const SchedulePage: React.FC = () => {
                   <span>
                     待保存: {pendingChanges.creates.length}条新增、{pendingChanges.updates.length}条更新、{pendingChanges.deletes.length}条删除
                   </span>
-                </Space>
-              )}
-              {isValid() && clipboardSource && (
-                <Space style={{ color: '#10b981' }}>
-                  <CheckCircleOutlined />
-                  <span>剪贴板中有来自 {clipboardSource.date} 的 {getClipboardInfo()?.scheduleCount} 条排班，可粘贴使用</span>
                 </Space>
               )}
             </Space>
@@ -1395,7 +1527,7 @@ const SchedulePage: React.FC = () => {
         {/* 日期区间选择器和动态搜索条件放在同一行 */}
         <div style={{ marginBottom: 24 }}>
           <DynamicSearchConditions
-            pageCode="schedules"
+            pageCode="schedule-management"
             onSearch={handleSearch}
             onReset={handleReset}
             loading={isLoading}
@@ -1414,11 +1546,24 @@ const SchedulePage: React.FC = () => {
         <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col>
             <Space wrap size="small">
-              <Tooltip title={`当前选中: ${selectedEmployeeKeys.length}人 × ${selectedDates.length}日`}>
+              <Popover
+                trigger="click"
+                placement="bottom"
+                open={batchAddPopoverOpen}
+                onOpenChange={(visible) => setBatchAddPopoverOpen(visible)}
+                content={
+                  <QuickShiftSelectPopover
+                    shifts={shifts || []}
+                    onSelect={(shiftId) => {
+                      handleBatchScheduleConfirm(shiftId);
+                      setBatchAddPopoverOpen(false);
+                    }}
+                  />
+                }
+              >
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
-                  onClick={handleBatchSchedule}
                   disabled={selectedEmployeeKeys.length === 0 || selectedDates.length === 0}
                   style={{
                     borderRadius: '6px',
@@ -1426,37 +1571,9 @@ const SchedulePage: React.FC = () => {
                     fontWeight: 500,
                   }}
                 >
-                  批量排班 ({selectedEmployeeKeys.length} × {selectedDates.length})
+                  添加
                 </Button>
-              </Tooltip>
-
-              <Tooltip title="快捷键: Ctrl/Cmd + C">
-                <Button
-                  icon={<CopyOutlined />}
-                  onClick={handleKeyboardCopy}
-                  disabled={selectedEmployeeKeys.length === 0 || selectedDates.length === 0}
-                  style={{
-                    borderRadius: '6px',
-                    height: '36px',
-                  }}
-                >
-                  复制
-                </Button>
-              </Tooltip>
-
-              <Tooltip title={`快捷键: Ctrl/Cmd + V ${isValid() ? '(可用)' : '(剪贴板为空)'}`}>
-                <Button
-                  icon={<CopyOutlined />}
-                  onClick={handleKeyboardPaste}
-                  disabled={!isValid() || selectedEmployeeKeys.length === 0 || selectedDates.length === 0}
-                  style={{
-                    borderRadius: '6px',
-                    height: '36px',
-                  }}
-                >
-                  粘贴
-                </Button>
-              </Tooltip>
+              </Popover>
 
               <Tooltip title="快捷键: Delete">
                 <Button
@@ -1475,7 +1592,7 @@ const SchedulePage: React.FC = () => {
 
               <Divider type="vertical" style={{ height: '36px' }} />
 
-              <Tooltip title={`保存所有待提交的修改 (${pendingChanges.creates.length + pendingChanges.updates.length + pendingChanges.deletes.length}项)`}>
+              <Tooltip title="保存所有待提交的修改">
                 <Button
                   type="primary"
                   icon={<CheckCircleOutlined />}
@@ -1486,7 +1603,7 @@ const SchedulePage: React.FC = () => {
                     height: '36px',
                   }}
                 >
-                  保存 ({pendingChanges.creates.length + pendingChanges.updates.length + pendingChanges.deletes.length})
+                  保存
                 </Button>
               </Tooltip>
 
@@ -1575,106 +1692,6 @@ const SchedulePage: React.FC = () => {
           }
         `}</style>
       </Card>
-
-      {/* 批量排班对话框 */}
-      <Modal
-        title={
-          <Space>
-            <PlusOutlined />
-            <span>批量排班 ({selectedEmployeeKeys.length}人 × {selectedDates.length}日)</span>
-          </Space>
-        }
-        open={batchScheduleModalOpen}
-        onOk={handleBatchScheduleOk}
-        onCancel={() => {
-          setBatchScheduleModalOpen(false);
-          batchForm.resetFields();
-        }}
-        confirmLoading={isSaving}
-        width={500}
-        okButtonProps={{
-          style: {
-            borderRadius: '6px',
-          },
-        }}
-        cancelButtonProps={{
-          style: {
-            borderRadius: '6px',
-          },
-        }}
-      >
-        <Form form={batchForm} layout="vertical">
-          <Form.Item
-            name="shiftId"
-            label={
-              <Space>
-                <span style={{ fontWeight: 500 }}>选择班次</span>
-                <Tag color="blue">必填</Tag>
-              </Space>
-            }
-            rules={[{ required: true, message: '请选择班次' }]}
-          >
-            <Select
-              placeholder="请选择班次"
-              size="large"
-            >
-              {(shifts || []).map((shift: any) => (
-                <Select.Option key={shift.id} value={shift.id}>
-                  <Space>
-                    <Tag color={shift.color}>{shift.name}</Tag>
-                    <span style={{ color: '#6b7280' }}>({shift.standardHours}小时)</span>
-                  </Space>
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* 复制排班对话框 */}
-      <Modal
-        title="复制排班"
-        open={copyScheduleModalOpen}
-        onOk={handleCopyScheduleOk}
-        onCancel={() => {
-          setCopyScheduleModalOpen(false);
-          copyForm.resetFields();
-        }}
-        width={500}
-        styles={{
-          content: { borderRadius: 12 },
-        }}
-      >
-        <Form form={copyForm} layout="vertical">
-          <Form.Item
-            name="sourceDate"
-            label="源日期"
-            rules={[{ required: true, message: '请选择源日期' }]}
-            extra="从该日期复制排班"
-          >
-            <DatePicker style={{ width: '100%', borderRadius: 8 }} />
-          </Form.Item>
-
-          <Form.Item
-            name="targetDates"
-            label="目标日期"
-            rules={[{ required: true, message: '请选择目标日期' }]}
-            extra="复制到这些日期"
-          >
-            <Select
-              mode="multiple"
-              placeholder="请选择目标日期"
-              style={{ width: '100%', borderRadius: 8 }}
-            >
-              {getAllDatesInRange().map((dateStr) => (
-                <Select.Option key={dateStr} value={dateStr}>
-                  {dateStr}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-        </Form>
-      </Modal>
 
       {/* 编辑排班对话框 */}
       <Modal
@@ -1778,24 +1795,28 @@ const SchedulePage: React.FC = () => {
             {
               title: '开始时间',
               key: 'startTime',
-              width: 140,
+              width: 160,
               render: (_: any, record: ScheduleSegmentItem, index: number) => (
-                <Input
-                  type="time"
-                  value={record.startTime}
-                  onChange={(e) => updateSegment(index, 'startTime', e.target.value)}
+                <DatePicker.TimePicker
+                  value={record.startTime ? dayjs(record.startTime, 'HH:mm') : null}
+                  format="HH:mm"
+                  onChange={(time) => updateSegment(index, 'startTime', time ? time.format('HH:mm') : '')}
+                  style={{ width: '100%' }}
+                  placeholder="选择时间"
                 />
               ),
             },
             {
               title: '结束时间',
               key: 'endTime',
-              width: 140,
+              width: 160,
               render: (_: any, record: ScheduleSegmentItem, index: number) => (
-                <Input
-                  type="time"
-                  value={record.endTime}
-                  onChange={(e) => updateSegment(index, 'endTime', e.target.value)}
+                <DatePicker.TimePicker
+                  value={record.endTime ? dayjs(record.endTime, 'HH:mm') : null}
+                  format="HH:mm"
+                  onChange={(time) => updateSegment(index, 'endTime', time ? time.format('HH:mm') : '')}
+                  style={{ width: '100%' }}
+                  placeholder="选择时间"
                 />
               ),
             },
@@ -1814,7 +1835,7 @@ const SchedulePage: React.FC = () => {
               title: '转移子账户',
               dataIndex: 'accountId',
               key: 'accountId',
-              width: 300,
+              width: 600,
               render: (accountId: number | undefined, record: ScheduleSegmentItem, index: number) => {
                 return (
                   <AccountSelect
@@ -1822,6 +1843,7 @@ const SchedulePage: React.FC = () => {
                     usageType="SHIFT"
                     onChange={(value) => updateSegment(index, 'accountId', value)}
                     placeholder="选择子账户"
+                    style={{ width: '100%' }}
                   />
                 );
               },

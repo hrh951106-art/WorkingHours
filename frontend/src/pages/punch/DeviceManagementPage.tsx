@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card, Table, Button, Modal, Form, Input, Select, message, Space, Tag, DatePicker, Row, Col } from 'antd';
-import { PlusOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 import AccountSelect from '@/components/common/AccountSelect';
@@ -81,11 +81,28 @@ const DeviceManagementPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['punchDevices'] });
       setIsDeviceModalOpen(false);
       deviceForm.resetFields();
+      setSelectedDevice(null);
     },
     onError: (error: any) => {
       const errorMsg = error?.response?.data?.message || error?.message || '创建失败';
       message.error(errorMsg);
       console.error('创建设备失败:', error);
+    },
+  });
+
+  const updateDeviceMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => request.put(`/punch/devices/${id}`, data),
+    onSuccess: () => {
+      message.success('更新成功');
+      queryClient.invalidateQueries({ queryKey: ['punchDevices'] });
+      setIsDeviceModalOpen(false);
+      deviceForm.resetFields();
+      setSelectedDevice(null);
+    },
+    onError: (error: any) => {
+      const errorMsg = error?.response?.data?.message || error?.message || '更新失败';
+      message.error(errorMsg);
+      console.error('更新设备失败:', error);
     },
   });
 
@@ -200,8 +217,14 @@ const DeviceManagementPage: React.FC = () => {
       key: 'actions',
       render: (_: any, record: any) => (
         <Space>
+          <Button type="link" icon={<EditOutlined />} onClick={() => handleEditDevice(record)}>
+            编辑
+          </Button>
           <Button type="link" onClick={() => handleBindAccounts(record)}>
             绑定账户
+          </Button>
+          <Button type="link" danger onClick={() => handleDelete(record.id)}>
+            删除
           </Button>
         </Space>
       ),
@@ -209,14 +232,36 @@ const DeviceManagementPage: React.FC = () => {
   ];
 
   const handleAddDevice = () => {
+    setSelectedDevice(null);
     deviceForm.resetFields();
+    setIsDeviceModalOpen(true);
+  };
+
+  const handleEditDevice = (device: any) => {
+    setSelectedDevice(device);
+    deviceForm.setFieldsValue({
+      code: device.code,
+      name: device.name,
+      type: device.type,
+      groupId: device.groupId,
+    });
     setIsDeviceModalOpen(true);
   };
 
   const handleDeviceModalOk = async () => {
     try {
       const values = await deviceForm.validateFields();
-      createDeviceMutation.mutate(values);
+
+      if (selectedDevice) {
+        // 编辑模式
+        updateDeviceMutation.mutate({
+          id: selectedDevice.id,
+          data: values,
+        });
+      } else {
+        // 新建模式
+        createDeviceMutation.mutate(values);
+      }
     } catch (error) {
       console.error('表单验证失败:', error);
     }
@@ -225,6 +270,7 @@ const DeviceManagementPage: React.FC = () => {
   const handleDeviceModalCancel = () => {
     setIsDeviceModalOpen(false);
     deviceForm.resetFields();
+    setSelectedDevice(null);
   };
 
   const handleBindAccounts = (device: any) => {
@@ -385,7 +431,7 @@ const DeviceManagementPage: React.FC = () => {
               </Button>
             )}
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDevice}>
-              添加设备
+              新建
             </Button>
           </Space>
         }
@@ -400,13 +446,13 @@ const DeviceManagementPage: React.FC = () => {
         />
       </Card>
 
-      {/* 添加设备弹窗 */}
+      {/* 添加/编辑设备弹窗 */}
       <Modal
-        title="添加设备"
+        title={selectedDevice ? '编辑设备' : '添加设备'}
         open={isDeviceModalOpen}
         onOk={handleDeviceModalOk}
         onCancel={handleDeviceModalCancel}
-        confirmLoading={createDeviceMutation.isPending}
+        confirmLoading={createDeviceMutation.isPending || updateDeviceMutation.isPending}
         okText="确定"
         cancelText="取消"
       >

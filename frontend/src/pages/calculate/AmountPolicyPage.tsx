@@ -1,0 +1,885 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Card,
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  InputNumber,
+  Space,
+  message,
+  Tag,
+  Popconfirm,
+  Tabs,
+  Transfer,
+} from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import request from '@/utils/request';
+import dayjs from 'dayjs';
+import AccountSelect from '@/components/common/AccountSelect';
+
+const { Option } = Select;
+const { TextArea } = Input;
+
+interface AmountPolicy {
+  id: number;
+  code: string;
+  name: string;
+  description?: string;
+  policyType: 'ADD' | 'MULTIPLY' | 'CUSTOM';
+  multiplier?: number;
+  fixedValue?: number;
+  accountPath: string;
+  accountPathMatch: 'EXACT' | 'PREFIX' | 'LEVEL';
+  attendanceCodes: string;
+  priority: number;
+  status: string;
+}
+
+interface AmountPolicyGroup {
+  id: number;
+  code: string;
+  name: string;
+  description?: string;
+  policyIds: number[];
+  priority: number;
+  status: string;
+}
+
+const AmountPolicyPage: React.FC = () => {
+  const queryClient = useQueryClient();
+  const [form] = Form.useForm();
+  const [groupForm] = Form.useForm();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const [policyType, setPolicyType] = useState<'ADD' | 'MULTIPLY' | 'CUSTOM'>('ADD');
+  const [activeTab, setActiveTab] = useState('rules');
+  const [selectedAttendanceCodes, setSelectedAttendanceCodes] = useState<string[]>([]);
+  const [selectedPolicyIds, setSelectedPolicyIds] = useState<number[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [editingAccountPath, setEditingAccountPath] = useState<string | null>(null);
+  const accountInitializedRef = React.useRef(false);
+
+  // 获取金额政策列表
+  const { data: policiesData, isLoading } = useQuery({
+    queryKey: ['amountPolicies'],
+    queryFn: async () => {
+      const res = await request.get('/amount/policies');
+      return res.data || res;
+    },
+  });
+
+  const policies = policiesData?.items || [];
+
+  // 获取金额规则组列表
+  const { data: policyGroupsData, isLoading: groupsLoading } = useQuery({
+    queryKey: ['amountPolicyGroups'],
+    queryFn: async () => {
+      const res = await request.get('/amount/policy-groups');
+      return res.data || res;
+    },
+  });
+
+  const policyGroups = policyGroupsData?.items || [];
+
+  // 获取计算出勤代码列表
+  const { data: attendanceCodesData } = useQuery({
+    queryKey: ['calculationAttendanceCodes'],
+    queryFn: async () => {
+      const res = await request.get('/calculate/calculation-attendance-codes');
+      return res.data || res;
+    },
+  });
+
+  const attendanceCodes = attendanceCodesData?.items || attendanceCodesData || [];
+
+
+  // 获取所有子账户（用于建立accountPath到accountId的映射）
+  // 使用与 AccountSelect 组件相同的查询参数，确保能查询到相同的账户
+  const { data: allAccounts } = useQuery({
+    queryKey: ['all-accounts-for-amount-policy'],
+    queryFn: () =>
+      request.get('/account/accounts', {
+        params: {
+          type: 'SUB',
+          usageType: 'SHIFT', // 使用 SHIFT 类型，与 AccountSelect 一致
+          pageSize: 1000,
+        },
+      }).then((res: any) => res.items || []),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await request.post('/amount/policies', data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('创建成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicies'] });
+      handleModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '创建失败');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await request.put(`/amount/policies/${id}`, data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('更新成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicies'] });
+      handleModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '更新失败');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await request.delete(`/amount/policies/${id}`);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicies'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '删除失败');
+    },
+  });
+
+  // 规则组的 CRUD 操作
+  const createGroupMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await request.post('/amount/policy-groups', data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('创建成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicyGroups'] });
+      handleGroupModalClose();
+    },
+    onError: (error: any) => {
+      console.error('创建金额规则组失败:', error);
+      console.error('错误响应:', error.response);
+      message.error(error.response?.data?.message || error.message || '创建失败');
+    },
+  });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await request.put(`/amount/policy-groups/${id}`, data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('更新成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicyGroups'] });
+      handleGroupModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '更新失败');
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await request.delete(`/amount/policy-groups/${id}`);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicyGroups'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '删除失败');
+    },
+  });
+
+  const handleModalOpen = async (record?: AmountPolicy) => {
+    if (record) {
+      setEditingId(record.id);
+      setPolicyType(record.policyType);
+      const attendanceCodes = JSON.parse(record.attendanceCodes || '[]');
+      setSelectedAttendanceCodes(attendanceCodes);
+
+      // 设置编辑时的账户路径，用于 AccountSelect 组件查询
+      setEditingAccountPath(record.accountPath);
+
+      // 根据accountPath查找对应的accountId
+      let matchedAccountId: number | null = null;
+      if (allAccounts && allAccounts.length > 0) {
+        const account = allAccounts.find((acc: any) =>
+          acc.path === record.accountPath ||
+          acc.namePath === record.accountPath ||
+          acc.path === record.accountPath?.replace(/\s*\/\s*/g, '/') ||
+          acc.namePath === record.accountPath?.replace(/\s*\/\s*/g, '/')
+        );
+        matchedAccountId = account?.id || null;
+      }
+      setSelectedAccountId(matchedAccountId);
+
+      const formValues = {
+        ...record,
+        attendanceCodes,
+        accountId: matchedAccountId,
+      };
+      form.setFieldsValue(formValues);
+      setIsModalOpen(true);
+    } else {
+      setEditingId(null);
+      setPolicyType('ADD');
+      setSelectedAttendanceCodes([]);
+      setSelectedAccountId(null);
+      setEditingAccountPath(null);
+      form.resetFields();
+
+      // 先打开modal，然后再设置表单值
+      setIsModalOpen(true);
+
+      // 前端生成编码（临时方案）
+      const existingCodes = policies.map((p: AmountPolicy) => p.code);
+      let newCode = 'AP001';
+      let counter = 1;
+      while (existingCodes.includes(newCode)) {
+        counter++;
+        newCode = `AP${String(counter).padStart(3, '0')}`;
+      }
+      console.log('前端生成的金额规则编码:', newCode);
+
+      form.setFieldsValue({
+        code: newCode,
+        attendanceCodes: [],
+        accountPathMatch: 'LEVEL',
+        policyType: 'MULTIPLY',
+        multiplier: 1.0,
+      });
+    }
+  };
+
+  // 当allAccounts加载完成且当前正在编辑时，重新设置accountId（仅初始化一次）
+  useEffect(() => {
+    if (editingId && allAccounts && allAccounts.length > 0 && isModalOpen && !accountInitializedRef.current) {
+      const currentAccountPath = form.getFieldValue('accountPath');
+      if (currentAccountPath) {
+        const account = allAccounts.find((acc: any) =>
+          acc.path === currentAccountPath ||
+          acc.namePath === currentAccountPath ||
+          acc.path === currentAccountPath?.replace(/\s*\/\s*/g, '/') ||
+          acc.namePath === currentAccountPath?.replace(/\s*\/\s*/g, '/')
+        );
+        if (account && account.id !== selectedAccountId) {
+          setSelectedAccountId(account.id);
+          form.setFieldsValue({ accountId: account.id });
+        }
+      }
+      accountInitializedRef.current = true;
+    }
+  }, [allAccounts]); // 只依赖allAccounts，避免无限循环
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+    setSelectedAttendanceCodes([]); // ✅ 重置出勤代码选择
+    setSelectedAccountId(null);
+    setEditingAccountPath(null);
+    accountInitializedRef.current = false; // ✅ 重置初始化标志
+    form.resetFields();
+  };
+
+  const handleGroupModalOpen = async (record?: AmountPolicyGroup) => {
+    if (record) {
+      setEditingGroupId(record.id);
+      const policyIds = record.policyIds || [];
+      setSelectedPolicyIds(policyIds);
+      const formValues = {
+        ...record,
+        policyIds,
+      };
+      groupForm.setFieldsValue(formValues);
+      setIsGroupModalOpen(true);
+    } else {
+      setEditingGroupId(null);
+      setSelectedPolicyIds([]);
+      groupForm.resetFields();
+
+      try {
+        // 自动生成编码
+        const res = await request.get('/amount/policy-groups/new-code');
+        console.log('获取到新的金额规则组编码:', res);
+
+        // 检查返回的数据结构
+        const newCode = res?.code || res?.data?.code;
+
+        if (!newCode) {
+          console.warn('编码生成接口返回数据格式错误，使用前端生成:', res);
+          // 前端生成编码作为后备方案
+          const existingCodes = policyGroups.map((g: any) => g.code).filter(Boolean);
+          let counter = 1;
+          let fallbackCode = 'APG001';
+          while (existingCodes.includes(fallbackCode)) {
+            counter++;
+            fallbackCode = `APG${String(counter).padStart(3, '0')}`;
+          }
+          groupForm.setFieldsValue({ code: fallbackCode });
+        } else {
+          groupForm.setFieldsValue({ code: newCode });
+        }
+      } catch (error) {
+        console.error('生成编码失败，使用前端生成:', error);
+        // 请求失败时使用前端生成编码作为后备方案
+        const existingCodes = policyGroups.map((g: any) => g.code).filter(Boolean);
+        let counter = 1;
+        let fallbackCode = 'APG001';
+        while (existingCodes.includes(fallbackCode)) {
+          counter++;
+          fallbackCode = `APG${String(counter).padStart(3, '0')}`;
+        }
+        groupForm.setFieldsValue({ code: fallbackCode });
+      }
+
+      // 无论编码生成是否成功，都打开窗口
+      setIsGroupModalOpen(true);
+    }
+  };
+
+  const handleGroupModalClose = () => {
+    setIsGroupModalOpen(false);
+    setEditingGroupId(null);
+    groupForm.resetFields();
+  };
+
+  const handleGroupSubmit = async () => {
+    try {
+      const values = await groupForm.validateFields();
+
+      // 验证 code 字段是否存在
+      if (!values.code) {
+        message.error('规则组编码缺失，请关闭对话框后重新创建');
+        console.error('规则组编码缺失，表单值:', values);
+        return;
+      }
+
+      const data = {
+        ...values,
+        policyIds: values.policyIds || [],
+        status: 'ACTIVE', // 默认启用
+      };
+
+      console.log('提交金额规则组数据:', data);
+
+      if (editingGroupId) {
+        updateGroupMutation.mutate({ id: editingGroupId, data });
+      } else {
+        createGroupMutation.mutate(data);
+      }
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+
+      let accountPath = '';
+
+      // 根据accountId查找对应的accountPath
+      if (values.accountId) {
+        // 有新的accountId，查找对应的accountPath
+        const account = allAccounts?.find((acc: any) => acc.id === values.accountId);
+        if (account) {
+          // 金额政策使用namePath（中文路径）进行层级匹配
+          accountPath = account.namePath || account.path || '';
+          if (!accountPath) {
+            console.error('账户数据异常:', account);
+            message.error('选择的账户没有路径信息，请选择其他账户');
+            return;
+          }
+          console.log('找到账户路径:', accountPath);
+        } else {
+          console.error('未找到账户，accountId:', values.accountId);
+          console.error('allAccounts数量:', allAccounts?.length);
+          message.error('选择的劳动力账户无效，请刷新页面后重试');
+          return;
+        }
+      } else if (editingId && values.accountPath) {
+        // 编辑模式：如果没有选择新的账户，但原来有accountPath，则保留原来的
+        accountPath = values.accountPath;
+        console.log('保留原账户路径:', accountPath);
+      } else {
+        // 新建模式：必须选择账户
+        message.error('请选择劳动力账户');
+        return;
+      }
+
+      const data = {
+        ...values,
+        attendanceCodes: values.attendanceCodes || [],
+        accountPath: accountPath, // 使用账户路径
+        accountPathMatch: values.accountPathMatch || 'LEVEL', // 使用表单中选择的匹配模式，默认为LEVEL
+        status: 'ACTIVE', // 默认启用
+      };
+
+      // 移除accountId字段，不提交给后端
+      delete data.accountId;
+
+      console.log('提交数据:', { accountPath, ...data });
+
+      if (editingId) {
+        updateMutation.mutate({ id: editingId, data });
+      } else {
+        createMutation.mutate(data);
+      }
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  const columns = [
+    { title: '规则编码', dataIndex: 'code', key: 'code', width: 150 },
+    { title: '规则名称', dataIndex: 'name', key: 'name', width: 200 },
+    {
+      title: '规则类型',
+      dataIndex: 'policyType',
+      key: 'policyType',
+      width: 120,
+      render: (type: string) => {
+        const typeMap: any = {
+          ADD: { text: '增加', color: 'green' },
+          MULTIPLY: { text: '翻倍', color: 'blue' },
+          CUSTOM: { text: '自定义', color: 'purple' },
+        };
+        const config = typeMap[type] || { text: type, color: 'default' };
+        return <Tag color={config.color}>{config.text}</Tag>;
+      },
+    },
+    {
+      title: '参数配置',
+      key: 'params',
+      width: 200,
+      render: (_: any, record: AmountPolicy) => {
+        if (record.policyType === 'ADD') {
+          return `基础系数 + ${record.fixedValue || 0}`;
+        } else if (record.policyType === 'MULTIPLY') {
+          return `× ${record.multiplier || 1}倍`;
+        } else if (record.policyType === 'CUSTOM') {
+          return `固定值: ${record.fixedValue || 0}`;
+        }
+        return '-';
+      },
+    },
+    {
+      title: '劳动力账户',
+      dataIndex: 'accountPath',
+      key: 'accountPath',
+      width: 200,
+      ellipsis: true,
+      render: (path: string) => {
+        // 根据path查找对应的账户并显示名称
+        const account = allAccounts?.find((acc: any) =>
+          acc.path === path || acc.namePath === path
+        );
+        const displayName = account ? (
+          account.namePath || account.name || path
+        ).replace(/\s*\/\s*/g, '/') : path;
+        return <Tag color="cyan">{displayName}</Tag>;
+      },
+    },
+    {
+      title: '匹配模式',
+      dataIndex: 'accountPathMatch',
+      key: 'accountPathMatch',
+      width: 120,
+      render: (matchMode: string) => {
+        const modeMap: any = {
+          LEVEL: { text: '层级匹配', color: 'blue' },
+          EXACT: { text: '精确匹配', color: 'green' },
+          PREFIX: { text: '前缀匹配', color: 'orange' },
+        };
+        const config = modeMap[matchMode] || { text: matchMode, color: 'default' };
+        return <Tag color={config.color}>{config.text}</Tag>;
+      },
+    },
+    {
+      title: '出勤代码',
+      dataIndex: 'attendanceCodes',
+      key: 'attendanceCodes',
+      width: 200,
+      render: (codes: string) => {
+        try {
+          const parsed = JSON.parse(codes || '[]');
+          return (
+            <Space size={4} wrap>
+              {parsed.map((code: string) => {
+                // 根据code查找对应的出勤代码并显示名称
+                const attendanceCode = attendanceCodes?.find((c: any) => c.code === code);
+                const displayName = attendanceCode ? attendanceCode.name : code;
+                return <Tag key={code}>{displayName}</Tag>;
+              })}
+            </Space>
+          );
+        } catch {
+          return '-';
+        }
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      fixed: 'right' as const,
+      render: (_: any, record: AmountPolicy) => (
+        <Space>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleModalOpen(record)}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="删除后不可恢复"
+            onConfirm={() => deleteMutation.mutate(record.id)}
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  // 规则组表格列定义
+  const groupColumns = [
+    { title: '规则组编码', dataIndex: 'code', key: 'code', width: 150 },
+    { title: '规则组名称', dataIndex: 'name', key: 'name', width: 200 },
+    {
+      title: '包含规则',
+      key: 'policies',
+      width: 300,
+      render: (_: any, record: AmountPolicyGroup) => {
+        const policyNames = record.policyIds?.map((id: number) => {
+          const policy = policies.find((p: AmountPolicy) => p.id === id);
+          return policy?.name;
+        }).filter(Boolean);
+        return (
+          <Space size={4} wrap>
+            {policyNames.map((name: string) => (
+              <Tag key={name} color="blue">{name}</Tag>
+            ))}
+          </Space>
+        );
+      },
+    },
+    {
+      title: '规则数量',
+      key: 'count',
+      width: 100,
+      render: (_: any, record: AmountPolicyGroup) => (
+        <Tag color="purple">{record.policyIds?.length || 0}</Tag>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      fixed: 'right' as const,
+      render: (_: any, record: AmountPolicyGroup) => (
+        <Space>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleGroupModalOpen(record)}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="删除后不可恢复"
+            onConfirm={() => deleteGroupMutation.mutate(record.id)}
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'rules',
+              label: '金额规则',
+              children: (
+                <div>
+                  <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                    <h3 style={{ margin: 0 }}>金额规则管理</h3>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleModalOpen()}
+                    >
+                      新建规则
+                    </Button>
+                  </div>
+                  <Table
+                    columns={columns}
+                    dataSource={policies || []}
+                    rowKey="id"
+                    loading={isLoading}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 1520 }}
+                  />
+                </div>
+              ),
+            },
+            {
+              key: 'groups',
+              label: '金额规则组',
+              children: (
+                <div>
+                  <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                    <h3 style={{ margin: 0 }}>金额规则组管理</h3>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleGroupModalOpen()}
+                    >
+                      新建规则组
+                    </Button>
+                  </div>
+                  <Table
+                    columns={groupColumns}
+                    dataSource={policyGroups || []}
+                    rowKey="id"
+                    loading={groupsLoading}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 1200 }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
+      </Card>
+
+      <Modal
+        title={editingId ? '编辑金额规则' : '新建金额规则'}
+        open={isModalOpen}
+        onOk={handleSubmit}
+        onCancel={handleModalClose}
+        width={700}
+        confirmLoading={createMutation.isPending || updateMutation.isPending}
+      >
+        <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+          <Form.Item
+            label="代码"
+            name="code"
+            // 移除必填验证，因为代码由后端自动生成
+            tooltip="系统自动生成的唯一编码，不可修改"
+          >
+            <Input placeholder="系统自动生成" disabled={true} />
+          </Form.Item>
+
+          <Form.Item
+            label="名称"
+            name="name"
+            rules={[{ required: true, message: '请输入规则名称' }]}
+          >
+            <Input placeholder="例如：普通加班金额规则" />
+          </Form.Item>
+
+          <Form.Item
+            label="金额规则定义"
+            name="policyType"
+            rules={[{ required: true, message: '请选择规则定义方式' }]}
+          >
+            <Select onChange={(value) => setPolicyType(value)}>
+              <Option value="ADD">增加（基础系数 + 固定值）</Option>
+              <Option value="MULTIPLY">翻倍（基础系数 × 倍数）</Option>
+              <Option value="CUSTOM">自定义（固定数值）</Option>
+            </Select>
+          </Form.Item>
+
+          {policyType === 'ADD' && (
+            <Form.Item
+              label="固定增加值"
+              name="fixedValue"
+              rules={[{ required: true, message: '请输入固定增加值' }]}
+              tooltip="最终系数 = 员工基础系数 + 此值"
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：10" />
+            </Form.Item>
+          )}
+
+          {policyType === 'MULTIPLY' && (
+            <Form.Item
+              label="倍数"
+              name="multiplier"
+              rules={[{ required: true, message: '请输入倍数' }]}
+              tooltip="最终系数 = 员工基础系数 × 此倍数"
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：1.5" />
+            </Form.Item>
+          )}
+
+          {policyType === 'CUSTOM' && (
+            <Form.Item
+              label="固定系数值"
+              name="fixedValue"
+              rules={[{ required: true, message: '请输入固定系数值' }]}
+              tooltip="不使用员工基础系数，直接使用此固定值"
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：50" />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            label="劳动力账户"
+            name="accountId"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  // 新建时必须选择账户
+                  if (!editingId && !value) {
+                    throw new Error('请选择劳动力账户');
+                  }
+                  // 编辑时，如果没有选择新账户，会使用原来的accountPath
+                  // 所以这里不验证
+                },
+              },
+            ]}
+            tooltip="选择此规则适用的劳动力账户"
+          >
+            <AccountSelect
+              value={selectedAccountId}
+              onChange={(value) => {
+                setSelectedAccountId(value);
+                form.setFieldsValue({ accountId: value });
+              }}
+              onAccountCreated={() => {
+                // ✅ 账户创建成功后，刷新账户列表
+                queryClient.invalidateQueries({ queryKey: ['all-accounts-for-amount-policy'] });
+              }}
+              placeholder="选择子账户"
+              usageType="SHIFT"
+              externalAccounts={allAccounts}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="出勤代码"
+            name="attendanceCodes"
+            rules={[{ required: true, message: '请选择出勤代码' }]}
+            tooltip="选择此规则适用的出勤代码"
+          >
+            <Transfer
+              dataSource={attendanceCodes.map((code: any) => ({
+                key: code.code,
+                title: `${code.name} (${code.code})`,
+                description: code.code,
+              }))}
+              targetKeys={selectedAttendanceCodes}
+              onChange={(keys) => {
+                setSelectedAttendanceCodes(keys);
+                form.setFieldsValue({ attendanceCodes: keys });
+              }}
+              render={(item) => item.title}
+              listStyle={{
+                width: 300,
+                height: 400,
+              }}
+              showSearch
+              filterOption={(inputValue, item) =>
+                item.title?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                item.description?.toLowerCase().includes(inputValue.toLowerCase())
+              }
+              placeholder="请选择出勤代码"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 规则组编辑模��框 */}
+      <Modal
+        title={editingGroupId ? '编辑金额规则组' : '新建金额规则组'}
+        open={isGroupModalOpen}
+        onOk={handleGroupSubmit}
+        onCancel={handleGroupModalClose}
+        width={700}
+        confirmLoading={createGroupMutation.isPending || updateGroupMutation.isPending}
+      >
+        <Form form={groupForm} layout="vertical" style={{ marginTop: 24 }}>
+          <Form.Item
+            label="规则组编码"
+            name="code"
+            // 移除必填验证，因为编码由后端自动生成
+            tooltip="系统自动生成的唯一编码"
+          >
+            <Input placeholder="正在生成编码..." disabled={true} />
+          </Form.Item>
+
+          <Form.Item
+            label="规则组名称"
+            name="name"
+            rules={[{ required: true, message: '请输入规则组名称' }]}
+          >
+            <Input placeholder="例如：普通班次规则组" />
+          </Form.Item>
+
+          <Form.Item
+            label="选择规则"
+            name="policyIds"
+            rules={[{ required: true, message: '请选择要包含的金额规则' }]}
+            tooltip="将多个金额规则打包成一个组"
+          >
+            <Transfer
+              dataSource={policies.map((policy: AmountPolicy) => ({
+                key: policy.id,
+                title: `${policy.name} (${policy.code})`,
+                description: policy.code,
+              }))}
+              targetKeys={selectedPolicyIds}
+              onChange={(keys) => {
+                setSelectedPolicyIds(keys as number[]);
+                groupForm.setFieldsValue({ policyIds: keys });
+              }}
+              render={(item) => item.title}
+              listStyle={{
+                width: 300,
+                height: 400,
+              }}
+              showSearch
+              filterOption={(inputValue, item) =>
+                item.title?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                item.description?.toLowerCase().includes(inputValue.toLowerCase())
+              }
+              placeholder="请选择金额规则"
+            />
+          </Form.Item>
+
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+export default AmountPolicyPage;

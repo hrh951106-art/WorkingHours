@@ -1,24 +1,63 @@
-import { Card, Table, Button, Tag } from 'antd';
-import { PlusOutlined, EditOutlined, ClockCircleOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Card, Table, Button, Tag, Input, Row, Col, Popconfirm, message, Space } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useMemo } from 'react';
 import request from '@/utils/request';
-import { ModernPageLayout } from '@/components/common/ModernPageLayout';
 
 const ShiftPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const [searchText, setSearchText] = useState('');
+
+  // 判断是否在 iframe 环境（/embed 路径）
+  const isEmbed = location.pathname.startsWith('/embed');
 
   const { data: shifts, isLoading } = useQuery({
     queryKey: ['shifts'],
-    queryFn: () => request.get('/shift/shifts').then((res: any) => res),
+    queryFn: () => request.get('/shift/shifts'),
   });
 
+  // 删除班次
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => request.delete(`/shift/shifts/${id}`),
+    onSuccess: () => {
+      message.success('删除成功');
+      // 刷新列表
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+    },
+    onError: (error: any) => {
+      message.error(error?.message || '删除失败');
+    },
+  });
+
+  // 根据搜索文本过滤班次
+  const filteredShifts = useMemo(() => {
+    if (!shifts) return [];
+    if (!searchText) return shifts;
+
+    const searchLower = searchText.toLowerCase();
+    return shifts.filter((shift: any) =>
+      shift.code?.toLowerCase().includes(searchLower) ||
+      shift.name?.toLowerCase().includes(searchLower)
+    );
+  }, [shifts, searchText]);
+
   const handleEdit = (id: number) => {
-    navigate(`/shift/shifts/${id}`);
+    // 根据当前路径判断跳转路径
+    const basePath = isEmbed ? '/embed/shift/shifts' : '/shift/shifts';
+    navigate(`${basePath}/${id}`);
+  };
+
+  const handleDelete = (id: number) => {
+    deleteMutation.mutate(id);
   };
 
   const handleAdd = () => {
-    navigate('/shift/shifts/new');
+    // 根据当前路径判断跳转路径
+    const basePath = isEmbed ? '/embed/shift/shifts' : '/shift/shifts';
+    navigate(`${basePath}/new`);
   };
 
   const columns = [
@@ -55,7 +94,7 @@ const ShiftPage: React.FC = () => {
       key: 'standardHours',
       width: 120,
       render: (hours: number) => (
-        <span style={{ fontWeight: 600, color: '#22B970' }}>{hours} 小时</span>
+        <span style={{ fontWeight: 600, color: '#00B365' }}>{hours} 小时</span>
       ),
     },
     {
@@ -76,85 +115,75 @@ const ShiftPage: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 180,
       fixed: 'right' as const,
       render: (_: any, record: any) => (
-        <Button
-          type="link"
-          icon={<EditOutlined />}
-          onClick={() => handleEdit(record.id)}
-          style={{ color: '#22B970', fontWeight: 500 }}
-        >
-          编辑
-        </Button>
+        <Space size="small">
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record.id)}
+            style={{ color: '#00B365', fontWeight: 500 }}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="删除班次"
+            description={`确定要删除班次"${record.name}"吗？`}
+            onConfirm={() => handleDelete(record.id)}
+            okText="确定"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button
+              type="link"
+              icon={<DeleteOutlined />}
+              danger
+              style={{ fontWeight: 500 }}
+            >
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
 
   return (
-    <ModernPageLayout
+    <Card
       title="班次管理"
-      description="管理班次信息，包括正常班、休息班等不同类型的班次配置"
-      breadcrumb={[
-        { label: '排班管理', path: '/shift' },
-        { label: '班次管理', path: '/shift/shifts' },
-      ]}
       extra={
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={handleAdd}
-          style={{
-            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
-            border: 'none',
-            borderRadius: 8,
-            height: 40,
-            fontWeight: 500,
-            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-          }}
         >
           新建班次
         </Button>
       }
-      stats={[
-        {
-          title: '班次总数',
-          value: shifts?.length || 0,
-          prefix: <ClockCircleOutlined style={{ color: '#22B970' }} />,
-          color: '#22B970',
-        },
-        {
-          title: '正常班',
-          value: shifts?.filter((s: any) => s.type === 'NORMAL').length || 0,
-          color: '#3b82f6',
-        },
-        {
-          title: '休息班',
-          value: shifts?.filter((s: any) => s.type === 'REST').length || 0,
-          color: '#10b981',
-        },
-      ]}
     >
-      <Card
-        style={{
-          borderRadius: 12,
-          border: '1px solid #e2e8f0',
-        }}
-        bodyStyle={{ padding: '24px' }}
-      >
-        <Table
-          columns={columns}
-          dataSource={shifts || []}
-          rowKey="id"
-          loading={isLoading}
-          pagination={false}
-          scroll={{ x: 1000 }}
-          style={{
-            borderRadius: 8,
-          }}
-        />
-      </Card>
-    </ModernPageLayout>
+      {/* 搜索条件 */}
+      <Row style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Input
+            placeholder="搜索班次编码或名称"
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            allowClear
+          />
+        </Col>
+      </Row>
+
+      <Table
+        columns={columns}
+        dataSource={filteredShifts}
+        rowKey="id"
+        loading={isLoading}
+        pagination={false}
+        scroll={{ x: 1000 }}
+      />
+    </Card>
   );
 };
 

@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Dropdown, Avatar, Button, Space, Badge } from 'antd';
+import { Layout, Dropdown, Avatar, Button, Space, Badge, Menu } from 'antd';
 import {
   UserOutlined,
   ClockCircleOutlined,
@@ -18,6 +18,10 @@ import {
   DatabaseOutlined,
   PlayCircleOutlined,
   FundOutlined,
+  BranchesOutlined,
+  BarChartOutlined,
+  TableOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
@@ -40,11 +44,12 @@ const menuItems: MenuItem[] = [
   { key: '/hr/employees', icon: <UserOutlined />, label: '人员管理', path: '/hr/employees' },
   { key: '/punch/records', icon: <FileTextOutlined />, label: '打卡记录', path: '/punch/records' },
   { key: '/shift/schedules', icon: <CalendarOutlined />, label: '排班管理', path: '/shift/schedules' },
-  { key: '/calculate/pairing-results', icon: <PlayCircleOutlined />, label: '摆卡结果', path: '/calculate/pairing-results' },
-  { key: '/calculate/work-hour-results', icon: <CalculatorOutlined />, label: '工时结果', path: '/calculate/work-hour-results' },
+  { key: '/calculate/results', icon: <CalculatorOutlined />, label: '计算结果', path: '/calculate/results' },
   { key: '/calculate/config/punch-rules', icon: <SettingOutlined />, label: '打卡规则', path: '/calculate/config/punch-rules' },
   { key: '/calculate/config/attendance-codes', icon: <FundOutlined />, label: '出勤代码', path: '/calculate/config/attendance-codes' },
-  { key: '/attendance/workhour-details', icon: <FileTextOutlined />, label: '工时明细管理', path: '/attendance/workhour-details' },
+  { key: '/calculate/attendance-code-definition', icon: <BranchesOutlined />, label: '工时代码', path: '/calculate/attendance-code-definition' },
+  { key: '/allocation/basic-config', icon: <SettingOutlined />, label: '基础配置', path: '/allocation/basic-config' },
+  { key: '/attendance/attendance-card', icon: <ClockCircleOutlined />, label: '考勤卡', path: '/attendance/attendance-card' },
   { key: '/allocation/line-maintenance', icon: <CalendarOutlined />, label: '开线维护', path: '/allocation/line-maintenance' },
   { key: '/allocation/production-records', icon: <FileTextOutlined />, label: '产量记录', path: '/allocation/production-records' },
   { key: '/allocation/config', icon: <SettingOutlined />, label: '分摊规则', path: '/allocation/config' },
@@ -116,6 +121,31 @@ const MainLayout: React.FC = () => {
   const handleLogout = () => {
     clearAuth();
     navigate('/login');
+  };
+
+    // 构建菜单项（支持嵌套）
+  const buildMenuItems = () => {
+    return menuItems.map(item => {
+      if (item.children) {
+        return {
+          key: item.key,
+          icon: item.icon,
+          label: item.label,
+          children: item.children.map(child => ({
+            key: child.key,
+            icon: child.icon,
+            label: child.label,
+            onClick: () => handleMenuClick({ key: child.key }),
+          })),
+        };
+      }
+      return {
+        key: item.key,
+        icon: item.icon,
+        label: item.label,
+        onClick: () => handleMenuClick({ key: item.key }),
+      };
+    });
   };
 
   const userMenuItems = [

@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Card, Form, Select, Button, message, Spin, Space, Divider, Typography, Row, Col, Empty, Tabs } from 'antd';
-import { SaveOutlined, ReloadOutlined, AppstoreOutlined, SettingOutlined } from '@ant-design/icons';
+import { useState, useEffect, useMemo } from 'react';
+import { Card, Form, Select, Button, message, Spin, Space, Typography, Row, Col, Empty, Tabs, Table, Tree, Modal, InputNumber, Input } from 'antd';
+import { AppstoreOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // ============ 产品配置组件 ============
 interface Product {
@@ -16,123 +16,40 @@ interface Product {
 }
 
 const ProductConfig: React.FC = () => {
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [form] = Form.useForm();
-  const queryClient = useQueryClient();
-
   // 查询条件
   const [filters, setFilters] = useState({
-    code: '',
-    name: '',
-    status: null as string | null,
+    keyword: '',
   });
 
-  // 获取产品列表
+  // 获取产品列表（从数据源获取）
   const { data: products, isLoading, refetch } = useQuery({
-    queryKey: ['products', filters],
-    queryFn: () =>
-      request.get('/allocation/products', {
-        params: {
-          code: filters.code || undefined,
-          name: filters.name || undefined,
-          status: filters.status || undefined,
-        },
-      }).then((res: any) => res?.items || []),
-  });
+    queryKey: ['products', 'datasource', filters],
+    queryFn: async () => {
+      const dataSources = await request.get('/hr/data-sources');
+      const productDataSource = dataSources.find((ds: any) => ds.code === 'PRODUCT');
+      if (productDataSource) {
+        const options = await request.get(`/hr/data-sources/${productDataSource.id}/options`);
+        let filteredOptions = options || [];
 
-  // 创建产品
-  const createMutation = useMutation({
-    mutationFn: (data: Product) =>
-      request.post('/allocation/products', data),
-    onSuccess: () => {
-      message.success('创建成功');
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      handleCancel();
-    },
-    onError: (error: any) => {
-      message.error(error.response?.data?.message || '创建失败');
-    },
-  });
+        // 客户端过滤
+        if (filters.keyword) {
+          filteredOptions = filteredOptions.filter((item: any) =>
+            item.label?.toLowerCase().includes(filters.keyword.toLowerCase()) ||
+            item.value?.toLowerCase().includes(filters.keyword.toLowerCase())
+          );
+        }
 
-  // 更新产品
-  const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: Product) =>
-      request.put(`/allocation/products/${id}`, data),
-    onSuccess: () => {
-      message.success('更新成功');
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      handleCancel();
-    },
-    onError: (error: any) => {
-      message.error(error.response?.data?.message || '更新失败');
-    },
-  });
-
-  // 删除产品
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      request.delete(`/allocation/products/${id}`),
-    onSuccess: () => {
-      message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-    },
-    onError: (error: any) => {
-      message.error(error.response?.data?.message || '删除失败');
-    },
-  });
-
-  const handleCreate = () => {
-    setEditingProduct(null);
-    form.resetFields();
-    form.setFieldsValue({
-      status: 'ACTIVE',
-    });
-    setIsModalVisible(true);
-  };
-
-  const handleEdit = (record: Product) => {
-    setEditingProduct(record);
-    form.setFieldsValue(record);
-    setIsModalVisible(true);
-  };
-
-  const handleDelete = (id: number) => {
-    deleteMutation.mutate(id);
-  };
-
-  const handleSubmit = async () => {
-    try {
-      const values = await form.validateFields();
-
-      // 获取当前用户信息
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-
-      if (editingProduct?.id) {
-        updateMutation.mutate({
-          id: editingProduct.id,
-          ...values,
-          updatedById: user?.id,
-          updatedByName: user?.name,
-        });
-      } else {
-        createMutation.mutate({
-          ...values,
-          createdById: user?.id || 1,
-          createdByName: user?.name || '系统管理员',
-        });
+        return filteredOptions.map((item: any) => ({
+          id: item.id,
+          code: item.value,
+          name: item.label.split(' - ')[1] || item.label,
+          unit: '-',
+          status: 'ACTIVE',
+        }));
       }
-    } catch (error) {
-      console.error('表单验证失败:', error);
-    }
-  };
-
-  const handleCancel = () => {
-    setIsModalVisible(false);
-    setEditingProduct(null);
-    form.resetFields();
-  };
+      return [];
+    },
+  });
 
   const columns = [
     {
@@ -169,15 +86,458 @@ const ProductConfig: React.FC = () => {
         </span>;
       },
     },
+  ];
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }} wrap>
+        <Input
+          placeholder="搜索产品编码或名称"
+          allowClear
+          style={{ width: 200 }}
+          value={filters.keyword}
+          onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
+        />
+        <Button type="primary" onClick={() => refetch()}>
+          查询
+        </Button>
+        <Button onClick={() => setFilters({ keyword: '' })}>
+          重置
+        </Button>
+      </Space>
+
+      <div style={{ marginBottom: 16 }}>
+        <Text type="secondary">
+          产品数据来自查找项配置。如需管理产品，请到"系统配置 - 查找项管理"中进行维护。
+        </Text>
+      </div>
+
+      <Table
+        columns={columns}
+        dataSource={products}
+        loading={isLoading}
+        rowKey="id"
+        pagination={{
+          showSizeChanger: true,
+          showTotal: (total) => `共 ${total} 条`,
+        }}
+      />
+    </div>
+  );
+};
+
+// ============ 产品标准配置组件 ============
+interface ProductStandardHourConfig {
+  id?: number;
+  productId: number;
+  productCode: string;
+  productName: string;
+  hierarchyLevelId: number;
+  hierarchyLevelName: string;
+  hierarchyOptionValue: string;
+  hierarchyOptionLabel: string;
+  quantity?: number; // 件数
+  standardHours: number; // 总工时
+  accountPath: string;
+}
+
+const ProductStandardHoursConfig: React.FC = () => {
+  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null); // 选中的产品
+  const [form] = Form.useForm();
+  const queryClient = useQueryClient();
+
+  // 筛选条件
+  const [filters, setFilters] = useState({
+    productKeyword: '',
+    accountPathKeyword: '',
+  });
+
+  // 获取系统配置
+  const { data: systemConfigs = [] } = useQuery({
+    queryKey: ['allocationSystemConfigs'],
+    queryFn: () =>
+      request.get('/hr/system-configs').then((res: any) => res || []),
+  });
+
+  // 获取配置的标准工时层级
+  const standardHoursLevelsConfig = systemConfigs.find(
+    (c: any) => c.configKey === 'standardHoursHierarchyLevels'
+  );
+  const selectedLevelIds = standardHoursLevelsConfig?.configValue
+    ? standardHoursLevelsConfig.configValue.split(',').map(Number)
+    : [];
+
+  // 获取层级列表
+  const { data: hierarchyLevels = [] } = useQuery({
+    queryKey: ['hierarchy-levels'],
+    queryFn: () =>
+      request.get('/account/hierarchy-config/levels').then((res: any) => res || []),
+    enabled: selectedLevelIds.length > 0,
+  });
+
+  // 选择的层级详情
+  const selectedLevels = hierarchyLevels.filter((level: any) =>
+    selectedLevelIds.includes(level.id)
+  );
+
+  // 获取层级明细（带选项）
+  const { data: hierarchyLevelsWithDetails = [] } = useQuery({
+    queryKey: ['hierarchy-levels-with-details'],
+    queryFn: () =>
+      request.get('/account/hierarchy-config/levels/with-details').then((res: any) => res || []),
+  });
+
+  // 过滤出选择的层级（包含明细）
+  const selectedLevelsWithDetails = hierarchyLevelsWithDetails.filter((level: any) =>
+    selectedLevelIds.includes(level.id)
+  );
+
+  // 从层级明细中提取选项
+  const hierarchyLevelOptions = useMemo(() => {
+    const optionsMap: Record<number, any[]> = {};
+
+    selectedLevelsWithDetails.forEach((level: any) => {
+      if (level.details && Array.isArray(level.details)) {
+        // 过滤出活跃状态的明细
+        const activeDetails = level.details.filter((detail: any) => detail.status === 'ACTIVE');
+        optionsMap[level.id] = activeDetails.map((detail: any) => ({
+          id: detail.id,
+          value: detail.id,
+          label: detail.levelName,
+          code: detail.levelCode,
+        }));
+      } else {
+        optionsMap[level.id] = [];
+      }
+    });
+
+    return optionsMap;
+  }, [selectedLevelsWithDetails]);
+
+  // 获取产品列表
+  const { data: products = [], isLoading: productsLoading } = useQuery({
+    queryKey: ['products', 'datasource'],
+    queryFn: async () => {
+      const dataSources = await request.get('/hr/data-sources');
+      const productDataSource = dataSources.find((ds: any) => ds.code === 'PRODUCT');
+      if (productDataSource) {
+        const options = await request.get(`/hr/data-sources/${productDataSource.id}/options`);
+        return options || [];
+      }
+      return [];
+    },
+  });
+
+  // 获取所有产品标准配置列表
+  const { data: configurations = [], isLoading: configsLoading, refetch } = useQuery({
+    queryKey: ['productStandardHoursConfigs'],
+    queryFn: async () => {
+      // 获取所有数据，不使用分页
+      const result = await request.get(`/allocation/standard-hour-by-levels`, {
+        params: { pageSize: 9999 },
+      });
+      const data = result?.items || result || [];
+      console.log('[产品标准配置] 获取到的数据:', data);
+      console.log('[产品标准配置] 数据条数:', data.length);
+      return data;
+    },
+  });
+
+  // 创建/更新配置
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      console.log('保存标准配置，表单数据:', data);
+      console.log('可选产品列表:', products);
+      console.log('选择的层级:', selectedLevels);
+      console.log('层级选项:', hierarchyLevelOptions);
+
+      // 查找产品信息（处理类型匹配问题）
+      const product = products.find((p: any) =>
+        String(p.id) === String(data.productId) ||
+        parseInt(p.id) === parseInt(data.productId)
+      );
+
+      console.log('找到的产品:', product);
+
+      if (!product) {
+        throw new Error('产品不存在，请重新选择产品');
+      }
+
+      // 找出有值的层级字段
+      const filledLevels = selectedLevels.filter((level: any) => {
+        const value = data[`hierarchyOption_${level.id}`];
+        return value !== undefined && value !== null && value !== '';
+      });
+
+      console.log('有值的层级:', filledLevels);
+
+      if (!data.standardHours && data.standardHours !== 0) {
+        throw new Error('请输入标准');
+      }
+
+      // 获取当前用户信息
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+
+      // 构建账户路径：将所有选择的层级选项按顺序组合，使用 "/" 分隔
+      let accountPath = '';
+      let hierarchyLevelId = null;
+      let hierarchyLevelName = '';
+      let hierarchyOptionValue = '';
+      let hierarchyOptionLabel = '';
+
+      if (filledLevels.length > 0) {
+        const accountPathParts = filledLevels.map((level: any) => {
+          const optionValue = data[`hierarchyOption_${level.id}`];
+          const options = hierarchyLevelOptions[level.id] || [];
+          const option = options.find((o: any) =>
+            String(o.value) === String(optionValue) ||
+            String(o.id) === String(optionValue)
+          );
+          return option?.label || option?.optionLabel || String(optionValue);
+        });
+
+        accountPath = accountPathParts.join('/');
+        console.log('生成的账户路径:', accountPath);
+
+        // 使用第一个层级作为主要层级（用于兼容）
+        const firstLevel = filledLevels[0];
+        const firstOptionValue = data[`hierarchyOption_${firstLevel.id}`];
+        const firstOptions = hierarchyLevelOptions[firstLevel.id] || [];
+        const firstOption = firstOptions.find((o: any) =>
+          String(o.value) === String(firstOptionValue) ||
+          String(o.id) === String(firstOptionValue)
+        );
+
+        hierarchyLevelId = firstLevel.id;
+        hierarchyLevelName = firstLevel.name;
+        hierarchyOptionValue = String(firstOptionValue);
+        hierarchyOptionLabel = firstOption?.label || firstOption?.optionLabel || String(firstOptionValue);
+      } else {
+        console.log('未选择任何层级，账户路径为空');
+        accountPath = '-';
+      }
+
+      const payload = {
+        productId: parseInt(product.id),
+        productCode: product.value || '',
+        productName: product.label ? (product.label.split(' - ')[1] || product.label) : '',
+        hierarchyLevelId,
+        hierarchyLevelName,
+        hierarchyOptionValue,
+        hierarchyOptionLabel,
+        accountPath, // 添加账户路径
+        standardHours: parseFloat(data.standardHours) || 0,
+        quantity: data.quantity ? parseFloat(data.quantity) : null, // 添加件数字段
+        createdById: user?.id || 1,
+        createdByName: user?.name || 'Admin',
+      };
+
+      console.log('保存payload:', payload);
+
+      return request.post(`/allocation/standard-hour-by-levels`, payload);
+    },
+    onSuccess: () => {
+      message.success('保存成功');
+      queryClient.invalidateQueries({ queryKey: ['productStandardHoursConfigs'] });
+      handleModalCancel();
+    },
+    onError: (error: any) => {
+      console.error('保存失败，错误信息:', error);
+      const errorMsg = error?.response?.data?.message || error?.message || '保存失败';
+      message.error(errorMsg);
+    },
+  });
+
+  // 删除配置
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => {
+      return request.delete(`/allocation/standard-hour-by-levels/${id}`);
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['productStandardHoursConfigs'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '删除失败');
+    },
+  });
+
+  const handleAdd = () => {
+    if (!selectedProduct) {
+      message.warning('请先选择左侧的产品');
+      return;
+    }
+    setEditingRecord(null);
+    form.resetFields();
+    // 预填充选中的产品
+    form.setFieldsValue({
+      productId: selectedProduct.id,
+    });
+    setIsModalVisible(true);
+  };
+
+  const handleEdit = (record: any) => {
+    // 直接使用当前选中的记录
+    setEditingRecord(record);
+
+    // 设置表单值
+    const formValues: any = {
+      productId: record.productId,
+      standardHours: record.standardHours,
+      quantity: record.quantity,
+    };
+
+    // 如果有账户路径，尝试解析回层级选项
+    if (record.accountPath && record.accountPath !== '-') {
+      const pathParts = record.accountPath.split('/');
+      // 将路径部分按顺序匹配到层级
+      selectedLevels.forEach((level: any, index: number) => {
+        if (index < pathParts.length) {
+          // 在层级选项中查找匹配的选项
+          const options = hierarchyLevelOptions[level.id] || [];
+          const matchedOption = options.find((o: any) => o.label === pathParts[index]);
+          if (matchedOption) {
+            formValues[`hierarchyOption_${level.id}`] = matchedOption.value;
+          }
+        }
+      });
+    }
+
+    form.setFieldsValue(formValues);
+    setIsModalVisible(true);
+  };
+
+  const handleDelete = (record: any) => {
+    // 直接删除当前选中的配置记录
+    const configId = record.id;
+    if (!configId) {
+      message.error('找不到配置记录');
+      return;
+    }
+
+    request.delete(`/allocation/standard-hour-by-levels/${configId}`).then(() => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['productStandardHoursConfigs'] });
+    }).catch(() => {
+      message.error('删除失败');
+    });
+  };
+
+  const handleModalCancel = () => {
+    setIsModalVisible(false);
+    setEditingRecord(null);
+    form.resetFields();
+  };
+
+  const handleModalSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      saveMutation.mutate(values);
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  // 按产品分组配置数据
+  const productConfigGroups = useMemo(() => {
+    // 按产品ID分组
+    const groups: Record<number, any[]> = {};
+
+    configurations.forEach((config: any) => {
+      if (!groups[config.productId]) {
+        groups[config.productId] = [];
+      }
+      groups[config.productId].push(config);
+    });
+
+    return groups;
+  }, [configurations]);
+
+  // 过滤后的产品列表（左侧显示）
+  const filteredProducts = useMemo(() => {
+    let result = products;
+
+    if (filters.productKeyword) {
+      const keyword = filters.productKeyword.toLowerCase();
+      result = result.filter((p: any) =>
+        p.value?.toLowerCase().includes(keyword) ||
+        p.label?.toLowerCase().includes(keyword)
+      );
+    }
+
+    return result;
+  }, [products, filters.productKeyword]);
+
+  // 当前选中产品的配置列表（右侧显示）
+  const selectedProductConfigs = useMemo(() => {
+    if (!selectedProduct) return [];
+
+    let configs = productConfigGroups[selectedProduct.id] || [];
+
+    // 按劳动力账户路径筛选
+    if (filters.accountPathKeyword) {
+      const keyword = filters.accountPathKeyword.toLowerCase();
+      configs = configs.filter((config: any) =>
+        config.accountPath?.toLowerCase().includes(keyword)
+      );
+    }
+
+    return configs.map((config: any) => ({
+      ...config,
+      productCode: selectedProduct.value,
+      productName: selectedProduct.label?.split(' - ')[1] || selectedProduct.label,
+    }));
+  }, [productConfigGroups, selectedProduct, filters.accountPathKeyword]);
+
+  const columns = [
+    {
+      title: '劳动力账户',
+      dataIndex: 'accountPath',
+      key: 'accountPath',
+      render: (accountPath: string) => {
+        if (accountPath && accountPath !== '-') {
+          return <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{accountPath}</span>;
+        }
+        return <span style={{ color: '#ccc' }}>-</span>;
+      },
+    },
+    {
+      title: '标准',
+      dataIndex: 'standardHours',
+      width: 180,
+      align: 'center' as const,
+      render: (hours: number, record: ProductStandardHourConfig) => {
+        if (record.quantity && hours) {
+          return (
+            <span style={{ fontWeight: 500, color: '#52c41a' }}>
+              {record.quantity}件/{hours}
+            </span>
+          );
+        }
+        if (hours) {
+          return (
+            <span style={{ fontWeight: 500, color: '#52c41a' }}>
+              {hours}
+            </span>
+          );
+        }
+        return <span style={{ color: '#999' }}>-</span>;
+      },
+    },
     {
       title: '操作',
       key: 'action',
       width: 150,
-      render: (_: any, record: Product) => (
-        <Space size="small">
+      fixed: 'right' as const,
+      render: (_: any, record: any) => (
+        <Space>
           <Button
             type="link"
             size="small"
+            icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
           >
             编辑
@@ -186,7 +546,8 @@ const ProductConfig: React.FC = () => {
             type="link"
             size="small"
             danger
-            onClick={() => record.id && handleDelete(record.id)}
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record)}
           >
             删除
           </Button>
@@ -195,158 +556,240 @@ const ProductConfig: React.FC = () => {
     },
   ];
 
+  if (selectedLevelIds.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px' }}>
+        <Empty description="请先在工时基础配置中设置标准配置层级" />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Select
-          placeholder="状态筛选"
-          allowClear
-          style={{ width: 120 }}
-          value={filters.status}
-          onChange={(value) => setFilters({ ...filters, status: value })}
-        >
-          <Select.Option value="ACTIVE">启用</Select.Option>
-          <Select.Option value="INACTIVE">停用</Select.Option>
-        </Select>
-        <Button type="primary" onClick={() => refetch()}>
-          查询
-        </Button>
-        <Button onClick={() => setFilters({ code: '', name: '', status: null })}>
-          重置
-        </Button>
-        <Button type="primary" onClick={handleCreate}>
-          新增产品
-        </Button>
-      </Space>
-
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ background: '#fafafa' }}>
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                style={{
-                  padding: '12px 8px',
-                  textAlign: 'left',
-                  borderBottom: '1px solid #f0f0f0',
-                  fontWeight: 500,
-                  minWidth: col.width,
-                }}
-              >
-                {col.title}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr>
-              <td colSpan={5} style={{ padding: 40, textAlign: 'center' }}>
-                <Spin />
-              </td>
-            </tr>
-          ) : products && products.length > 0 ? (
-            products.map((record: Product, index: number) => (
-              <tr key={record.id || index} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                <td style={{ padding: '12px 8px' }}>{record.code}</td>
-                <td style={{ padding: '12px 8px' }}>{record.name}</td>
-                <td style={{ padding: '12px 8px' }}>{record.unit || '-'}</td>
-                <td style={{ padding: '12px 8px' }}>
-                  {columns[3].render(record.status, record)}
-                </td>
-                <td style={{ padding: '12px 8px' }}>
-                  {columns[4].render(null, record)}
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-                暂无数据
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      {/* 产品编辑弹窗 */}
-      {isModalVisible && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: 8,
-            padding: 24,
-            width: 500,
-            maxWidth: '90%',
-          }}>
-            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 20 }}>
-              {editingProduct ? '编辑产品' : '新增产品'}
-            </div>
-            <Form form={form} layout="vertical">
-              <Form.Item
-                label="产品编码"
-                name="code"
-                rules={[
-                  { required: true, message: '请输入产品编码' },
-                  { pattern: /^[A-Z0-9_-]+$/, message: '产品编码只能包含大写字母、数字、下划线和连字符' },
-                ]}
-              >
-                <input placeholder="如：PROD-001" style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }} />
-              </Form.Item>
-
-              <Form.Item
-                label="产品名称"
-                name="name"
-                rules={[{ required: true, message: '请输入产品名称' }]}
-              >
-                <input placeholder="请输入产品名称" style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }} />
-              </Form.Item>
-
-              <Form.Item
-                label="单位"
-                name="unit"
-                tooltip="可选，产品计量单位，如：件、台、套等"
-              >
-                <input placeholder="如：件" style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }} />
-              </Form.Item>
-
-              <Form.Item
-                label="状态"
-                name="status"
-                rules={[{ required: true, message: '请选择状态' }]}
-              >
-                <Select>
-                  <Select.Option value="ACTIVE">启用</Select.Option>
-                  <Select.Option value="INACTIVE">停用</Select.Option>
-                </Select>
-              </Form.Item>
-            </Form>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-              <Button onClick={handleCancel}>
-                取消
-              </Button>
-              <Button
-                type="primary"
-                onClick={handleSubmit}
-                loading={createMutation.isPending || updateMutation.isPending}
-              >
-                确定
-              </Button>
-            </div>
+      <Row gutter={16} style={{ height: 'calc(100vh - 300px)' }}>
+        {/* 左侧：产品列表 */}
+        <Col span={8} style={{ borderRight: '1px solid var(--color-border-1)', paddingRight: 16 }}>
+          <div style={{ marginBottom: 16 }}>
+            <Input
+              placeholder="搜索产品编码或名称"
+              allowClear
+              style={{ width: '100%' }}
+              value={filters.productKeyword}
+              onChange={(e) => setFilters({ ...filters, productKeyword: e.target.value })}
+              suffix={<SearchOutlined style={{ color: '#bbb' }} />}
+            />
           </div>
-        </div>
-      )}
+
+          <div
+            style={{
+              height: 'calc(100% - 60px)',
+              overflowY: 'auto',
+              border: '1px solid var(--color-border-1)',
+              borderRadius: 'var(--radius-md)',
+            }}
+          >
+            {filteredProducts.map((product: any) => {
+              const configCount = (productConfigGroups[product.id] || []).length;
+              const isSelected = selectedProduct?.id === product.id;
+
+              return (
+                <div
+                  key={product.id}
+                  onClick={() => setSelectedProduct(product)}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid var(--color-border-1)',
+                    cursor: 'pointer',
+                    background: isSelected ? '#e8f8f0' : 'transparent',
+                    borderLeft: isSelected ? '3px solid #00B365' : '3px solid transparent',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.background = 'var(--color-bg-light)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
+                >
+                  <div style={{ fontWeight: 500, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>
+                      {product.label?.split(' - ')[1] || product.label}
+                      <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 400 }}>
+                        {product.value}
+                      </span>
+                    </span>
+                    {isSelected && (
+                      <span style={{ color: '#00B365', fontSize: 16 }}>✓</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                    {configCount} 个账户配置
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Col>
+
+        {/* 右侧：选中产品的工时配置 */}
+        <Col span={16}>
+          {!selectedProduct ? (
+            <div style={{ textAlign: 'center', padding: '80px 40px', color: 'var(--color-text-secondary)' }}>
+              <AppstoreOutlined style={{ fontSize: 64, marginBottom: 16, color: 'var(--color-border-3)' }} />
+              <div>请从左侧选择产品查看配置</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                  <Space>
+                    <Text strong style={{ fontSize: 16 }}>
+                      {selectedProduct.label?.split(' - ')[1] || selectedProduct.label}
+                    </Text>
+                    <Text type="secondary">({selectedProduct.value})</Text>
+                  </Space>
+                  <Space>
+                    <Input
+                      placeholder="搜索劳动力账户"
+                      allowClear
+                      style={{ width: 200 }}
+                      value={filters.accountPathKeyword}
+                      onChange={(e) => setFilters({ ...filters, accountPathKeyword: e.target.value })}
+                      suffix={<SearchOutlined style={{ color: '#bbb' }} />}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={handleAdd}
+                    >
+                      新增
+                    </Button>
+                  </Space>
+                </Space>
+              </div>
+
+              <Table
+                columns={columns}
+                dataSource={selectedProductConfigs}
+                loading={configsLoading}
+                rowKey="id"
+                pagination={{
+                  pageSize: 10,
+                  showSizeChanger: true,
+                  showTotal: (total) => `共 ${total} 条`,
+                }}
+                scroll={{ x: 600 }}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      description={
+                        <div>
+                          <div>该产品暂无配置</div>
+                          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 8 }}>
+                            点击上方"新增"按钮添加
+                          </div>
+                        </div>
+                      }
+                    />
+                  ),
+                }}
+              />
+            </>
+          )}
+        </Col>
+      </Row>
+
+      {/* 编辑弹窗 */}
+      <Modal
+        title={
+          editingRecord?.id
+            ? `编辑`
+            : '新增'
+        }
+        open={isModalVisible}
+        onOk={handleModalSubmit}
+        onCancel={handleModalCancel}
+        confirmLoading={saveMutation.isPending}
+        width={500}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item
+            label="产品"
+            name="productId"
+            rules={[{ required: true, message: '请选择产品' }]}
+          >
+            <Select
+              placeholder="请选择产品"
+              showSearch
+              optionFilterProp="label"
+              disabled={!!editingRecord || !!selectedProduct}
+              options={products.map((p: any) => ({
+                label: p.label,
+                value: p.id,
+              }))}
+            />
+          </Form.Item>
+
+          {selectedLevels.map((level: any) => (
+            <Form.Item
+              key={level.id}
+              label={level.name}
+              name={`hierarchyOption_${level.id}`}
+            >
+              <Select
+                placeholder={`请选择${level.name}`}
+                showSearch
+                optionFilterProp="label"
+                allowClear
+                options={hierarchyLevelOptions[level.id]?.map((opt: any) => ({
+                  label: opt.label,
+                  value: opt.value,
+                })) || []}
+              />
+            </Form.Item>
+          ))}
+
+          <Form.Item label="标准">
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="quantity"
+                  tooltip="可选，用于记录批量生产时的数量"
+                  style={{ marginBottom: 0 }}
+                >
+                  <InputNumber
+                    min={0}
+                    step={1}
+                    precision={0}
+                    style={{ width: '100%' }}
+                    addonAfter="件"
+                    placeholder="件数"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="standardHours"
+                  rules={[{ required: true, message: '请输入标准' }]}
+                  style={{ marginBottom: 0 }}
+                >
+                  <InputNumber
+                    min={0}
+                    step={0.1}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    placeholder="标准"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };
@@ -377,11 +820,11 @@ const GeneralConfig: React.FC = () => {
       request.get('/hr/system-configs').then((res: any) => res || []),
   });
 
-  // 获取出勤代码列表（用于工时代码配置）
+  // 获取出勤代码定义列表（用于工时代码配置）
   const { data: attendanceCodes = [], isLoading: codesLoading } = useQuery({
-    queryKey: ['attendanceCodes'],
+    queryKey: ['attendanceCodeDefinitions'],
     queryFn: () =>
-      request.get('/allocation/attendance-codes').then((res: any) => res || []),
+      request.get('/calculate/attendance-code-definitions').then((res: any) => res || []),
   });
 
   // 获取所有班次及其属性(用于根据属性筛选)
@@ -433,7 +876,13 @@ const GeneralConfig: React.FC = () => {
           configKey: 'productionLineHierarchyLevel',
           configValue: values.productionLineHierarchyLevel || '',
           category: 'WORK_HOURS',
-          description: '产线对应层级',
+          description: '开线计划产线选择可选层级（工厂、车间、产线）',
+        },
+        {
+          configKey: 'standardHoursHierarchyLevels',
+          configValue: (values.standardHoursHierarchyLevels || []).join(',') || '',
+          category: 'WORK_HOURS',
+          description: '标准工时配置层级',
         },
         {
           configKey: 'productionLineShiftPropertyKeys',
@@ -492,6 +941,9 @@ const GeneralConfig: React.FC = () => {
     const productionLineConfig = systemConfigs.find(
       (c: any) => c.configKey === 'productionLineHierarchyLevel'
     );
+    const standardHoursLevelsConfig = systemConfigs.find(
+      (c: any) => c.configKey === 'standardHoursHierarchyLevels'
+    );
     const shiftPropertiesConfig = systemConfigs.find(
       (c: any) => c.configKey === 'productionLineShiftPropertyKeys'
     );
@@ -506,8 +958,13 @@ const GeneralConfig: React.FC = () => {
       ? shiftPropertiesConfig.configValue.split(',').filter((key: string) => key)
       : [];
 
+    const standardHoursLevels = standardHoursLevelsConfig?.configValue
+      ? standardHoursLevelsConfig.configValue.split(',').filter((key: string) => key)
+      : [];
+
     return {
       productionLineHierarchyLevel: productionLineConfig?.configValue || undefined,
+      standardHoursHierarchyLevels: standardHoursLevels,
       productionLineShiftPropertyKeys: propertyKeys,
       actualHoursAllocationCode: actualHoursCodeConfig?.configValue || undefined,
       indirectHoursAllocationCode: indirectHoursCodeConfig?.configValue || undefined,
@@ -523,6 +980,212 @@ const GeneralConfig: React.FC = () => {
     }
   };
 
+  // 搜索关键词
+  const [searchKeyword, setSearchKeyword] = useState('');
+
+  // 参数配置定义
+  const paramConfigs = useMemo(() => {
+    const matchedShiftCount = allShifts.filter((shift: any) =>
+      selectedPropertyKeys.some((key: string) => shift.propertyKeys?.includes(key))
+    ).length;
+
+    return [
+      {
+        key: 'productionLineHierarchyLevel',
+        name: '开线计划产线对应劳动力账户层级',
+        code: 'WH1001',
+        description: '选择后，开线维护时产线选择该层级下的明细',
+        renderValue: () => (
+          <Form.Item name="productionLineHierarchyLevel" style={{ marginBottom: 0 }}>
+            <Select
+              placeholder="请选择产线对应的层级"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+            >
+              {hierarchyLevels
+                .filter((level: any) => level.mappingType === 'ORG_TYPE' || level.mappingType === 'ORG')
+                .map((level: any) => (
+                  <Select.Option key={level.id} value={String(level.level)} label={level.name}>
+                    {level.name}
+                  </Select.Option>
+                ))}
+            </Select>
+          </Form.Item>
+        ),
+      },
+      {
+        key: 'standardHoursHierarchyLevels',
+        name: '标准工时配置层级',
+        code: 'WH1002',
+        description: '选择后，在产品标准配置中可以为每个配置层级设置标准',
+        renderValue: () => (
+          <Form.Item name="standardHoursHierarchyLevels" style={{ marginBottom: 0 }}>
+            <Select
+              mode="multiple"
+              placeholder="请选择标准工时配置层级"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {hierarchyLevels.map((level: any) => (
+                <Select.Option key={level.id} value={String(level.id)} label={level.name}>
+                  {level.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        ),
+      },
+      {
+        key: 'productionLineShiftPropertyKeys',
+        name: '开线计划可选班次的属性',
+        code: 'WH1003',
+        description: `选择班次属性后，班次选择将限制为具有这些属性的班次${selectedPropertyKeys.length > 0 ? `（当前匹配 ${matchedShiftCount} 个班次）` : ''}`,
+        renderValue: () => (
+          <Form.Item name="productionLineShiftPropertyKeys" style={{ marginBottom: 0 }}>
+            <Select
+              mode="multiple"
+              placeholder="请选择产线开线班次属性"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {shiftPropertyDefinitions
+                .filter((prop: any) => prop.status === 'ACTIVE')
+                .map((prop: any) => (
+                  <Select.Option
+                    key={prop.propertyKey}
+                    value={prop.propertyKey}
+                    label={prop.name}
+                  >
+                    {prop.name}（{prop.propertyKey}）
+                  </Select.Option>
+                ))}
+            </Select>
+          </Form.Item>
+        ),
+      },
+      {
+        key: 'actualHoursAllocationCode',
+        name: '实际工时代码',
+        code: 'AL1001',
+        description: '配置后，按实际工时比例分配方式将从获取以上类型代码的工时数据',
+        renderValue: () => (
+          <Form.Item
+            name="actualHoursAllocationCode"
+            rules={[{ required: true, message: '请选择工时代码' }]}
+            style={{ marginBottom: 0 }}
+          >
+            <Select
+              placeholder="请选择工时代码"
+              allowClear
+              showSearch
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {attendanceCodes.map((code: any) => (
+                <Select.Option
+                  key={code.code}
+                  value={code.code}
+                  label={`${code.name} (${code.code})`}
+                >
+                  {code.name}（{code.code}）
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        ),
+      },
+      {
+        key: 'indirectHoursAllocationCode',
+        name: '间接工时分配后的工时代码',
+        code: 'AL1002',
+        description: '用于标识间接工时分配完成后生成的工时记录代码',
+        renderValue: () => (
+          <Form.Item
+            name="indirectHoursAllocationCode"
+            rules={[{ required: true, message: '请选择工时代码' }]}
+            style={{ marginBottom: 0 }}
+          >
+            <Select
+              placeholder="请选择工时代码"
+              allowClear
+              showSearch
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {attendanceCodes.map((code: any) => (
+                <Select.Option
+                  key={code.code}
+                  value={code.code}
+                  label={`${code.name} (${code.code})`}
+                >
+                  {code.name}（{code.code}）
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        ),
+      },
+    ];
+  }, [hierarchyLevels, shiftPropertyDefinitions, attendanceCodes, selectedPropertyKeys, allShifts]);
+
+  // 按搜索关键词过滤
+  const filteredParams = useMemo(() => {
+    if (!searchKeyword) return paramConfigs;
+    const keyword = searchKeyword.toLowerCase();
+    return paramConfigs.filter(
+      (p) =>
+        p.name.toLowerCase().includes(keyword) ||
+        p.code.toLowerCase().includes(keyword)
+    );
+  }, [paramConfigs, searchKeyword]);
+
+  // 表格列定义
+  const paramColumns = [
+    {
+      title: '参数名称',
+      dataIndex: 'name',
+      key: 'name',
+      width: 220,
+      render: (text: string) => (
+        <span style={{ fontWeight: 500 }}>{text}</span>
+      ),
+    },
+    {
+      title: '参数代码',
+      dataIndex: 'code',
+      key: 'code',
+      width: 120,
+    },
+    {
+      title: '参数值',
+      key: 'value',
+      width: 320,
+      render: (_: any, record: any) => record.renderValue(),
+    },
+    {
+      title: '参数描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+  ];
+
   if (levelsLoading || configsLoading || propertiesLoading || codesLoading || shiftsLoading) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
@@ -535,172 +1198,38 @@ const GeneralConfig: React.FC = () => {
     <div>
       <Form
         form={form}
-        layout="vertical"
         initialValues={getInitialValues()}
       >
-        <Title level={5}>产线配置</Title>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          配置产线对应的组织层级和可用班次，用于开线维护和产量记录中的筛选
-        </Text>
-
-        <Form.Item
-          name="productionLineHierarchyLevel"
-          label="产线对应层级"
-          tooltip="选择后，开线维护和产量记录中的组织选择将限制为该类型的组织"
-        >
-          <Select
-            placeholder="请选择产线对应的层级"
-            allowClear
-            showSearch
-            optionFilterProp="label"
-          >
-            {hierarchyLevels.map((level: any) => (
-              <Select.Option key={level.id} value={String(level.id)} label={level.name}>
-                {level.name}
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
-
-        <Form.Item
-          name="productionLineShiftPropertyKeys"
-          label="产线开线班次属性"
-          tooltip="选择班次属性后,开线维护和产量记录中的班次选择将限制为具有这些属性的班次"
-          rules={[{ type: 'array', message: '请选择产线开线班次属性' }]}
-        >
-          <Select
-            mode="multiple"
-            placeholder="请选择产线开线班次属性"
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            filterOption={(input, option) =>
-              (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-            }
-          >
-            {shiftPropertyDefinitions
-              .filter((prop: any) => prop.status === 'ACTIVE')
-              .map((prop: any) => (
-                <Select.Option
-                  key={prop.propertyKey}
-                  value={prop.propertyKey}
-                  label={prop.name}
-                >
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{prop.name}</div>
-                    <div style={{ fontSize: 12, color: '#999' }}>
-                      {prop.propertyKey}
-                    </div>
-                  </div>
-                </Select.Option>
-              ))}
-          </Select>
-        </Form.Item>
-
-        {selectedPropertyKeys.length > 0 && (
-          <div style={{ marginTop: -12, marginBottom: 16 }}>
-            <span style={{ fontSize: 12, color: '#999' }}>
-              匹配的班次数量: <strong>
-                {allShifts.filter((shift: any) =>
-                  selectedPropertyKeys.some((key: string) => shift.propertyKeys?.includes(key))
-                ).length}
-              </strong> 个
-            </span>
-          </div>
-        )}
-
-        <Divider />
-
-        <Title level={5}>间接分摊配置</Title>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          配置间接工时分摊过程中的工时代码，用于标识不同类型的工时记录
-        </Text>
-
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              name="actualHoursAllocationCode"
-              label="按实际工时方式分配的工时代码"
-              tooltip="用于标识按实际工时比例分配间接工时后生成的工时记录"
-              rules={[{ required: true, message: '请选择工时代码' }]}
-            >
-              <Select
-                placeholder="请选择工时代码"
-                allowClear
-                showSearch
-                filterOption={(input, option) =>
-                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                }
-              >
-                {attendanceCodes.map((code: any) => (
-                  <Select.Option
-                    key={code.code}
-                    value={code.code}
-                    label={`${code.name} (${code.code})`}
-                  >
-                    {code.name} ({code.code})
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              name="indirectHoursAllocationCode"
-              label="间接工时分配后的工时代码"
-              tooltip="用于标识间接工时分配完成后生成的工时记录代码"
-              rules={[{ required: true, message: '请选择工时代码' }]}
-            >
-              <Select
-                placeholder="请选择工时代码"
-                allowClear
-                showSearch
-                filterOption={(input, option) =>
-                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                }
-              >
-                {attendanceCodes.map((code: any) => (
-                  <Select.Option
-                    key={code.code}
-                    value={code.code}
-                    label={`${code.name} (${code.code})`}
-                  >
-                    {code.name} ({code.code})
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Divider />
-
-        <Title level={5}>配置说明</Title>
-        <div style={{ background: '#f0f5ff', padding: 16, borderRadius: 8 }}>
-          <Text>
-            • <strong>产线对应层级</strong>：配置后，新增开线维护和产量记录时，组织选择将自动过滤为该类型的组织，不再需要手动从组织树中选择<br />
-            • <strong>产线开线班次属性</strong>：配置后，开线维护和产量记录中的班次选择将限制为具有指定属性的班次，避免选择错误的班次。可在"排班管理 - 班次管理"中维护班次属性<br />
-            • 配置前请确保已在"劳动力账户 - 层级配置"中创建相应的组织层级<br />
-            • 修改此配置后，仅在新增开线和产量记录时生效，已存在的记录不受影响
-          </Text>
-        </div>
-
-        <Divider />
-
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <Space>
-            <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['allocationSystemConfigs'] })}>
-              重置
-            </Button>
-            <Button
-              type="primary"
-              onClick={handleSave}
-              loading={saveMutation.isPending}
-            >
-              保存配置
-            </Button>
+            <span style={{ color: '#666' }}>代码/名称</span>
+            <Input
+              placeholder="请输入名称和代码"
+              allowClear
+              style={{ width: 220 }}
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              suffix={<SearchOutlined style={{ color: '#bbb' }} />}
+            />
           </Space>
+          <Button
+            type="primary"
+            onClick={handleSave}
+            loading={saveMutation.isPending}
+          >
+            保存
+          </Button>
         </div>
+
+        <Table
+          columns={paramColumns}
+          dataSource={filteredParams}
+          rowKey="key"
+          pagination={false}
+          size="middle"
+          bordered={false}
+          style={{ marginTop: 8 }}
+        />
       </Form>
     </div>
   );
@@ -712,31 +1241,7 @@ const AllocationBasicConfigPage: React.FC = () => {
 
   return (
     <div>
-      {/* 顶部绿色标题栏 */}
-      <div
-        style={{
-          background: '#22B970',
-          padding: '16px 24px',
-          borderRadius: '8px 8px 0 0',
-          marginBottom: 0,
-        }}
-      >
-        <Title level={4} style={{ color: '#fff', margin: 0 }}>
-          工时基础配置
-        </Title>
-      </div>
-
-      {/* 主体内容 */}
-      <Card
-        bordered={false}
-        style={{
-          borderRadius: '0 0 8px 8px',
-          borderTop: 'none',
-        }}
-        bodyStyle={{
-          padding: '24px',
-        }}
-      >
+      <Card>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
@@ -762,10 +1267,20 @@ const AllocationBasicConfigPage: React.FC = () => {
                 </span>
               ),
             },
+            {
+              key: 'standardHoursConfig',
+              label: (
+                <span>
+                  <ClockCircleOutlined />
+                  产品标准配置
+                </span>
+              ),
+            },
           ]}
         />
         {activeTab === 'general' && <GeneralConfig />}
         {activeTab === 'product' && <ProductConfig />}
+        {activeTab === 'standardHoursConfig' && <ProductStandardHoursConfig />}
       </Card>
     </div>
   );

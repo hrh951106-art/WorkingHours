@@ -2,13 +2,17 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } fro
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AllocationService } from './allocation.service';
+import { AllocationScopeService } from './allocation-scope.service';
 
 @ApiTags('Allocation - 间接工时分摊')
 @Controller('allocation')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class AllocationController {
-  constructor(private allocationService: AllocationService) {}
+  constructor(
+    private allocationService: AllocationService,
+    private allocationScopeService: AllocationScopeService,
+  ) {}
 
   // ============ 产品管理 ============
 
@@ -40,6 +44,88 @@ export class AllocationController {
   @ApiOperation({ summary: '删除产品' })
   async deleteProduct(@Param('id') id: string) {
     return this.allocationService.deleteProduct(+id);
+  }
+
+  @Get('products/:productId/standard-hours')
+  @ApiOperation({ summary: '获取产品标准工时列表' })
+  async getProductStandardHours(@Param('productId') productId: string) {
+    return this.allocationService.getProductStandardHours(+productId);
+  }
+
+  @Post('products/:productId/standard-hours')
+  @ApiOperation({ summary: '创建产品标准工时' })
+  async createProductStandardHours(@Param('productId') productId: string, @Body() dto: any) {
+    return this.allocationService.createProductStandardHours(+productId, dto);
+  }
+
+  @Put('standard-hours/:id')
+  @ApiOperation({ summary: '更新产品标准工时' })
+  async updateProductStandardHours(@Param('id') id: string, @Body() dto: any) {
+    return this.allocationService.updateProductStandardHours(+id, dto);
+  }
+
+  @Delete('standard-hours/:id')
+  @ApiOperation({ summary: '删除产品标准工时' })
+  async deleteProductStandardHours(@Param('id') id: string) {
+    return this.allocationService.deleteProductStandardHours(+id);
+  }
+
+  // ============ 产品层级标准工时配置 ============
+
+  @Get('products/:productId/standard-hour-by-levels')
+  @ApiOperation({ summary: '获取产品层级标准工时配置列表' })
+  async getProductStandardHourByLevels(@Param('productId') productId: string) {
+    return this.allocationService.getProductStandardHourByLevels(+productId);
+  }
+
+  @Get('standard-hour-by-levels')
+  @ApiOperation({ summary: '获取所有产品层级标准工时配置' })
+  async getAllProductStandardHourByLevels(@Query() query: any) {
+    return this.allocationService.getAllProductStandardHourByLevels(query);
+  }
+
+  @Post('standard-hour-by-levels')
+  @ApiOperation({ summary: '创建产品层级标准工时配置' })
+  async createProductStandardHourByLevel(@Body() dto: any) {
+    return this.allocationService.createProductStandardHourByLevel(dto);
+  }
+
+  @Put('standard-hour-by-levels/:id')
+  @ApiOperation({ summary: '更新产品层级标准工时配置' })
+  async updateProductStandardHourByLevel(@Param('id') id: string, @Body() dto: any) {
+    return this.allocationService.updateProductStandardHourByLevel(+id, dto);
+  }
+
+  @Delete('standard-hour-by-levels/:id')
+  @ApiOperation({ summary: '删除产品层级标准工时配置' })
+  async deleteProductStandardHourByLevel(@Param('id') id: string) {
+    return this.allocationService.deleteProductStandardHourByLevel(+id);
+  }
+
+  // ============ 产品工序管理 ============
+
+  @Get('products/:productId/processes')
+  @ApiOperation({ summary: '获取产品工序列表' })
+  async getProductProcesses(@Param('productId') productId: string) {
+    return this.allocationService.getProductProcesses(+productId);
+  }
+
+  @Post('products/:productId/processes')
+  @ApiOperation({ summary: '添加工序到产品' })
+  async addProcessToProduct(@Param('productId') productId: string, @Body() dto: any) {
+    return this.allocationService.addProcessToProduct(+productId, dto);
+  }
+
+  @Delete('products/:productId/processes/:processId')
+  @ApiOperation({ summary: '从产品移除工序' })
+  async removeProcessFromProduct(@Param('productId') productId: string, @Param('processId') processId: string) {
+    return this.allocationService.removeProcessFromProduct(+productId, +processId);
+  }
+
+  @Put('product-processes/:id')
+  @ApiOperation({ summary: '更新产品工序关联' })
+  async updateProductProcess(@Param('id') id: string, @Body() dto: any) {
+    return this.allocationService.updateProductProcess(+id, dto);
   }
 
   // ============ 通用配置管理 ============
@@ -152,6 +238,38 @@ export class AllocationController {
     return this.allocationService.batchImportProductionRecords(dto);
   }
 
+  // ============ 个人产量记录管理 ============
+
+  @Get('personal-production-records')
+  @ApiOperation({ summary: '获取个人产量记录列表' })
+  async getPersonalProductionRecords(@Query() query: any) {
+    return this.allocationService.getPersonalProductionRecords(query);
+  }
+
+  @Get('personal-production-records/:id')
+  @ApiOperation({ summary: '获取个人产量记录详情' })
+  async getPersonalProductionRecord(@Param('id') id: string) {
+    return this.allocationService.getPersonalProductionRecord(+id);
+  }
+
+  @Post('personal-production-records')
+  @ApiOperation({ summary: '创建个人产量记录' })
+  async createPersonalProductionRecord(@Body() dto: any) {
+    return this.allocationService.createPersonalProductionRecord(dto);
+  }
+
+  @Put('personal-production-records/:id')
+  @ApiOperation({ summary: '更新个人产量记录' })
+  async updatePersonalProductionRecord(@Param('id') id: string, @Body() dto: any) {
+    return this.allocationService.updatePersonalProductionRecord(+id, dto);
+  }
+
+  @Delete('personal-production-records/:id')
+  @ApiOperation({ summary: '删除个人产量记录' })
+  async deletePersonalProductionRecord(@Param('id') id: string) {
+    return this.allocationService.deletePersonalProductionRecord(+id);
+  }
+
   // ============ 分摊配置管理 ============
 
   @Get('configs')
@@ -236,5 +354,179 @@ export class AllocationController {
   @ApiOperation({ summary: '获取可用的出勤代码列表（用于配置间接工时）' })
   async getAttendanceCodesForAllocation() {
     return this.allocationService.getAttendanceCodesForAllocation();
+  }
+
+  // ============ 分摊范围匹配接口 ============
+
+  @Get('scope/extract-level')
+  @ApiOperation({ summary: '从账户名称中提取指定层级的值' })
+  async extractLevelFromAccountName(
+    @Query('accountName') accountName: string,
+    @Query('level') level: string,
+  ) {
+    const levelNum = parseInt(level, 10);
+    return {
+      accountName,
+      level: levelNum,
+      value: this.allocationScopeService.extractLevelFromAccountName(accountName, levelNum),
+    };
+  }
+
+  @Get('scope/extract-multiple-levels')
+  @ApiOperation({ summary: '批量从账户名称中提取多个层级的值' })
+  async extractMultipleLevelsFromAccountName(
+    @Query('accountName') accountName: string,
+    @Query('levels') levels: string,
+  ) {
+    const levelNums = levels.split(',').map(l => parseInt(l.trim(), 10));
+    return {
+      accountName,
+      levels: levelNums,
+      values: this.allocationScopeService.extractMultipleLevelsFromAccountName(accountName, levelNums),
+    };
+  }
+
+  @Get('scope/hierarchy')
+  @ApiOperation({ summary: '获取账户名称的完整层级信息' })
+  async getAccountNameHierarchy(@Query('accountName') accountName: string) {
+    return this.allocationScopeService.getAccountNameHierarchy(accountName);
+  }
+
+  @Get('scope/match-line-shifts')
+  @ApiOperation({ summary: '在开线计划表中匹配指定层级的数据' })
+  async matchLineShiftsByLevel(
+    @Query('level') level: string,
+    @Query('levelValue') levelValue: string,
+    @Query('scheduleDate') scheduleDate?: string,
+    @Query('shiftId') shiftId?: string,
+    @Query('status') status?: string,
+  ) {
+    const levelNum = parseInt(level, 10);
+    const queryOptions: any = {};
+
+    if (scheduleDate) {
+      queryOptions.scheduleDate = new Date(scheduleDate);
+    }
+
+    if (shiftId) {
+      queryOptions.shiftId = parseInt(shiftId, 10);
+    }
+
+    if (status) {
+      queryOptions.status = status;
+    }
+
+    return this.allocationScopeService.matchLineShiftsByLevel(levelNum, levelValue, queryOptions);
+  }
+
+  @Get('scope/extract-wh1001')
+  @ApiOperation({ summary: '从开线计划记录中解析 WH1001 配置的层级值' })
+  async extractWH1001LevelFromLineShift(
+    @Query('lineShiftId') lineShiftId: string,
+    @Query('targetLevel') targetLevel?: string,
+  ) {
+    const lineShiftIdNum = parseInt(lineShiftId, 10);
+    const targetLevelNum = targetLevel ? parseInt(targetLevel, 10) : undefined;
+
+    return {
+      lineShiftId: lineShiftIdNum,
+      targetLevel: targetLevelNum,
+      value: await this.allocationScopeService.extractWH1001LevelFromLineShift(
+        lineShiftIdNum,
+        targetLevelNum,
+      ),
+    };
+  }
+
+  @Get('scope/participating')
+  @ApiOperation({ summary: '检查开线计划记录是否应该参与分摊' })
+  async shouldParticipateInAllocation(@Query('lineShiftId') lineShiftId: string) {
+    const lineShiftIdNum = parseInt(lineShiftId, 10);
+    return {
+      lineShiftId: lineShiftIdNum,
+      participate: await this.allocationScopeService.shouldParticipateInAllocation(lineShiftIdNum),
+    };
+  }
+
+  @Get('scope/match')
+  @ApiOperation({ summary: '完整的分摊范围匹配流程' })
+  async matchAllocationScope(
+    @Query('sourceAccountName') sourceAccountName: string,
+    @Query('allocationScopeLevel') allocationScopeLevel: string,
+    @Query('scheduleDate') scheduleDate?: string,
+    @Query('shiftId') shiftId?: string,
+    @Query('status') status?: string,
+    @Query('wh1001TargetLevel') wh1001TargetLevel?: string,
+  ) {
+    const allocationScopeLevelNum = parseInt(allocationScopeLevel, 10);
+    const queryOptions: any = {};
+
+    if (scheduleDate) {
+      queryOptions.scheduleDate = new Date(scheduleDate);
+    }
+
+    if (shiftId) {
+      queryOptions.shiftId = parseInt(shiftId, 10);
+    }
+
+    if (status) {
+      queryOptions.status = status;
+    }
+
+    const wh1001TargetLevelNum = wh1001TargetLevel ? parseInt(wh1001TargetLevel, 10) : undefined;
+
+    return this.allocationScopeService.matchAllocationScope(
+      sourceAccountName,
+      allocationScopeLevelNum,
+      queryOptions,
+      wh1001TargetLevelNum,
+    );
+  }
+
+  @Get('scope/match-by-config')
+  @ApiOperation({ summary: '根据分摊范围配置获取匹配的开线计划记录' })
+  async matchByAllocationScopeConfig(
+    @Query('allocationScopeId') allocationScopeId: string,
+    @Query('sourceAccountName') sourceAccountName: string,
+    @Query('scheduleDate') scheduleDate?: string,
+    @Query('shiftId') shiftId?: string,
+    @Query('status') status?: string,
+  ) {
+    const allocationScopeIdNum = parseInt(allocationScopeId, 10);
+    const queryOptions: any = {};
+
+    if (scheduleDate) {
+      queryOptions.scheduleDate = new Date(scheduleDate);
+    }
+
+    if (shiftId) {
+      queryOptions.shiftId = parseInt(shiftId, 10);
+    }
+
+    if (status) {
+      queryOptions.status = status;
+    }
+
+    return this.allocationScopeService.matchByAllocationScopeConfig(
+      allocationScopeIdNum,
+      sourceAccountName,
+      queryOptions,
+    );
+  }
+
+  @Get('scope/hierarchy-levels')
+  @ApiOperation({ summary: '获取账户层级配置列表' })
+  async getHierarchyLevels() {
+    return this.allocationScopeService.getHierarchyLevels();
+  }
+
+  @Get('scope/org-type-by-level')
+  @ApiOperation({ summary: '根据层级获取对应的组织类型' })
+  async getOrgTypeByLevel(@Query('level') level: string) {
+    const levelNum = parseInt(level, 10);
+    return {
+      level: levelNum,
+      orgType: await this.allocationScopeService.getOrgTypeByLevel(levelNum),
+    };
   }
 }

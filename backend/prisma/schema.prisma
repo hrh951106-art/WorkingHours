@@ -110,12 +110,12 @@ model Employee {
   photo             String?
   politicalStatus   String?
   calcResults       CalcResult[]
+  laborAccounts     EmployeeLaborAccount[]
   org               Organization             @relation(fields: [orgId], references: [id])
   changeLogs        EmployeeChangeLog[]
   educations        EmployeeEducation[]
   familyMembers     EmployeeFamilyMember[]
   workExperiences   EmployeeWorkExperience[]
-  accounts          LaborAccount[]
   punchPairs        PunchPair[]
   punchRecords      PunchRecord[]
   schedules         Schedule[]
@@ -237,59 +237,6 @@ model EmployeeInfoTabField {
   @@index([dataSourceId])
 }
 
-model LaborAccount {
-  id              Int               @id @default(autoincrement())
-  code            String            @unique
-  name            String
-  type            String
-  level           Int
-  path            String
-  namePath        String            @default("")
-  parentId        Int?
-  employeeId      Int?
-  effectiveDate   DateTime
-  expiryDate      DateTime?
-  status          String            @default("ACTIVE")
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  hierarchyValues String?           @default("")
-  usageType       String?           @default("SHIFT")
-  transfers       AccountTransfer[]
-  deviceBindings  DeviceAccount[]
-  parent          LaborAccount?     @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
-  children        LaborAccount[]    @relation("AccountHierarchy")
-  employee        Employee?         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  punchPairs      PunchPair[]
-  punchRecords    PunchRecord[]
-  shiftSegments   ShiftSegment[]    @relation("ShiftSegmentTransfer")
-}
-
-model AccountTransfer {
-  id         Int          @id @default(autoincrement())
-  scheduleId Int
-  accountId  Int
-  startTime  DateTime
-  endTime    DateTime
-  hours      Float
-  reason     String
-  createdAt  DateTime     @default(now())
-  account    LaborAccount @relation(fields: [accountId], references: [id])
-  schedule   Schedule     @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-}
-
-model AccountHierarchyConfig {
-  id           Int      @id @default(autoincrement())
-  level        Int
-  name         String
-  mappingType  String
-  mappingValue String?
-  dataSourceId Int?
-  sort         Int      @default(0)
-  status       String   @default("ACTIVE")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
 model Shift {
   id            Int             @id @default(autoincrement())
   code          String          @unique
@@ -348,8 +295,8 @@ model ShiftSegment {
   accountId Int?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
-  account   LaborAccount? @relation("ShiftSegmentTransfer", fields: [accountId], references: [id])
   shift     Shift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  account   LaborAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
 }
 
 model Schedule {
@@ -365,7 +312,6 @@ model Schedule {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   adjustedSegments String?
-  transfers        AccountTransfer[]
   shift            Shift             @relation(fields: [shiftId], references: [id])
   employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
@@ -380,9 +326,9 @@ model PunchDevice {
   status    String          @default("NORMAL")
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
-  bindings  DeviceAccount[]
   group     DeviceGroup?    @relation(fields: [groupId], references: [id])
   records   PunchRecord[]
+  bindings  DeviceAccount[]
 }
 
 model PunchRecord {
@@ -392,41 +338,32 @@ model PunchRecord {
   deviceId   Int
   punchType  String
   location   String?
-  accountId  Int?
   source     String        @default("AUTO")
+  accountId  Int?
   createdAt  DateTime      @default(now())
   outPairs   PunchPair[]   @relation("OutPunch")
   inPairs    PunchPair[]   @relation("InPunch")
-  account    LaborAccount? @relation(fields: [accountId], references: [id])
   employee   Employee      @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
   device     PunchDevice   @relation(fields: [deviceId], references: [id])
-}
-
-model DeviceAccount {
-  id            Int          @id @default(autoincrement())
-  deviceId      Int
-  accountId     Int
-  effectiveDate DateTime     @default(now())
-  expiryDate    DateTime?
-  createdAt     DateTime     @default(now())
-  account       LaborAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  device        PunchDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  @@index([deviceId, accountId, effectiveDate, expiryDate])
+  account    LaborAccount? @relation(fields: [accountId], references: [id])
 }
 
 model PunchRule {
-  id              Int      @id @default(autoincrement())
-  code            String   @unique
-  name            String
-  priority        Int
-  conditions      String
-  beforeShiftMins Int      @default(0)
-  afterShiftMins  Int      @default(0)
-  configs         String   @default("[]")
-  status          String   @default("ACTIVE")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                  Int                          @id @default(autoincrement())
+  code                String                       @unique
+  name                String
+  priority            Int
+  ruleType            String                       @default("LEAN_PAIRING")
+  conditions          String
+  beforeShiftMins     Int                          @default(0)
+  afterShiftMins      Int                          @default(0)
+  configs             String                       @default("[]")
+  scheduledConfig     String?                      @default("{}")
+  unscheduledConfig   String?                      @default("{}")
+  status              String                       @default("ACTIVE")
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  deviceGroupIntervals PunchRuleDeviceGroupInterval[]
 }
 
 model CalcRule {
@@ -462,28 +399,32 @@ model AttendanceCode {
 }
 
 model CalcResult {
-  id               Int             @id @default(autoincrement())
-  employeeNo       String
-  calcDate         DateTime
-  shiftId          Int
-  shiftName        String?
-  attendanceCodeId Int?
-  punchInTime      DateTime?
-  punchOutTime     DateTime?
-  standardHours    Float
-  actualHours      Float
-  overtimeHours    Float           @default(0)
-  leaveHours       Float           @default(0)
-  absenceHours     Float           @default(0)
-  accountHours     String          @default("[]")
-  exceptions       String          @default("[]")
-  status           String          @default("PENDING")
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  accountId        Int?
-  accountName      String?
-  employee         Employee        @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
-  attendanceCode   AttendanceCode? @relation(fields: [attendanceCodeId], references: [id])
+  id                        Int                      @id @default(autoincrement())
+  employeeNo                String
+  calcDate                  DateTime
+  shiftId                   Int?
+  shiftName                 String?
+  attendanceCodeId          Int?
+  calculationAttendanceCodeId Int?
+  punchInTime               DateTime?
+  punchOutTime              DateTime?
+  standardHours             Float
+  actualHours               Float
+  overtimeHours             Float                     @default(0)
+  leaveHours                Float                     @default(0)
+  absenceHours              Float                     @default(0)
+  accountHours              String                    @default("[]")
+  exceptions                String                    @default("[]")
+  status                    String                    @default("PENDING")
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  accountId                 Int?
+  accountName               String?
+  accountPath               String?
+  amount                    Float?
+  employee                  Employee                  @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  attendanceCode            AttendanceCode?           @relation(fields: [attendanceCodeId], references: [id])
+  calculationAttendanceCode CalculationAttendanceCode? @relation(fields: [calculationAttendanceCodeId], references: [id])
 }
 
 model DeviceGroup {
@@ -495,31 +436,62 @@ model DeviceGroup {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   devices     PunchDevice[]
+  intervals   PunchRuleDeviceGroupInterval[]
+}
+
+model PunchRuleDeviceGroupInterval {
+  id                Int          @id @default(autoincrement())
+  deviceGroupId     Int
+  ruleId            Int?
+  deviceGroupCode   String?
+  deviceGroupName   String?
+  beforeShiftMins   Int          @default(0)
+  afterShiftMins    Int          @default(0)
+  status            String       @default("ACTIVE")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deviceGroup       DeviceGroup  @relation(fields: [deviceGroupId], references: [id], onDelete: Cascade)
+  rule              PunchRule?   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([deviceGroupId])
+  @@index([status])
 }
 
 model PunchPair {
-  id            Int           @id @default(autoincrement())
-  employeeNo    String
-  pairDate      DateTime
-  shiftId       Int
-  shiftName     String?
-  inPunchId     Int?
-  outPunchId    Int?
-  inPunchTime   DateTime?
-  outPunchTime  DateTime?
-  workHours     Float
-  sourceGroupId Int?
-  accountId     Int?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  account       LaborAccount? @relation(fields: [accountId], references: [id])
-  outPunch      PunchRecord?  @relation("OutPunch", fields: [outPunchId], references: [id], onDelete: Restrict)
-  inPunch       PunchRecord?  @relation("InPunch", fields: [inPunchId], references: [id], onDelete: Restrict)
-  employee      Employee      @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  id                    Int           @id @default(autoincrement())
+  employeeNo            String
+  pairDate              DateTime
+  shiftId               Int?
+  shiftName             String?
+  inPunchId             Int?
+  outPunchId            Int?
+  inPunchTime           DateTime?
+  outPunchTime          DateTime?
+  workHours             Float
+  sourceGroupId         Int?
+  accountId             Int?
+  accountName           String?
+  accountPath           String?
+  workStartPunchTime    DateTime?
+  workEndPunchTime      DateTime?
+  workStartPunches      String?
+  workEndPunches        String?
+  workStartPunchId      Int?
+  workEndPunchId        Int?
+  workStartShiftId      Int?
+  workStartShiftName    String?
+  workEndShiftId        Int?
+  workEndShiftName      String?
+  status                String        @default("ACTIVE")
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  outPunch              PunchRecord?  @relation("OutPunch", fields: [outPunchId], references: [id], onDelete: Restrict)
+  inPunch               PunchRecord?  @relation("InPunch", fields: [inPunchId], references: [id], onDelete: Restrict)
+  employee              Employee      @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  account               LaborAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
   @@index([employeeNo, pairDate])
   @@index([shiftId])
-  @@index([accountId])
 }
 
 model Product {
@@ -538,9 +510,8 @@ model Product {
   updatedById          Int?
   updatedByName        String?
   updatedAt            DateTime               @updatedAt
-  deletedAt            DateTime?
-  productStandardHours ProductStandardHours[]
-  productionRecords    ProductionRecord[]
+  deletedAt                DateTime?
+  productStandardHours     ProductStandardHours[]
 }
 
 model ProductionLine {
@@ -562,7 +533,6 @@ model ProductionLine {
   updatedByName     String?
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
-  productionRecords ProductionRecord[]
 }
 
 model LineShift {
@@ -582,10 +552,13 @@ model LineShift {
   updatedAt               DateTime        @updatedAt
   deletedAt               DateTime?
   delayedShutdownTime     Int?
+  accountId               Int?
+  accountName             String?
 
   @@unique([orgId, shiftId, scheduleDate, deletedAt])
   @@index([orgId, scheduleDate])
   @@index([scheduleDate])
+  @@index([accountId])
 }
 
 model ProductStandardHours {
@@ -609,15 +582,15 @@ model ProductStandardHours {
 }
 
 model ProductionRecord {
-  id             Int             @id @default(autoincrement())
+  id             Int        @id @default(autoincrement())
   recordDate     DateTime
   orgId          Int
   orgName        String
   lineId         Int?
   lineName       String?
-  shiftId        Int
-  shiftName      String
-  productId      Int
+  shiftId        Int?
+  shiftName      String?
+  productId      Int?
   productCode    String
   productName    String
   plannedQty     Float
@@ -627,22 +600,54 @@ model ProductionRecord {
   standardHours  Float
   totalStdHours  Float
   workHours      Float?
-  source         String          @default("MANUAL")
+  source         String     @default("MANUAL")
   recorderId     Int
   recorderName   String
-  recordedAt     DateTime        @default(now())
+  recordedAt     DateTime   @default(now())
   description    String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
   deletedAt      DateTime?
-  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  line           ProductionLine? @relation(fields: [lineId], references: [id])
 
-  @@unique([recordDate, orgId, shiftId, productId, deletedAt])
+  @@unique([recordDate, orgId, shiftId, deletedAt])
   @@index([recordDate])
   @@index([orgId, recordDate])
   @@index([productId, recordDate])
   @@index([shiftId, recordDate])
+}
+
+model PersonalProductionRecord {
+  id               Int      @id @default(autoincrement())
+  recordDate       DateTime
+  employeeNo       String
+  employeeName     String?
+  orgId            Int
+  orgName          String
+  lineId           Int?
+  lineName         String?
+  shiftId          Int?
+  shiftName        String?
+  productId        Int?
+  productCode      String
+  productName      String
+  actualQty        Float
+  standardHours    Float
+  earnedHours      Float
+  source           String   @default("MANUAL")
+  recorderId       Int
+  recorderName     String
+  recordedAt       DateTime @default(now())
+  description      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+
+  @@unique([recordDate, employeeNo, productId, deletedAt])
+  @@index([recordDate])
+  @@index([employeeNo, recordDate])
+  @@index([productId, recordDate])
+  @@index([shiftId, recordDate])
+  @@index([orgId, recordDate])
 }
 
 model AllocationConfig {
@@ -819,6 +824,8 @@ model AllocationGeneralConfig {
 
 model SearchConditionConfig {
   id             Int      @id @default(autoincrement())
+  configCode      String
+  configName      String
   pageCode       String
   pageName       String
   fieldCode      String
@@ -827,10 +834,12 @@ model SearchConditionConfig {
   isEnabled      Boolean  @default(true)
   sortOrder      Int      @default(0)
   dataSourceCode String?
+  applicablePages String?  @default("[]")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  @@unique([pageCode, fieldCode])
+  @@unique([configCode, fieldCode])
+  @@index([configCode])
   @@index([pageCode])
 }
 
@@ -867,6 +876,8 @@ model WorkInfoHistory {
   resignationDate   DateTime?
   resignationReason String?
   workYears         Int?
+  costCenter        String?
+  employmentRelation String?
   orgId             Int?
   isCurrent         Boolean       @default(false)
   reason            String?
@@ -941,4 +952,1035 @@ model EmployeeFamilyMember {
 
   @@index([employeeId])
   @@index([employeeId, isEmergency])
+}
+
+// ============ Workflow 模块相关模型 ============
+
+model WorkflowDefinition {
+  id                Int                  @id @default(autoincrement())
+  code              String
+  name              String
+  description       String?
+  category          String               @default("GENERAL")
+  version           Int                  @default(1)
+  versionString     String               @default("1")
+  status            String               @default("DRAFT")
+  formConfig        String               @default("{}")
+  flowConfig        String               @default("{}")
+  isSystem          Boolean              @default(false)
+  publishedAt       DateTime?
+  createdById       Int
+  createdByName     String
+  updatedById       Int?
+  updatedByName     String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+  nodes             WorkflowNode[]
+  edges             WorkflowEdge[]
+  instances         WorkflowInstance[]
+
+  @@unique([code, version])
+  @@index([status])
+  @@index([category])
+  @@index([code])
+  @@index([deletedAt])
+}
+
+model WorkflowNode {
+  id                Int                  @id @default(autoincrement())
+  workflowId        Int
+  nodeCode          String               @unique
+  nodeType          String
+  nodeName          String
+  needAllApprove    Boolean              @default(false)
+  approverStrategy  String?
+  approverConfig    String?
+  ccStrategy        String?
+  conditionConfig   String?
+  formPermission    String?
+  sortOrder         Int                  @default(0)
+  status            String               @default("ACTIVE")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  definition        WorkflowDefinition  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  outgoingEdges     WorkflowEdge[]       @relation("OutgoingEdges")
+  incomingEdges     WorkflowEdge[]       @relation("IncomingEdges")
+
+  @@index([workflowId])
+  @@index([nodeCode])
+}
+
+model WorkflowEdge {
+  id                Int                  @id @default(autoincrement())
+  workflowId        Int
+  sourceNodeId      Int
+  targetNodeId      Int
+  condition         String?
+  label             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  definition        WorkflowDefinition  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  sourceNode        WorkflowNode         @relation("IncomingEdges", fields: [sourceNodeId], references: [id])
+  targetNode        WorkflowNode         @relation("OutgoingEdges", fields: [targetNodeId], references: [id])
+
+  @@index([workflowId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+model WorkflowInstance {
+  id                Int                  @id @default(autoincrement())
+  workflowId        Int
+  instanceNo        String               @unique
+  title             String
+  category          String
+  status            String               @default("RUNNING")
+  initiatorId       Int
+  initiatorName     String
+  initiatorOrgId    Int
+  initiatorOrgName  String
+  currentStep       String?
+  data              String               @default("{}")
+  initiatedAt       DateTime             @default(now())
+  startTime         DateTime             @default(now())
+  finishedAt        DateTime?
+  endTime           DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+  definition        WorkflowDefinition  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  approvals         WorkflowApproval[]
+  supportRequests   SupportRequest[]
+  laborHourReports  LaborHourReportRequest[]
+  ccRecords         WorkflowCcRecord[]
+
+  @@index([workflowId])
+  @@index([instanceNo])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model WorkflowApproval {
+  id                Int                  @id @default(autoincrement())
+  instanceId        Int
+  instanceNo        String
+  nodeId            Int
+  nodeCode          String
+  nodeName          String
+  step              String
+  approverId        Int
+  approverName      String
+  approvers         String               @default("[]")
+  needAllApprove    Boolean              @default(false)
+  action            String               @default("")
+  status            String               @default("PENDING")
+  comment           String?
+  approvedAt        DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  instance          WorkflowInstance    @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([approverId])
+  @@index([status])
+}
+
+model WorkflowParticipant {
+  id                Int                  @id @default(autoincrement())
+  workflowId        Int
+  nodeId            String
+  participantType   String
+  participantId     Int
+  participantName   String
+  config            String               @default("{}")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([workflowId])
+  @@index([nodeId])
+}
+
+model WorkflowCcRecord {
+  id                Int                  @id @default(autoincrement())
+  instanceId        Int
+  step              String
+  ccUserId          Int
+  ccUserName        String
+  hasRead           Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  instance          WorkflowInstance    @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([ccUserId])
+}
+
+model ParticipantConfig {
+  id                Int                  @id @default(autoincrement())
+  code              String               @unique
+  name              String
+  type              String
+  participants      String               @default("[]")
+  description       String?
+  sortOrder         Int                  @default(0)
+  config            String               @default("{}")
+  status            String               @default("ACTIVE")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([sortOrder])
+}
+
+// ============ Support 模块相关模型 ============
+
+model SupportRequest {
+  id                    Int                  @id @default(autoincrement())
+  requestNo             String               @unique
+  type                  String
+  title                 String
+  description           String
+  priority              String               @default("MEDIUM")
+  status                String               @default("PENDING")
+  requesterId           Int
+  requesterName         String
+  assigneeId            Int?
+  assigneeName          String?
+  instanceId            Int?
+  // 车间支援申请特定字段
+  supportMode           String?              @default("FULL_DAY") // FULL_DAY or TIME_BASED
+  supportEmployeeId     Int?                 // 支援人员ID
+  supportEmployeeName   String?              // 支援人员姓名
+  supportEmployeeNo     String?              // 支援人员工号
+  supportAccountId      Int?                 // 支援地点账户ID
+  supportAccountName    String?              // 支援地点账户名称
+  calculatedHours       Float?               @default(0) // 计算的支援时数
+  startDate             String?              // 开始日期 (整天支援)
+  endDate               String?              // 结束日期 (整天支援)
+  startTime             String?              // 开始时间 (按��段支援)
+  endTime               String?              // 结束时间 (按时段支援)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  deletedAt             DateTime?
+  results               SupportResult[]
+  instance              WorkflowInstance?   @relation(fields: [instanceId], references: [id])
+
+  @@index([status])
+  @@index([requestNo])
+  @@index([requesterId])
+  @@index([deletedAt])
+  @@index([supportEmployeeId])
+  @@index([supportAccountId])
+}
+
+model SupportResult {
+  id                Int                  @id @default(autoincrement())
+  requestId         Int
+  result            String
+  attachments       String               @default("[]")
+  createdBy         Int
+  createdByName     String
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  request           SupportRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+// ============ Production Report 模块相关模型 ============
+
+model ProductionReportRequest {
+  id                Int                  @id @default(autoincrement())
+  requestNo         String               @unique
+  type              String               @default("PRODUCTION")
+  employeeNo        String
+  employeeName      String
+  orgId             Int
+  orgName           String
+  reportDate        DateTime
+  shiftId           Int?
+  shiftName         String?
+  lineId            Int?
+  lineName          String?
+  productId         Int
+  productCode       String
+  productName       String
+  plannedQty        Float
+  actualQty         Float
+  qualifiedQty      Float
+  unqualifiedQty    Float
+  standardHours     Float
+  workHours         Float
+  description       String?
+  status            String               @default("PENDING")
+  requesterId       Int
+  requesterName     String
+  approverId        Int?
+  approverName      String?
+  approvedAt        DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+
+  @@index([status])
+  @@index([requestNo])
+  @@index([employeeNo])
+  @@index([reportDate])
+  @@index([deletedAt])
+}
+
+// ============ 工时报表申请模型 ============
+model LaborHourReportRequest {
+  id                Int                  @id @default(autoincrement())
+  requestNo         String               @unique
+  workflowCode      String               @default("LABOR_HOUR_REPORT")
+  title             String
+  reportDate        DateTime
+  reportMode        String               @default("personal")  // personal, team
+  employeeId        Int?
+  employeeNo        String?
+  employeeName      String?
+  hourType          String
+  hourTypeName      String
+  startTime         String               // 格式: HH:mm
+  endTime           String               // 格式: HH:mm
+  value             Float
+  unit              String               @default("小时")
+  description       String?
+  accountId         Int
+  accountCode        String
+  accountName       String
+  status            String               @default("PENDING")  // PENDING, APPROVED, REJECTED
+  requesterId       Int
+  requesterName     String
+  approverId        Int?
+  approverName      String?
+  approvedAt        DateTime?
+  approvalComment   String?
+  instanceId        Int?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  // 团队报工的员工列表
+  employees         LaborHourReportEmployee[]
+
+  // 关联工作流实例
+  instance          WorkflowInstance?     @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([requestNo])
+  @@index([employeeNo])
+  @@index([reportDate])
+  @@index([reportMode])
+  @@index([instanceId])
+}
+
+// 团队报工员工关联表
+model LaborHourReportEmployee {
+  id                Int                  @id @default(autoincrement())
+  requestId         Int
+  employeeId        Int
+  employeeNo        String
+  employeeName      String
+  createdAt         DateTime             @default(now())
+
+  request           LaborHourReportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([employeeId])
+}
+
+// ============ Account 模块相关模型 ============
+
+model AccountHierarchyConfig {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  level                 Int
+  parentLevelId         Int?
+  parentLevelName       String?
+  mappingType           String?
+  mappingValue          String?
+  dataSourceId          Int?
+  sort                  Int                      @default(0)
+  status                String                   @default("ACTIVE")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  details               AccountHierarchyLevelDetail[]
+}
+
+model AccountHierarchyLevelDetail {
+  id                    Int                      @id @default(autoincrement())
+  configId              Int
+  level                 Int
+  levelName             String
+  levelCode             String?
+  parentLevelId         Int?
+  parentLevelName       String?
+  accountCodePrefix     String?
+  status                String                   @default("ACTIVE")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  config                AccountHierarchyConfig   @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+}
+
+model LaborAccount {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  path                  String
+  namePath              String?
+  accountPath           String?
+  level                 Int
+  parentId              Int?
+  parentPath            String?
+  orgId                 Int?
+  orgName               String?
+  orgPath              String?
+  type                  String?
+  usageType             String?                  @default("PRODUCTION")
+  employeeId            Int?
+  effectiveDate         DateTime?
+  expiryDate            DateTime?
+  hierarchyValues       String                   @default("{}")
+  status                String                   @default("ACTIVE")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  parent                LaborAccount?            @relation("LaborAccountHierarchy", fields: [parentId], references: [id])
+  children              LaborAccount[]           @relation("LaborAccountHierarchy")
+  punchRecords          PunchRecord[]
+  punchPairs            PunchPair[]
+  employeeLinks         EmployeeLaborAccount[]
+  deviceBindings        DeviceAccount[]
+  segments              ShiftSegment[]
+
+  @@index([code])
+  @@index([path])
+  @@index([accountPath])
+  @@index([orgId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([effectiveDate])
+}
+
+// ============ HR 模块相关模型 ============
+
+model EmployeeLaborAccount {
+  id            Int      @id @default(autoincrement())
+  employeeNo    String
+  employeeId    Int?
+  accountId     Int
+  effectiveDate DateTime
+  expiryDate    DateTime?
+  isPrimary     Boolean  @default(false)
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  employee      Employee     @relation(fields: [employeeNo], references: [employeeNo], onDelete: Cascade)
+  account       LaborAccount @relation(fields: [accountId], references: [id])
+
+  @@unique([employeeNo, accountId, effectiveDate])
+  @@index([employeeNo])
+  @@index([accountId])
+  @@index([effectiveDate])
+  @@index([employeeId])
+}
+
+model Process {
+  id          Int      @id @default(autoincrement())
+  name        String
+  code        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  status      String   @default("ACTIVE")
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ============ Punch 模块相关模型 ============
+
+model DeviceAccount {
+  id             Int      @id @default(autoincrement())
+  deviceId       Int
+  accountId      Int
+  effectiveDate  DateTime
+  expiryDate     DateTime?
+  status         String   @default("ACTIVE")
+  path           String?  // 层级code路径，用/分隔，如：COMP/W1/LINE01
+  namePath       String?  // 层级名称路径，用/分隔，如：公司/车间/产线
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  device         PunchDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  account        LaborAccount @relation(fields: [accountId], references: [id])
+
+  @@unique([deviceId, accountId, effectiveDate])
+  @@index([deviceId])
+  @@index([accountId])
+  @@index([effectiveDate])
+  @@index([path])
+  @@index([namePath])
+}
+
+model AttendancePunchPair {
+  id                      Int      @id @default(autoincrement())
+  employeeNo              String
+  employeeName            String?
+  punchDate               DateTime
+  workStartPunches        String?
+  workStartPunchTime      DateTime?
+  workEndPunches          String?
+  workEndPunchTime        DateTime?
+  workStartDeviceId       Int?
+  workEndDeviceId         Int?
+  workStartShiftId        Int?
+  workEndShiftId          Int?
+  workStartShiftName      String?
+  workEndShiftName        String?
+  accountId               Int?
+  ruleGroupId             Int?
+  ruleId                  Int?
+  ruleName                String?
+  ruleType                String?  @default("ATTENDANCE_PAIRING")
+  isContinuousShift       Boolean  @default(false)
+  status                  String   @default("PENDING")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([employeeNo, punchDate])
+  @@index([punchDate])
+  @@index([status])
+  @@index([accountId])
+}
+
+// ============ Amount 模块相关模型 ============
+
+model AmountPolicy {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  policyType            String                   @default("ADD")
+  multiplier            Float?
+  fixedValue            Float?
+  accountPath           String
+  accountPathMatch      String                   @default("EXACT")
+  attendanceCodes       String                   @default("[]")
+  priority              Int                      @default(0)
+  status                String                   @default("ACTIVE")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+
+  @@index([status])
+  @@index([priority])
+  @@index([deletedAt])
+}
+
+model AmountPolicyGroup {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  policyIds             String                   @default("[]")
+  policies              String                   @default("[]")
+  status                String                   @default("ACTIVE")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ============ Attendance Rule Group 模块相关模型 ============
+
+model AttendanceRuleGroup {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  isDefault             Boolean                  @default(false)
+  status                String                   @default("ACTIVE")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  details               AttendanceRuleGroupDetail[]
+  employeeAssignments   EmployeeAttendanceRuleGroup[]
+
+  @@index([status])
+  @@index([isDefault])
+  @@index([deletedAt])
+}
+
+model AttendanceRuleGroupDetail {
+  id                    Int                      @id @default(autoincrement())
+  ruleGroupId           Int
+  ruleName              String
+  attendanceCodeIds     String                   @default("[]")
+  amountPolicyIds       String                   @default("[]")
+  attendancePunchRuleId Int?
+  leanPunchRuleId       Int?
+  sortOrder             Int                      @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  ruleGroup             AttendanceRuleGroup      @relation(fields: [ruleGroupId], references: [id], onDelete: Cascade)
+
+  @@index([ruleGroupId])
+}
+
+model EmployeeAttendanceRuleGroup {
+  id                    Int                      @id @default(autoincrement())
+  employeeNo            String
+  employeeName          String?
+  ruleGroupId           Int
+  ruleGroupName         String?
+  effectiveDate         DateTime
+  expiryDate            DateTime?
+  isCurrent             Boolean                  @default(false)
+  status                String                   @default("ACTIVE")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  ruleGroup             AttendanceRuleGroup      @relation(fields: [ruleGroupId], references: [id])
+
+  @@unique([employeeNo, ruleGroupId, effectiveDate])
+  @@index([employeeNo])
+  @@index([ruleGroupId])
+  @@index([effectiveDate])
+}
+
+// ============ Calculation Attendance Code 模块 ============
+
+model CalculationAttendanceCode {
+  id                         Int                      @id @default(autoincrement())
+  code                       String                   @unique
+  name                       String
+  description                String?
+  type                       String                   @default("LEAN_HOURS")
+  accountLevels              String                   @default("[]")
+  unit                       String                   @default("HOURS")
+  deductMeal                 Boolean                  @default(false)
+  includeOutside             Boolean                  @default(false)
+  onlyOutside                Boolean                  @default(false)
+  showInDetailPage           Boolean                  @default(false)
+  showInAttendancePage       Boolean                  @default(false)
+  calculateHours             Boolean                  @default(true)
+  calculateAmount            Boolean                  @default(false)
+  priority                   Int                      @default(0)
+  color                      String?
+  status                     String                   @default("ACTIVE")
+  definitionAttendanceCode   String?
+  definitionAttendanceCodeId Int?
+  definitionAttendanceCodeStr String?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  calcResults           CalcResult[]
+
+  @@index([status])
+  @@index([priority])
+}
+
+model DefinitionAttendanceCode {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  category              String?
+  type                  String?
+  priority              Int?                     @default(0)
+  unit                  String?                  @default("HOURS")
+  calculateHours        Boolean                  @default(true)
+  deductMealTime        Boolean                  @default(false)
+  color                 String?
+  showInAttendanceCard  Boolean                  @default(false)
+  showInDetailPage      Boolean                  @default(false)
+  calcAttendanceCode    String?
+  calculationAttendanceCode String?
+  definitionAttendanceCode String?
+  status                String                   @default("ACTIVE")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  workHourResults       WorkHourResult[]
+
+  @@index([status])
+  @@index([priority])
+}
+
+// ============ Earned Hours Allocation 模块 ============
+
+model EarnedHoursAllocationConfig {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  configName            String?
+  description           String?
+  orgId                 Int
+  orgPath               String?
+  effectiveStartTime    DateTime
+  effectiveEndTime      DateTime?
+  status                String                   @default("DRAFT")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+  approvedById          Int?
+  approvedByName        String?
+  approvedAt            DateTime?
+  deletedAt             DateTime?
+  rules                 String                   @default("[]")
+  sourceConfig          String?                  @default("{}")
+  results               EarnedHoursAllocationResult[]
+
+  @@index([status])
+  @@index([orgId])
+  @@index([deletedAt])
+  @@index([code])
+}
+
+model EarnedHoursAllocationResult {
+  id                    Int                      @id @default(autoincrement())
+  batchNo               String
+  recordDate            DateTime
+  configId              Int
+  configVersion         Int
+  sourceEmployeeNo      String?
+  sourceEmployeeName    String?
+  sourceAccountId       Int?
+  sourceAccountName     String?
+  targetType            String
+  targetId              Int
+  targetName            String
+  targetAccountId       Int?
+  targetAccountName     String?
+  sourceHours           Float
+  allocatedHours        Float
+  calcResultId          Int?
+  calcTime              DateTime
+  createdAt             DateTime                 @default(now())
+  deletedAt             DateTime?
+  config                EarnedHoursAllocationConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([batchNo])
+  @@index([recordDate])
+  @@index([configId])
+  @@index([sourceEmployeeNo])
+  @@index([calcTime])
+  @@index([deletedAt])
+}
+
+// ============ Employee Coefficient 模块 ============
+
+model EmployeeCoefficient {
+  id                    Int                      @id @default(autoincrement())
+  employeeNo            String
+  employeeName          String?
+  coefficientType       String
+  coefficient           Float
+  effectiveDate         DateTime
+  expiryDate            DateTime?
+  description           String?
+  status                String                   @default("ACTIVE")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+
+  @@unique([employeeNo, coefficientType, effectiveDate])
+  @@index([employeeNo])
+  @@index([coefficientType])
+  @@index([effectiveDate])
+}
+
+// ============ Product Standard Hour By Level 模块 ============
+
+model ProductStandardHourByLevel {
+  id                    Int                      @id @default(autoincrement())
+  productId             Int
+  productName           String
+  accountLevel          String
+  accountPath           String?
+  standardHours         Float
+  quantity              Float?
+  effectiveDate         DateTime
+  expiryDate            DateTime?
+  status                String                   @default("ACTIVE")
+  description           String?
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  deletedAt             DateTime?
+
+  @@index([productId, effectiveDate, expiryDate, status])
+  @@index([accountLevel])
+}
+
+// ============ Work Hour Result 模块 ============
+
+model WorkHourResult {
+  id                    Int                      @id @default(autoincrement())
+  employeeNo            String
+  employeeId            Int?
+  workDate              DateTime
+  calcDate              DateTime?
+  shiftId               Int?
+  shiftName             String?
+  attendanceCodeId      Int?
+  attendanceCode        String?
+  calcAttendanceCode    String?
+  attendanceCodeName    String?
+  workHours             Float                    @default(0)
+  amount                Float?
+  calculateAmount       Float?
+  accountId             Int?
+  accountName           String?
+  accountPath           String?
+  sourceType            String?
+  sourceId              Int?
+  source                String?
+  sourceBatchId         String?
+  attendancePunchPair   Int?
+  customFields          String                   @default("{}")
+  orgId                 Int?
+  definitionAttendanceCodeId Int?
+  definitionAttendanceCodeStr String?
+  startTime             DateTime?
+  endTime               DateTime?
+  status                String                   @default("PENDING")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  definitionAttendanceCode DefinitionAttendanceCode? @relation(fields: [definitionAttendanceCodeId], references: [id])
+
+  @@index([employeeNo, workDate])
+  @@index([workDate])
+  @@index([calcDate])
+  @@index([accountId])
+  @@index([status])
+  @@index([employeeId])
+  @@index([orgId])
+}
+
+// ============ Allocation Work Hour 模块 ============
+
+model AllocationWorkHour {
+  id                    Int                      @id @default(autoincrement())
+  batchNo               String
+  recordDate            DateTime
+  configId              Int
+  sourceEmployeeNo      String?
+  sourceEmployeeName    String?
+  sourceAccountId       Int?
+  sourceAccountName     String?
+  attendanceCodeId      Int?
+  attendanceCode        String?
+  definitionAttendanceCodeId Int?
+  sourceHours           Float
+  targetType            String
+  targetId              Int
+  targetName            String
+  targetAccountId       Int?
+  allocatedHours        Float
+  calcTime              DateTime
+  createdAt             DateTime                 @default(now())
+  deletedAt             DateTime?
+
+  @@index([batchNo])
+  @@index([recordDate])
+  @@index([configId])
+  @@index([sourceEmployeeNo])
+  @@index([calcTime])
+  @@index([deletedAt])
+  @@index([definitionAttendanceCodeId])
+}
+
+// ============ BI Report 模块相关模型 ============
+
+model BiReport {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  category              String?
+  modelId               Int?
+  status                String                   @default("ACTIVE")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  model                 ReportDataModel?         @relation(fields: [modelId], references: [id])
+  widgets               BiReportWidget[]
+  parameters            BiReportParameter[]
+  accessLogs            BiReportAccessLog[]
+
+  @@index([status])
+  @@index([category])
+  @@index([deletedAt])
+  @@index([modelId])
+}
+
+model BiReportWidget {
+  id                    Int                      @id @default(autoincrement())
+  reportId              Int
+  code                  String
+  name                  String
+  description           String?
+  type                  String?
+  title                 String?
+  widgetType            String
+  dataSource            String
+  config                String                   @default("{}")
+  queryConfig           String?                  @default("{}")
+  style                 String?                  @default("{}")
+  position              String                   @default("{}")
+  status                String                   @default("ACTIVE")
+  sortOrder             Int                      @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  report                BiReport                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model BiReportParameter {
+  id                    Int                      @id @default(autoincrement())
+  reportId              Int
+  code                  String
+  name                  String
+  description           String?
+  parameterType         String
+  defaultValue          String?
+  required              Boolean                  @default(false)
+  config                String                   @default("{}")
+  status                String                   @default("ACTIVE")
+  sortOrder             Int                      @default(0)
+  sortNo                Int?                     @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  report                BiReport                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model BiReportAccessLog {
+  id                    Int                      @id @default(autoincrement())
+  reportId              Int
+  userId                Int
+  userName              String?
+  accessType            String
+  accessTime            DateTime                 @default(now())
+  ipAddress             String?
+  userAgent             String?
+  report                BiReport                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([userId])
+  @@index([accessTime])
+}
+
+model ReportDataModel {
+  id                    Int                      @id @default(autoincrement())
+  code                  String                   @unique
+  name                  String
+  description           String?
+  category              String?
+  type                  String?
+  dataSource            String?
+  sourceTable           String?
+  sourceSql             String?
+  status                String                   @default("ACTIVE")
+  createdById           Int
+  createdByName         String
+  createdAt             DateTime                 @default(now())
+  updatedById           Int?
+  updatedByName         String?
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  reports               BiReport[]
+  fields                ReportModelField[]
+  relations             ReportModelRelation[]
+
+  @@index([status])
+  @@index([category])
+  @@index([deletedAt])
+}
+
+model ReportModelField {
+  id                    Int                      @id @default(autoincrement())
+  modelId               Int
+  code                  String
+  name                  String
+  description           String?
+  fieldType             String
+  dataType              String?
+  sourceExpr            String?
+  aggregation           String?
+  sourceTable           String?
+  type                  String?
+  dataSource            String?
+  config                String                   @default("{}")
+  status                String                   @default("ACTIVE")
+  sortOrder             Int                      @default(0)
+  sortNo                Int?                     @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  model                 ReportDataModel          @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model ReportModelRelation {
+  id                    Int                      @id @default(autoincrement())
+  modelId               Int
+  relationCode          String
+  relationName          String
+  description           String?
+  relationType          String
+  targetModel           String
+  joinCondition         String?
+  config                String                   @default("{}")
+  status                String                   @default("ACTIVE")
+  sortOrder             Int                      @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  deletedAt             DateTime?
+  model                 ReportDataModel          @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId])
+  @@index([status])
+  @@index([deletedAt])
 }

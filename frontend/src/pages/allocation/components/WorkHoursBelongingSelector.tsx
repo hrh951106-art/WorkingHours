@@ -24,11 +24,14 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
 }) => {
   const [selections, setSelections] = useState<HierarchyValue[]>([]);
 
-  // 获取层级配置列表
+  // 获取层级配置列表（包含明细数据）
   const { data: hierarchyLevels } = useQuery({
-    queryKey: ['accountHierarchyLevels'],
+    queryKey: ['accountHierarchyLevelsWithDetails'],
     queryFn: () =>
-      request.get('/account/hierarchy-config/levels').then((res: any) => res || []),
+      request.get('/account/hierarchy-config/levels/with-details').then((res: any) => {
+        console.log('层级配置数据（含明细）:', res);
+        return res || [];
+      }),
   });
 
   // 获取组织树
@@ -161,7 +164,30 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
       levelName: level.name,
       mappingType: level.mappingType,
       mappingValue: level.mappingValue,
+      hasDetails: !!level.details,
+      detailsCount: level.details?.length || 0,
+      dataSourceId: level.dataSourceId,
     });
+
+    // 优先使用层级明细数据（后端返回的是 details 字段）
+    if (level.details && level.details.length > 0) {
+      const options = level.details
+        .filter((detail: any) => detail.status === 'ACTIVE')
+        .map((detail: any) => ({
+          id: detail.id,
+          name: detail.levelName,
+          code: detail.levelCode,
+          value: detail.id,
+          label: detail.levelName,
+        }));
+
+      console.log('从层级明细获取的选项:', options);
+      return options;
+    }
+
+    // 如果没有层级明细数据，显示警告并尝试使用原逻辑
+    console.warn(`层级"${level.name}"的明细数据为空，请检查是否已刷新层级数据`);
+    console.warn('尝试使用原逻辑获取数据...');
 
     let options: any[] = [];
 
@@ -205,7 +231,7 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
       index === self.findIndex((t) => t.value === opt.value)
     );
 
-    console.log('最终选项:', uniqueOptions);
+    console.log('原逻辑获取的选项:', uniqueOptions);
 
     return uniqueOptions;
   };

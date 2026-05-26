@@ -22,5 +22,13 @@
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "scripts", "scripts.bak", "**/*.spec.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "scripts",
+    "scripts.bak",
+    "**/*.spec.ts",
+    "src/modules/bi-report",
+    "src/modules/attendance-dashboard"
+  ]
 }

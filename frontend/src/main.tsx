@@ -24,7 +24,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       theme={{
         token: {
           // 主色调 - 使用现代绿色
-          colorPrimary: '#22B970',
+          colorPrimary: '#00B365',
           colorPrimaryHover: '#1ea864',
           colorPrimaryActive: '#178c52',
           colorSuccess: '#10b981',
@@ -68,7 +68,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           },
           Menu: {
             darkItemBg: '#1e293b',
-            darkItemSelectedBg: '#22B970',
+            darkItemSelectedBg: '#00B365',
             darkItemHoverBg: 'rgba(255, 255, 255, 0.2)',
           },
           Card: {
@@ -83,11 +83,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           Input: {
             colorBgContainer: '#ffffff',
             colorBorder: '#e2e8f0',
-            hoverBorderColor: '#22B970',
-            activeBorderColor: '#22B970',
+            hoverBorderColor: '#00B365',
+            activeBorderColor: '#00B365',
           },
           Button: {
-            colorPrimary: '#22B970',
+            colorPrimary: '#00B365',
             colorPrimaryHover: '#1ea864',
             colorPrimaryActive: '#178c52',
             primaryShadow: '0 2px 0 rgba(0, 0, 0, 0.045)',

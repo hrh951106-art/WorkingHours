@@ -336,8 +336,16 @@ export class AllocationService {
       this.prisma.lineShift.count({ where }),
     ]);
 
+    // 转换数据，添加产线账户字段
+    const transformedItems = items.map((item: any) => ({
+      ...item,
+      // 将劳动力账户信息映射到产线账户字段
+      lineAccountId: item.accountId,
+      lineAccountName: item.accountName,
+    }));
+
     return {
-      items,
+      items: transformedItems,
       total,
       page: +page,
       pageSize: +pageSize,
@@ -346,7 +354,7 @@ export class AllocationService {
   }
 
   async createLineShift(dto: any) {
-    const { orgId, orgName, shiftId, shiftName, scheduleDate, startTime, endTime, plannedProducts, participateInAllocation, description } = dto;
+    const { orgId, orgName, accountId, accountName, accountPath, shiftId, shiftName, scheduleDate, startTime, endTime, plannedProducts, participateInAllocation, description } = dto;
 
     const existing = await this.prisma.lineShift.findFirst({
       where: {
@@ -365,6 +373,8 @@ export class AllocationService {
       data: {
         orgId,
         orgName,
+        accountId: accountId || null,
+        accountName: accountName || null,
         shiftId,
         shiftName,
         scheduleDate: new Date(scheduleDate),
@@ -436,13 +446,6 @@ export class AllocationService {
         skip,
         take: +pageSize,
         orderBy: { recordDate: 'desc' },
-        include: {
-          product: {
-            select: {
-              conversionFactor: true,
-            },
-          },
-        },
       }),
       this.prisma.productionRecord.count({ where }),
     ]);
@@ -450,8 +453,8 @@ export class AllocationService {
     // 添加计算字段
     const itemsWithCalculations = items.map((item: any) => ({
       ...item,
-      conversionFactor: item.product?.conversionFactor || 1.0,
-      convertedQty: (item.actualQty || 0) * (item.product?.conversionFactor || 1.0),
+      conversionFactor: 1.0,
+      convertedQty: item.actualQty || 0,
     }));
 
     return {
@@ -478,18 +481,18 @@ export class AllocationService {
   async createProductionRecord(dto: any) {
     const { recordDate, orgId, orgName, lineId, lineName, shiftId, shiftName, productId, productCode, productName, plannedQty, actualQty, qualifiedQty, unqualifiedQty, standardHours, workHours, source, recorderId, recorderName, description } = dto;
 
+    // 检查唯一性：劳动力账户 + 日期 + 班次
     const existing = await this.prisma.productionRecord.findFirst({
       where: {
         recordDate: new Date(recordDate),
         orgId,
         shiftId,
-        productId,
         deletedAt: null,
       },
     });
 
     if (existing) {
-      throw new BadRequestException('该组织该班次该产品的产量记录已存在');
+      throw new BadRequestException('该劳动力账户在该日期和班次的产量记录已存在');
     }
 
     const totalStdHours = (actualQty || 0) * (standardHours || 0);
@@ -1440,11 +1443,11 @@ export class AllocationService {
    * 获取可用的出勤代码列表
    */
   async getAttendanceCodesForAllocation() {
-    const attendanceCodes = await this.prisma.attendanceCode.findMany({
+    const attendanceCodes = await this.prisma.definitionAttendanceCode.findMany({
       where: {
         status: 'ACTIVE',
       },
-      orderBy: [{ type: 'asc' }, { priority: 'desc' }],
+      orderBy: [{ id: 'asc' }],
     });
 
     return attendanceCodes;
@@ -1536,40 +1539,59 @@ export class AllocationService {
     console.log(`  - 账户筛选: ${JSON.stringify(accountFilter)}`);
     console.log(`  - 出勤代码: ${JSON.stringify(attendanceCodes)}`);
 
-    // 获取出勤代码映射
-    const attendanceCodeMap = await this.prisma.attendanceCode.findMany({
+    // 获取出勤代码映射（从DefinitionAttendanceCode表查询）
+    const attendanceCodeMap = await this.prisma.definitionAttendanceCode.findMany({
       where: { code: { in: attendanceCodes } },
     });
     const attendanceCodeIds = attendanceCodeMap.map((ac) => ac.id);
 
     console.log(`[分摊计算] 找到 ${attendanceCodeIds.length} 个出勤代码，IDs: ${attendanceCodeIds.join(', ')}`);
 
-    // 获取通用配置
-    const generalConfig = await this.prisma.allocationGeneralConfig.findFirst();
-    if (!generalConfig || !generalConfig.actualHoursAllocationCode || !generalConfig.indirectHoursAllocationCode) {
-      console.error(`[分摊计算] 通用配置未设置，generalConfig:`, generalConfig);
-      throw new BadRequestException('请先配置通用配置中的直接工时和间接工时代码');
+    // ✅ 从SystemConfig获取实际工时代码配置
+    const actualHoursConfig = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'actualHoursAllocationCode' }
+    });
+
+    if (!actualHoursConfig || !actualHoursConfig.configValue) {
+      console.error(`[分摊计算] 未找到���际工时代码配置（actualHoursAllocationCode）`);
+      throw new BadRequestException('请先在系统配置中设置实际工时代码（actualHoursAllocationCode）');
     }
 
-    console.log(`[分摊计算] 通用配置 - 直接工时代码: ${generalConfig.actualHoursAllocationCode}, 间接工时代码: ${generalConfig.indirectHoursAllocationCode}`);
+    console.log(`[分摊计算] 实际工时代码配置 - 出勤代码: ${actualHoursConfig.configValue}`);
 
-    // 获取直接工时出勤代码
-    const actualHoursCode = await this.prisma.attendanceCode.findUnique({
-      where: { code: generalConfig.actualHoursAllocationCode },
+    // 获取直接工时出勤代码（从DefinitionAttendanceCode表查询）
+    const actualHoursCode = await this.prisma.definitionAttendanceCode.findFirst({
+      where: { code: actualHoursConfig.configValue },
     });
     if (!actualHoursCode) {
-      console.error(`[分摊计算] 未找到直接工时出勤代码: ${generalConfig.actualHoursAllocationCode}`);
-      throw new BadRequestException(`未找到直接工时出勤代码: ${generalConfig.actualHoursAllocationCode}`);
+      console.error(`[分摊计算] 未找到直接工时出勤代码: ${actualHoursConfig.configValue}`);
+      throw new BadRequestException(`未找到直接工时出勤代码: ${actualHoursConfig.configValue}`);
     }
 
-    // 获取间接工时出勤代码
-    const indirectHoursCode = await this.prisma.attendanceCode.findUnique({
-      where: { code: generalConfig.indirectHoursAllocationCode },
+    console.log(`[分摊计算] 直接工时出勤代码ID: ${actualHoursCode.id}`);
+
+    // 获取间接工时出勤代码（从DefinitionAttendanceCode表查询）
+    // ✅ 从SystemConfig获取间接工时代码配置
+    const indirectHoursConfig = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'indirectHoursAllocationCode' }
+    });
+
+    if (!indirectHoursConfig || !indirectHoursConfig.configValue) {
+      console.error(`[分摊计算] 未找到间接工时代码配置（indirectHoursAllocationCode）`);
+      throw new BadRequestException('请先在系统配置中设置间接工时代码（indirectHoursAllocationCode）');
+    }
+
+    console.log(`[分摊计算] 间接工时代码配置 - 出勤代码: ${indirectHoursConfig.configValue}`);
+
+    const indirectHoursCode = await this.prisma.definitionAttendanceCode.findFirst({
+      where: { code: indirectHoursConfig.configValue },
     });
     if (!indirectHoursCode) {
-      console.error(`[分摊计算] 未找到间接工时出勤代码: ${generalConfig.indirectHoursAllocationCode}`);
-      throw new BadRequestException(`未找到间接工时出勤代码: ${generalConfig.indirectHoursAllocationCode}`);
+      console.error(`[分摊计算] 未找到间接工时出勤代码: ${indirectHoursConfig.configValue}`);
+      throw new BadRequestException(`未找到间接工时出勤代码: ${indirectHoursConfig.configValue}`);
     }
+
+    console.log(`[分摊计算] 间接工时出勤代码ID: ${indirectHoursCode.id}`);
 
     // 查询待分摊的工时记录
     console.log(`[分摊计算] 开始查询待分摊的工时记录...`);
@@ -1606,6 +1628,7 @@ export class AllocationService {
       calcTime,
       actualHoursAttendanceCodeId: actualHoursCode.id,
       indirectHoursAttendanceCodeId: indirectHoursCode.id,
+      indirectHoursAttendanceCodeStr: indirectHoursCode.code,
       executeById: executeById || 0,
       executeByName: executeByName || 'System',
     });
@@ -1648,6 +1671,7 @@ export class AllocationService {
       calcTime,
       actualHoursAttendanceCodeId,
       indirectHoursAttendanceCodeId,
+      indirectHoursAttendanceCodeStr,
       executeById,
       executeByName,
     } = params;
@@ -1680,25 +1704,26 @@ export class AllocationService {
 
     console.log(`[分摊计算] 清理分摊结果: 删除 ${deletedAllocationResults.count} 条 AllocationResult 记录`);
 
-    // 2. 删除旧的间接工时记录（CalcResult）
+    // 2. 删除旧的间接工时记录（WorkHourResult）
     // 这些记录的特征：
     // - calcDate 在指定日期范围内
-    // - attendanceCodeId 是间接工时的出勤代码ID
-    // - accountId 是分摊目标账户（产线、车间等）
-    // - status 是 'PENDING'（分摊产生的记录）
-    const deletedCalcResults = await this.prisma.calcResult.deleteMany({
+    // - definitionAttendanceCodeId 是间接工时的出勤代码ID
+    // - source 是 3（分摊产生的工时）
+    // - sourceType 是 'ALLOCATION'
+    const deletedWorkHourResults = await this.prisma.workHourResult.deleteMany({
       where: {
         calcDate: { in: dateObjects },
-        attendanceCodeId: indirectHoursAttendanceCodeId,
-        status: 'PENDING', // 只删除分摊产生的记录，不影响其他记录
+        definitionAttendanceCodeId: indirectHoursAttendanceCodeId,
+        source: '3', // 只删除分摊产生的记录
+        sourceType: 'ALLOCATION',
         // 注意：这里不筛选 accountId，因为不同分摊配置可能有不同的目标账户
-        // 但只要是间接工时出勤代码 + PENDING状态 + 指定日期，就是分摊产生的记录
+        // 但只要是间接工时出勤代码 + source=3 + 指定日期，就是分摊产生的记录
       },
     });
 
-    console.log(`[分摊计算] 清理间接工时记录: 删除 ${deletedCalcResults.count} 条 CalcResult 记录`);
+    console.log(`[分摊计算] 清理间接工时记录: 删除 ${deletedWorkHourResults.count} 条 WorkHourResult 记录`);
 
-    const totalDeleted = deletedAllocationResults.count + deletedCalcResults.count;
+    const totalDeleted = deletedAllocationResults.count + deletedWorkHourResults.count;
     console.log(`[分摊计算] 清理完成: 共删除 ${totalDeleted} 条旧记录（分摊结果 + 间接工时）`);
 
     if (totalDeleted > 0) {
@@ -1715,8 +1740,8 @@ export class AllocationService {
       // 获取当天所有班次所开的产线（只包含参与分摊的）
       const activeLines = await this.getActiveLinesForDate(calcDate);
 
-      // 获取产线到车间的映射（通过组织的parentId）
-      const lineToWorkshop = await this.getLineToWorkshopMapping(activeLines);
+      // ✅ 获取产线到劳动力账户的映射（直接使用账户路径匹配）
+      const lineToAccountPath = await this.getLineToAccountPathMapping(activeLines);
 
       // 先汇总：按员工和出勤代码汇总工时
       const aggregatedResults = this.aggregateCalcResultsByEmployeeAndCode(dailyResults);
@@ -1736,6 +1761,19 @@ export class AllocationService {
 
         // 对每个分摊规则进行分摊
         for (const rule of config.rules) {
+          // ✅ 检查规则的出勤代码过滤是否匹配
+          const ruleAttendanceCodeIds = JSON.parse(rule.allocationAttendanceCodes || '[]');
+          if (ruleAttendanceCodeIds.length > 0) {
+            // 检查当前工时记录的 definitionAttendanceCodeId 是否在规则配置的ID列表中
+            if (!aggregatedResult.definitionAttendanceCodeId ||
+                !ruleAttendanceCodeIds.includes(aggregatedResult.definitionAttendanceCodeId)) {
+              console.log(`[分摊计算] 规则 ${rule.ruleName} 的出勤代码过滤不匹配 ` +
+                          `(工时代码ID: ${aggregatedResult.definitionAttendanceCodeId}, ` +
+                          `规则配置: [${ruleAttendanceCodeIds.join(', ')}])，跳过该记录`);
+              continue;
+            }
+          }
+
           // 根据分摊依据类型进行分摊
           if (rule.allocationBasis === 'ACTUAL_HOURS') {
             // 按实际工时比例分摊
@@ -1748,9 +1786,10 @@ export class AllocationService {
               shiftId: aggregatedResult.shiftId,
               shiftName: aggregatedResult.shiftName,
               shiftLines,
-              lineToWorkshop,
+              lineToAccountPath,
               actualHoursAttendanceCodeId,
               indirectHoursAttendanceCodeId,
+              indirectHoursAttendanceCodeStr,
               calcTime,
               executeById,
               executeByName,
@@ -1767,8 +1806,9 @@ export class AllocationService {
               shiftId: aggregatedResult.shiftId,
               shiftName: aggregatedResult.shiftName,
               shiftLines,
-              lineToWorkshop,
+              lineToAccountPath,
               indirectHoursAttendanceCodeId,
+              indirectHoursAttendanceCodeStr,
               calcTime,
               executeById,
               executeByName,
@@ -1786,8 +1826,9 @@ export class AllocationService {
               shiftId: aggregatedResult.shiftId,
               shiftName: aggregatedResult.shiftName,
               shiftLines,
-              lineToWorkshop,
+              lineToAccountPath,
               indirectHoursAttendanceCodeId,
+              indirectHoursAttendanceCodeStr,
               calcTime,
               executeById,
               executeByName,
@@ -1804,8 +1845,9 @@ export class AllocationService {
               shiftId: aggregatedResult.shiftId,
               shiftName: aggregatedResult.shiftName,
               shiftLines,
-              lineToWorkshop,
+              lineToAccountPath,
               indirectHoursAttendanceCodeId,
+              indirectHoursAttendanceCodeStr,
               calcTime,
               executeById,
               executeByName,
@@ -1828,6 +1870,9 @@ export class AllocationService {
   /**
    * 按实际工时比例分摊
    */
+  /**
+   * 按实际工时比例分摊
+   */
   private async executeActualHoursAllocation(params: any): Promise<number> {
     const {
       batchNo,
@@ -1837,10 +1882,9 @@ export class AllocationService {
       calcDate,
       shiftId,
       shiftName,
-      shiftLines,
-      lineToWorkshop,
       actualHoursAttendanceCodeId,
       indirectHoursAttendanceCodeId,
+      indirectHoursAttendanceCodeStr,
       calcTime,
       executeById,
       executeByName,
@@ -1848,152 +1892,247 @@ export class AllocationService {
 
     let resultCount = 0;
 
-    // 获取当天所有班次的直接工时数据（按产线汇总）
-    const directHoursByLine = await this.getDirectHoursByLine({
+    console.log(`\n[分摊计算] 开始按实际工时分摊`);
+    console.log(`  规则ID: ${rule.id}`);
+    console.log(`  分摊依据: ${rule.allocationBasis}`);
+    console.log(`  分摊范围ID: ${rule.allocationScopeId}`);
+
+    // ✅ 步骤1: 从待分摊数据的 accountPath 中提取分摊范围层级的值
+    if (!calcResult.accountPath) {
+      console.log(`❌ 待分摊数据没有 accountPath，跳过分摊`);
+      return 0;
+    }
+
+    const sourceAccountPath = calcResult.accountPath;
+    const pathParts = sourceAccountPath.split('/');
+    console.log(`  源账户路径: ${sourceAccountPath}`);
+    console.log(`  路径分段: [${pathParts.join(', ')}]`);
+
+    // 获取分摊范围配置，确定层级索引
+    // allocationScopeId 指向 Organization 表，代表某个层级的组织
+    // 我们需要根据这个组织的层级来确定 accountPath 中的索引
+    const scopeOrg = await this.prisma.organization.findUnique({
+      where: { id: rule.allocationScopeId },
+      select: { id: true, code: true, name: true, type: true, parentId: true }
+    });
+
+    if (!scopeOrg) {
+      console.log(`❌ 分摊范围配置不存在 (ID=${rule.allocationScopeId})，跳过分摊`);
+      return 0;
+    }
+
+    console.log(`  分摊范围组织: ${scopeOrg.name} (代码: ${scopeOrg.code}, 类型: ${scopeOrg.type})`);
+
+    // 根据组织��型确定层级索引
+    // 账户路径结构: DH/DH01/DH01001/A01/-/FULL_TIME/FINANCE
+    // 索引0: DH(工厂), 索引1: DH01(车间), 索引2: DH01001(产线), 索引3: A01(产品)
+    const typeLevelMap: Record<string, number> = {
+      '02': 0, // 工厂
+      '03': 1, // 车间
+      '04': 2, // 产线
+    };
+
+    const scopeLevelIndex = typeLevelMap[scopeOrg.type];
+    if (scopeLevelIndex === undefined) {
+      console.log(`❌ 未知的组织类型: ${scopeOrg.type}，跳过分摊`);
+      return 0;
+    }
+
+    const scopeValue = pathParts[scopeLevelIndex];
+    console.log(`  分摊范围层级: ${scopeLevelIndex} (类型${scopeOrg.type})`);
+    console.log(`  提取的层级值: ${scopeValue}`);
+
+    // ✅ 步骤2: 用日期+班次匹配开线计划表
+    console.log(`\n[分摊计算] 步骤2: 匹配开线计划表`);
+    console.log(`  匹配条件: 日期=${calcDate.toISOString().split('T')[0]}, 班次ID=${shiftId}`);
+
+    const lineShifts = await this.prisma.lineShift.findMany({
+      where: {
+        scheduleDate: calcDate,
+        shiftId: shiftId,
+      }
+    });
+
+    console.log(`  找到 ${lineShifts.length} 条开线计划记录`);
+
+    if (lineShifts.length === 0) {
+      console.log(`❌ 没有找到匹配的开线计划记录，跳过分摊`);
+      return 0;
+    }
+
+    // ✅ 步骤3: 从开线记录的 accountPath 中提取分摊目标值
+    console.log(`\n[分摊计算] 步骤3: 从开线计划提取分摊目标`);
+
+    // 获取WH1001配置，确定开线计划产线对应的劳动力账户层级
+    const wh1001Config = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'WH1001' }
+    });
+
+    if (!wh1001Config) {
+      console.log(`❌ 未找到WH1001配置，无法确定开线计划产线层级`);
+      return 0;
+    }
+
+    const lineShiftLevelIndex = parseInt(wh1001Config.configValue) - 1; // WH1001的值是3，表示第3层（索引2）
+    console.log(`  WH1001配置值: ${wh1001Config.configValue} (层级索引: ${lineShiftLevelIndex})`);
+
+    // 使用Map存储分摊目标，key为分摊目标值（从accountPath提取的层级值）
+    const matchedTargetsMap = new Map<string, {
+      lineShiftId: number;
+      orgId: number;
+      orgName: string;
+      accountId: number | null;
+      targetValue: string; // 从accountPath提取的层级值，作为分摊目标
+    }>();
+
+    for (const lineShift of lineShifts) {
+      console.log(`\n  开线记录 ID=${lineShift.id}:`);
+      console.log(`    组织ID: ${lineShift.orgId}`);
+      console.log(`    账户ID: ${lineShift.accountId || 'N/A'}`);
+
+      let targetValue: string | null = null;
+      let lineScopeValue: string | null = null; // 产线所属的车间值
+
+      if (lineShift.accountId) {
+        // 从劳动力账户路径中提取WH1001配置的层级值作为分摊目标
+        const account = await this.prisma.laborAccount.findUnique({
+          where: { id: lineShift.accountId },
+          select: { path: true, namePath: true }
+        });
+
+        if (account && account.path) {
+          const accountParts = account.path.split('/');
+          targetValue = accountParts[lineShiftLevelIndex]; // 产线层级值（如DH01001）
+          lineScopeValue = accountParts[scopeLevelIndex]; // 车间层级值（如DH01）
+          console.log(`    账户路径: ${account.path}`);
+          console.log(`    提取的分摊目标值 (层级${lineShiftLevelIndex}): ${targetValue}`);
+          console.log(`    提取的车间值 (层级${scopeLevelIndex}): ${lineScopeValue}`);
+        }
+      }
+
+      // ✅ 关键修改：只添加车间值匹配的产线作为分摊目标
+      if (targetValue && lineScopeValue === scopeValue) {
+        if (!matchedTargetsMap.has(targetValue)) {
+          // 获取组织名称
+          const org = await this.prisma.organization.findUnique({
+            where: { id: lineShift.orgId },
+            select: { name: true }
+          });
+
+          matchedTargetsMap.set(targetValue, {
+            lineShiftId: lineShift.id,
+            orgId: lineShift.orgId,
+            orgName: org?.name || 'N/A',
+            accountId: lineShift.accountId,
+            targetValue: targetValue
+          });
+          console.log(`    ✅ 添加分摊目标: ${targetValue} (车间值匹配: ${lineScopeValue} === ${scopeValue})`);
+        }
+      } else if (targetValue) {
+        console.log(`    ❌ 跳过: 车间值不匹配 (产线车间: ${lineScopeValue}, 待分摊数据车间: ${scopeValue})`);
+      }
+    }
+
+    // 将Map转为数组
+    const matchedTargets = Array.from(matchedTargetsMap.values());
+
+    console.log(`\n[分摊计算] 步骤4: 确定分摊目标`);
+    console.log(`  共匹配到 ${matchedTargets.length} 个分摊目标`);
+
+    if (matchedTargets.length === 0) {
+      console.log(`❌ 没有匹配的分摊目标，跳过分摊`);
+      return 0;
+    }
+
+    matchedTargets.forEach((target, index) => {
+      console.log(`  目标${index + 1}: 目标值=${target.targetValue}, 组织ID=${target.orgId}, 名称=${target.orgName}`);
+    });
+
+    // ✅ 步骤5: 获取当天所有班次的直接工时数据（按分摊目标值汇总）
+    const directHoursByTarget = await this.getDirectHoursByTarget({
       calcDate,
       actualHoursAttendanceCodeId,
+      targetLevelIndex: lineShiftLevelIndex,
     });
 
-    // 获取分摊范围配置
-    let allocationScopeConfig: any = null;
-    let allocationScopeLevel = 1; // 默认为工厂级别
+    // ✅ 步骤6: 计算分摊范围的总直接工时（按分摊目标值汇总）
+    let scopeDirectHours = 0;
 
-    if (rule.allocationScopeId) {
-      allocationScopeConfig = await this.prisma.accountHierarchyConfig.findUnique({
-        where: { id: rule.allocationScopeId },
-      });
-      allocationScopeLevel = allocationScopeConfig?.level || 1;
+    for (const target of matchedTargets) {
+      // 使用分摊目标值（从accountPath提取的层级值）来查询直接工时
+      const targetDirectHours = directHoursByTarget[target.targetValue] || 0;
+      scopeDirectHours += targetDirectHours;
+      console.log(`  目标值=${target.targetValue}: 直接工时=${targetDirectHours}`);
     }
 
-    // 确定源账户所属的层级（工厂、车间或产线）
-    let sourceScopeId: number | null = null;
-
-    if (calcResult.accountId) {
-      // 通过账户ID获取层级信息
-      const sourceAccount = await this.prisma.laborAccount.findUnique({
-        where: { id: calcResult.accountId },
-      });
-
-      if (sourceAccount) {
-        // 尝试从hierarchyValues中获取对应层级的ID
-        try {
-          const hierarchyValues = JSON.parse(sourceAccount.hierarchyValues || '[]');
-
-          // hierarchyValues是一个数组，根据分摊范围的level来查找对应层级
-          if (Array.isArray(hierarchyValues)) {
-            // 根据分摊范围的level确定对应的levelId: 1=工厂(28), 2=车间(29), 3=线体(30)
-            const targetLevelId = allocationScopeLevel === 1 ? 28 : allocationScopeLevel === 2 ? 29 : 30;
-
-            const scopeLevel = hierarchyValues.find((hv: any) => hv.levelId === targetLevelId);
-            if (scopeLevel && scopeLevel.selectedValue && scopeLevel.selectedValue.id) {
-              sourceScopeId = scopeLevel.selectedValue.id;
-              console.log(`从hierarchyValues解析出层级ID (${allocationScopeConfig?.name || '层级'}): ${sourceScopeId}`);
-            } else {
-              console.log(`未找到levelId=${targetLevelId}的层级配置，hierarchyValues:`, hierarchyValues.map(hv => ({ levelId: hv.levelId, name: hv.name })));
-            }
-          }
-        } catch (e) {
-          // 解析失败
-          console.log(`解析hierarchyValues失败: ${e}`);
-        }
-      }
-    }
-
-    if (!sourceScopeId) {
-      console.log(`无法确定源账户 ${calcResult.accountName} 所属的${allocationScopeConfig?.name || '层级'}，跳过分摊`);
-      return 0;
-    }
-
-    console.log(`源账户: ${calcResult.accountName}，所属${allocationScopeConfig?.name || '层级'}ID: ${sourceScopeId}`);
-
-    // 根据分摊范围配置获取映射
-    let lineToScope: Record<number, number>;
-    let scopeName = '层级';
-
-    if (rule.allocationScopeId) {
-      // 使用配置的层级
-      scopeName = allocationScopeConfig?.name || '层级';
-      lineToScope = await this.getLineToHierarchyMapping(shiftLines, rule.allocationScopeId);
-    } else {
-      // 默认使用车间级别
-      lineToScope = lineToWorkshop;
-      scopeName = '车间';
-    }
-
-    // 过滤shiftLines，只保留属于源账户所在层级的产线
-    const filteredShiftLines = shiftLines.filter((lineShift: any) => {
-      if (!lineShift.orgId) return false;
-      const lineScopeId = lineToScope[lineShift.orgId];
-      return lineScopeId === sourceScopeId;
-    });
-
-    console.log(`原始产线数: ${shiftLines.length}，过滤后产线数: ${filteredShiftLines.length}`);
-
-    if (filteredShiftLines.length === 0) {
-      console.log(`没有找到属于${allocationScopeConfig?.name || '工厂'} ${sourceScopeId} 的产线，跳过分摊`);
-      return 0;
-    }
-
-    // 计算分摊范围的总工时（只计算有直接工时的产线，且只统计当前班次）
-    const scopeTotalHours: Record<string, number> = {};
-    for (const key in directHoursByLine) {
-      const [lineId, shiftId] = key.split('-').map(Number);
-      const scopeId = lineToScope[lineId];
-      // 只统计属于源层级的产线，并且只统计当前班次的数据
-      if (scopeId === sourceScopeId && shiftId === params.shiftId) {
-        const scopeKey = `${scopeId}-${shiftId}`;
-        if (!scopeTotalHours[scopeKey]) {
-          scopeTotalHours[scopeKey] = 0;
-        }
-        scopeTotalHours[scopeKey] += directHoursByLine[key];
-      }
-    }
-
-    const scopeDirectHours = scopeTotalHours[`${sourceScopeId}-${params.shiftId}`] || 0;
+    console.log(`\n[分摊计算] 分摊范围总直接工时: ${scopeDirectHours}`);
 
     if (scopeDirectHours === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${params.shiftName} 的直接工时为0，跳过分摊`);
+      console.log(`❌ 分摊范围的直接工时为0，无法按比例分摊，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${params.shiftName} 的总直接工时: ${scopeDirectHours}`);
+    // ✅ 步骤7: 对每个分摊目标进行分摊
+    console.log(`\n[分摊计算] 步骤7: 执行分摊`);
+    console.log(`  待分摊工时: ${calcResult.workHours}`);
 
-    // 解析分配归属层级
-    const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
+    for (const target of matchedTargets) {
+      // 使用分摊目标值（从accountPath提取的层级值）来获取直接工时
+      const targetDirectHours = directHoursByTarget[target.targetValue] || 0;
 
-    // 对每条产线进行分摊（只分摊到有直接工时的产线）
-    for (const lineShift of filteredShiftLines) {
-      // 检查产线是否在分配归属层级中
-      if (!this.isLineInHierarchyLevels(lineShift, allocationHierarchyLevels)) {
-        continue;
-      }
+      console.log(`\n  目标: ${target.orgName} (目标值: ${target.targetValue})`);
+      console.log(`    直接工时: ${targetDirectHours}`);
 
-      // 获取产线的间接设备账户
-      const targetAccount = await this.getLineIndirectAccount(lineShift);
-
-      if (!targetAccount) {
-        console.log(`线体 ${lineShift.orgName} 没有找到间接设备账户，跳过`);
-        continue;
-      }
-
-      // 计算分摊 - 使用当前班次的直接工时数据
-      const lineDirectHoursKey = `${lineShift.orgId}-${shiftId}`;
-      const lineDirectHours = directHoursByLine[lineDirectHoursKey] || 0;
-
-      // 如果产线当前班次没有直接工时，跳过
-      if (lineDirectHours === 0) {
-        console.log(`线体 ${lineShift.orgName} 班次 ${shiftName} 没有直接工时，跳过分摊`);
+      // 如果该目标没有直接工时，跳过
+      if (targetDirectHours === 0) {
+        console.log(`    ⚠️  该目标没有直接工时，跳过`);
         continue;
       }
 
       // 计算分摊系数和分摊工时
-      const allocationRatio = lineDirectHours / scopeDirectHours;
-      const allocatedHours = calcResult.actualHours * allocationRatio;
+      const allocationRatio = targetDirectHours / scopeDirectHours;
+      const allocatedHours = calcResult.workHours * allocationRatio;
 
-      console.log(`线体 ${lineShift.orgName} 班次 ${shiftName}: 直接工时=${lineDirectHours}, 系数=${allocationRatio.toFixed(4)}, 分摊工时=${allocatedHours.toFixed(2)}`);
+      console.log(`    分摊系数: ${allocationRatio.toFixed(4)}`);
+      console.log(`    分摊工时: ${allocatedHours.toFixed(2)}`);
 
       // 只保存有效的分摊结果
       if (allocatedHours > 0) {
+        // 获取间接设备账户
+        let targetAccountId: number | null = null;
+        let targetAccountName: string | null = null;
+        let targetAccountPath: string | null = null;
+
+        if (target.accountId) {
+          targetAccountId = target.accountId;
+          const account = await this.prisma.laborAccount.findUnique({
+            where: { id: target.accountId },
+            select: { name: true, path: true }
+          });
+          targetAccountName = account?.name || null;
+          targetAccountPath = account?.path || null;
+        } else {
+          // 如果没有配置账户，创建间接设备账户（传递源账户信息进行逐层合并）
+          const indirectAccount = await this.getLineIndirectAccount(
+            {
+              orgId: target.orgId,
+              orgName: target.orgName
+            },
+            calcResult.accountPath,
+            calcResult.accountId
+          );
+          if (indirectAccount) {
+            targetAccountId = indirectAccount.id;
+            targetAccountName = indirectAccount.name;
+            targetAccountPath = indirectAccount.path;
+          }
+        }
+
+        if (!targetAccountId) {
+          console.log(`    ❌ 无法确定目标账户，跳过`);
+          continue;
+        }
+
         // 创建分摊结果记录
         await this.prisma.allocationResult.create({
           data: {
@@ -2004,18 +2143,18 @@ export class AllocationService {
             configVersion: config.version,
             ruleId: rule.id,
             sourceEmployeeNo: calcResult.employeeNo,
-            sourceEmployeeName: calcResult.employee.name,
+            sourceEmployeeName: calcResult.employee?.name || 'N/A',
             sourceAccountId: calcResult.accountId,
-            sourceAccountName: calcResult.accountName,
+            sourceAccountName: calcResult.accountName || 'N/A',
             attendanceCodeId: calcResult.attendanceCodeId,
-            attendanceCode: calcResult.attendanceCode,
-            sourceHours: calcResult.actualHours,
-            targetType: 'LINE',
-            targetId: lineShift.orgId,
-            targetName: lineShift.orgName,
-            targetAccountId: targetAccount.id,
+            attendanceCode: calcResult.attendanceCode || 'N/A',
+            sourceHours: calcResult.workHours,
+            targetType: 'ORGANIZATION',
+            targetId: target.orgId,
+            targetName: target.orgName,
+            targetAccountId: targetAccountId,
             allocationBasis: rule.allocationBasis,
-            basisValue: lineDirectHours,
+            basisValue: targetDirectHours,
             weightValue: scopeDirectHours,
             allocationRatio,
             allocatedHours,
@@ -2023,42 +2162,32 @@ export class AllocationService {
           },
         });
 
-        // 创建分摊后的工时记录（CalcResult）
-        // 将分摊的工时记录到产线的间接工时账户中
-        await this.prisma.calcResult.create({
-          data: {
-            employeeNo: calcResult.employeeNo,
-            calcDate: calcDate,
-            shiftId: shiftId,
-            shiftName: shiftName,
-            attendanceCodeId: indirectHoursAttendanceCodeId,
-            standardHours: 0, // 间接工时没有标准工时
-            actualHours: allocatedHours,
-            overtimeHours: 0,
-            leaveHours: 0,
-            absenceHours: 0,
-            accountHours: JSON.stringify([{
-              accountId: targetAccount.id,
-              accountName: targetAccount.name,
-              hours: allocatedHours,
-            }]),
-            accountId: targetAccount.id,
-            accountName: targetAccount.name,
-            exceptions: '[]',
-            status: 'PENDING',
-          },
+        // 创建分摊后的工时记录（WorkHourResult）
+        await this.createOrUpdateAllocationWorkHour({
+          employeeNo: calcResult.employeeNo,
+          calcDate: calcDate,
+          shiftId: shiftId,
+          shiftName: shiftName,
+          definitionAttendanceCodeId: indirectHoursAttendanceCodeId,
+          definitionAttendanceCodeStr: indirectHoursAttendanceCodeStr,
+          workHours: allocatedHours,
+          accountId: targetAccountId,
+          accountName: targetAccountName || 'N/A',
+          accountPath: targetAccountPath,
+          ruleId: rule.id,
+          batchNo: batchNo,
         });
 
         resultCount++;
+        console.log(`    ✅ 分摊成功`);
       }
     }
+
+    console.log(`\n[分摊计算] 完成，共生成 ${resultCount} 条分摊结果`);
 
     return resultCount;
   }
 
-  /**
-   * 按实际产量比例分摊
-   */
   private async executeActualYieldAllocation(params: any): Promise<number> {
     const {
       batchNo,
@@ -2069,8 +2198,9 @@ export class AllocationService {
       shiftId,
       shiftName,
       shiftLines,
-      lineToWorkshop,
+      lineToAccountPath,
       indirectHoursAttendanceCodeId,
+      indirectHoursAttendanceCodeStr,
       calcTime,
       executeById,
       executeByName,
@@ -2078,114 +2208,127 @@ export class AllocationService {
 
     let resultCount = 0;
 
-    // 获取分摊范围配置
-    let allocationScopeConfig: any = null;
-    let allocationScopeLevel = 1; // 默认为工厂级别
-
-    if (rule.allocationScopeId) {
-      allocationScopeConfig = await this.prisma.accountHierarchyConfig.findUnique({
-        where: { id: rule.allocationScopeId },
-      });
-      allocationScopeLevel = allocationScopeConfig?.level || 1;
-    }
-
-    // 确定源账户所属的层级（工厂、车间或产线）
-    let sourceScopeId: number | null = null;
+    // ✅ 获取源账户的路径
+    let sourceAccountPath: string | null = null;
 
     if (calcResult.accountId) {
-      // 通过账户ID获取层级信息
       const sourceAccount = await this.prisma.laborAccount.findUnique({
         where: { id: calcResult.accountId },
+        select: { id: true, name: true, path: true, namePath: true },
       });
 
       if (sourceAccount) {
-        // 尝试从hierarchyValues中获取对应层级的ID
-        try {
-          const hierarchyValues = JSON.parse(sourceAccount.hierarchyValues || '[]');
-
-          // hierarchyValues是一个数组，根据分摊范围的level来查找对应层级
-          if (Array.isArray(hierarchyValues)) {
-            // 根据分摊范围的level确定对应的levelId: 1=工厂(28), 2=车间(29), 3=线体(30)
-            const targetLevelId = allocationScopeLevel === 1 ? 28 : allocationScopeLevel === 2 ? 29 : 30;
-
-            const scopeLevel = hierarchyValues.find((hv: any) => hv.levelId === targetLevelId);
-            if (scopeLevel && scopeLevel.selectedValue && scopeLevel.selectedValue.id) {
-              sourceScopeId = scopeLevel.selectedValue.id;
-              console.log(`从hierarchyValues解析出层级ID (${allocationScopeConfig?.name || '层级'}): ${sourceScopeId}`);
-            } else {
-              console.log(`未找到levelId=${targetLevelId}的层级配置，hierarchyValues:`, hierarchyValues.map(hv => ({ levelId: hv.levelId, name: hv.name })));
-            }
-          }
-        } catch (e) {
-          // 解析失败
-          console.log(`解析hierarchyValues失败: ${e}`);
-        }
+        sourceAccountPath = sourceAccount.path;
+        console.log(`源账户: ${sourceAccount.namePath} (path: ${sourceAccount.path})`);
       }
     }
 
-    if (!sourceScopeId) {
-      console.log(`无法确定源账户 ${calcResult.accountName} 所属的${allocationScopeConfig?.name || '层级'}，跳过分摊`);
+    if (!sourceAccountPath) {
+      console.log(`无法确定源账户路径，跳过分摊`);
       return 0;
     }
 
-    console.log(`源账户: ${calcResult.accountName}，所属${allocationScopeConfig?.name || '层级'}ID: ${sourceScopeId}`);
+    // ✅ 使用层级值精确匹配，而不是路径前缀匹配
+    console.log(`[分摊计算] 开始过滤产线，源账户路径: ${sourceAccountPath}`);
+    console.log(`[分摊计算] shiftLines数量: ${shiftLines.length}`);
 
-    // 获取当天各产线的实际产量数据
-    const productionByLine = await this.getProductionByLine({
-      calcDate,
-    });
-
-    // 根据分摊范围配置获取映射
-    let lineToScope: Record<number, number>;
-    let scopeName = '层级';
-
-    if (rule.allocationScopeId) {
-      // 使用配置的层级
-      scopeName = allocationScopeConfig?.name || '层级';
-      lineToScope = await this.getLineToHierarchyMapping(shiftLines, rule.allocationScopeId);
-    } else {
-      // 默认使用车间级别
-      lineToScope = lineToWorkshop;
-      scopeName = '车间';
+    // 第一步：从源账户路径中提取车间层级的值
+    // 路径格式：工厂/车间/产线/产品/工序
+    // 示例：DH/DH01///  → 提取车间层级 → DH01
+    const pathParts = sourceAccountPath.split('/').filter(p => p !== '');
+    if (pathParts.length < 2) {
+      console.log(`[分摊计算] 源账户路径格式错误，无法提取车间层级: ${sourceAccountPath}`);
+      return 0;
     }
 
-    // 过滤shiftLines，只保留属于源账户所在层级的产线
-    const filteredShiftLines = shiftLines.filter((lineShift: any) => {
-      if (!lineShift.orgId) return false;
-      const lineScopeId = lineToScope[lineShift.orgId];
-      return lineScopeId === sourceScopeId;
+    const workshopCode = pathParts[1]; // 第2层是车间层级
+    console.log(`[分摊计算] 从源账户路径提取车间层级值: ${workshopCode}`);
+
+    // 第二步：在Organization表中查找车间组织
+    const workshopOrg = await this.prisma.organization.findFirst({
+      where: { code: workshopCode },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+      },
     });
 
-    console.log(`原始产线数: ${shiftLines.length}，过滤后产线数: ${filteredShiftLines.length}`);
+    if (!workshopOrg) {
+      console.log(`[分摊计算] 未找到编码为${workshopCode}的车间组织`);
+      return 0;
+    }
+
+    console.log(`[分摊计算] 找到车间组织: ID=${workshopOrg.id}, code=${workshopOrg.code}, name=${workshopOrg.name}`);
+
+    // 第三步：获取该车间的所有产线组织（parentId=workshopOrg.id）
+    const lineOrgs = await this.prisma.organization.findMany({
+      where: { parentId: workshopOrg.id },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+      },
+    });
+
+    if (lineOrgs.length === 0) {
+      console.log(`[分摊计算] 车间${workshopOrg.name}下没有找到产线组织`);
+      return 0;
+    }
+
+    const lineOrgIds = lineOrgs.map(org => org.id);
+    console.log(`[分摊计算] 找到${lineOrgs.length}个产线组织: IDs=${lineOrgIds.join(', ')}`);
+    lineOrgs.forEach(org => {
+      console.log(`  - ID=${org.id}, code=${org.code}, name=${org.name}`);
+    });
+
+    // 第四步：过滤shiftLines，只保留orgId在lineOrgIds列表中的产线
+    const filteredShiftLines = shiftLines.filter((lineShift: any) => {
+      const isMatch = lineOrgIds.includes(lineShift.orgId);
+      if (!isMatch) {
+        console.log(`  产线 ${lineShift.orgName} (orgId=${lineShift.orgId}) 不在分摊范围内，跳过`);
+      }
+      return isMatch;
+    });
+
+    console.log(`[分摊计算] 过滤后产线数: ${filteredShiftLines.length}`);
 
     if (filteredShiftLines.length === 0) {
-      console.log(`没有找到属于车间 ${sourceScopeId} 的产线，跳过分摊`);
+      console.log(`没有找到在分摊范围内的产线，跳过分摊`);
       return 0;
     }
 
-    // 计算分摊范围的总产量（只计算属于源车间的产线）
+    // ✅ 获取当天各产线的实际产量（使用劳动力账户code路径匹配）
+    const productionByLine = await this.getProductionByLine({
+      calcDate,
+      lineOrgs, // 传递产线组织列表
+      productionLineHierarchyLevel: await this.getProductionLineHierarchyLevel(),
+    });
+
+    // ✅ 计算分摊范围的总产量（只计算filteredShiftLines中的产线）
     const scopeTotalProduction: Record<string, number> = {};
+
     for (const key in productionByLine) {
       const [lineId, shiftId] = key.split('-').map(Number);
-      const scopeId = lineToScope[lineId];
-      // 只统计属于源车间的产线
-      if (scopeId === sourceScopeId) {
-        const scopeKey = `${scopeId}-${shiftId}`;
-        if (!scopeTotalProduction[scopeKey]) {
-          scopeTotalProduction[scopeKey] = 0;
+      // 只统计在分摊范围内的产线（orgId在lineOrgIds中），并且只统计当前班次的数据
+      const lineShift = filteredShiftLines.find(ls => ls.orgId === lineId);
+      if (lineShift && shiftId === params.shiftId) {
+        if (!scopeTotalProduction['total']) {
+          scopeTotalProduction['total'] = 0;
         }
-        scopeTotalProduction[scopeKey] += productionByLine[key];
+        scopeTotalProduction['total'] += productionByLine[key];
       }
     }
-
-    const scopeProduction = scopeTotalProduction[`${sourceScopeId}-${shiftId}`] || 0;
+    const scopeProduction = scopeTotalProduction['total'] || 0;
 
     if (scopeProduction === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的实际产量为0，跳过分摊`);
+      console.log(`账户路径 ${sourceAccountPath} 班次 ${params.shiftName} 的实际产量为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的总实际产量: ${scopeProduction}`);
+    console.log(`账户路径 ${sourceAccountPath} 班次 ${params.shiftName} 的总实际产量: ${scopeProduction}`);
 
     // 解析分配归属层级
     const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
@@ -2197,8 +2340,8 @@ export class AllocationService {
         continue;
       }
 
-      // 获取产线的间接设备账户
-      const targetAccount = await this.getLineIndirectAccount(lineShift);
+      // 获取产线的间接设备账户（传递源账户信息进行逐层合并）
+      const targetAccount = await this.getLineIndirectAccount(lineShift, sourceAccountPath, calcResult.accountId);
 
       if (!targetAccount) {
         console.log(`线体 ${lineShift.orgName} 没有找到间接设备账户，跳过`);
@@ -2230,11 +2373,11 @@ export class AllocationService {
             configVersion: config.version,
             ruleId: rule.id,
             sourceEmployeeNo: calcResult.employeeNo,
-            sourceEmployeeName: calcResult.employee.name,
+            sourceEmployeeName: calcResult.employeeName || calcResult.employee?.name || 'N/A',
             sourceAccountId: calcResult.accountId,
             sourceAccountName: calcResult.accountName,
             attendanceCodeId: calcResult.attendanceCodeId,
-            attendanceCode: calcResult.attendanceCode,
+            attendanceCode: calcResult.attendanceCode || calcResult.definitionAttendanceCodeStr,
             sourceHours: calcResult.actualHours,
             targetType: 'LINE',
             targetId: lineShift.orgId,
@@ -2249,30 +2392,21 @@ export class AllocationService {
           },
         });
 
-        // 创建分摊后的工时记录（CalcResult）
+        // 创建分摊后的工时记录（WorkHourResult）
         // 将分摊的工时记录到产线的间接工时账户中
-        await this.prisma.calcResult.create({
-          data: {
-            employeeNo: calcResult.employeeNo,
-            calcDate: calcDate,
-            shiftId: shiftId,
-            shiftName: shiftName,
-            attendanceCodeId: indirectHoursAttendanceCodeId,
-            standardHours: 0, // 间接工时没有标准工时
-            actualHours: allocatedHours,
-            overtimeHours: 0,
-            leaveHours: 0,
-            absenceHours: 0,
-            accountHours: JSON.stringify([{
-              accountId: targetAccount.id,
-              accountName: targetAccount.name,
-              hours: allocatedHours,
-            }]),
-            accountId: targetAccount.id,
-            accountName: targetAccount.name,
-            exceptions: '[]',
-            status: 'PENDING',
-          },
+        await this.createOrUpdateAllocationWorkHour({
+          employeeNo: calcResult.employeeNo,
+          calcDate: calcDate,
+          shiftId: shiftId,
+          shiftName: shiftName,
+          definitionAttendanceCodeId: indirectHoursAttendanceCodeId,
+          definitionAttendanceCodeStr: indirectHoursAttendanceCodeStr,
+          workHours: allocatedHours,
+          accountId: targetAccount.id,
+          accountName: targetAccount.name,
+          accountPath: targetAccount.path,
+          ruleId: rule.id,
+          batchNo: batchNo,
         });
 
         resultCount++;
@@ -2295,8 +2429,9 @@ export class AllocationService {
       shiftId,
       shiftName,
       shiftLines,
-      lineToWorkshop,
+      lineToAccountPath,
       indirectHoursAttendanceCodeId,
+      indirectHoursAttendanceCodeStr,
       calcTime,
       executeById,
       executeByName,
@@ -2304,114 +2439,78 @@ export class AllocationService {
 
     let resultCount = 0;
 
-    // 获取分摊范围配置
-    let allocationScopeConfig: any = null;
-    let allocationScopeLevel = 1; // 默认为工厂级别
-
-    if (rule.allocationScopeId) {
-      allocationScopeConfig = await this.prisma.accountHierarchyConfig.findUnique({
-        where: { id: rule.allocationScopeId },
-      });
-      allocationScopeLevel = allocationScopeConfig?.level || 1;
-    }
-
-    // 确定源账户所属的层级（工厂、车间或产线）
-    let sourceScopeId: number | null = null;
+    // ✅ 获取源账户的路径
+    let sourceAccountPath: string | null = null;
 
     if (calcResult.accountId) {
-      // 通过账户ID获取层级信息
       const sourceAccount = await this.prisma.laborAccount.findUnique({
         where: { id: calcResult.accountId },
+        select: { id: true, name: true, path: true, namePath: true },
       });
 
       if (sourceAccount) {
-        // 尝试从hierarchyValues中获取对应层级的ID
-        try {
-          const hierarchyValues = JSON.parse(sourceAccount.hierarchyValues || '[]');
-
-          // hierarchyValues是一个数组，根据分摊范围的level来查找对应层级
-          if (Array.isArray(hierarchyValues)) {
-            // 根据分摊范围的level确定对应的levelId: 1=工厂(28), 2=车间(29), 3=线体(30)
-            const targetLevelId = allocationScopeLevel === 1 ? 28 : allocationScopeLevel === 2 ? 29 : 30;
-
-            const scopeLevel = hierarchyValues.find((hv: any) => hv.levelId === targetLevelId);
-            if (scopeLevel && scopeLevel.selectedValue && scopeLevel.selectedValue.id) {
-              sourceScopeId = scopeLevel.selectedValue.id;
-              console.log(`从hierarchyValues解析出层级ID (${allocationScopeConfig?.name || '层级'}): ${sourceScopeId}`);
-            } else {
-              console.log(`未找到levelId=${targetLevelId}的层级配置，hierarchyValues:`, hierarchyValues.map(hv => ({ levelId: hv.levelId, name: hv.name })));
-            }
-          }
-        } catch (e) {
-          // 解析失败
-          console.log(`解析hierarchyValues失败: ${e}`);
-        }
+        sourceAccountPath = sourceAccount.path;
+        console.log(`源账户: ${sourceAccount.namePath} (path: ${sourceAccount.path})`);
       }
     }
 
-    if (!sourceScopeId) {
-      console.log(`无法确定源账户 ${calcResult.accountName} 所属的${allocationScopeConfig?.name || '层级'}，跳过分摊`);
+    if (!sourceAccountPath) {
+      console.log(`无法确定源账户路径，跳过分摊`);
       return 0;
     }
-
-    console.log(`源账户: ${calcResult.accountName}，所属${allocationScopeConfig?.name || '层级'}ID: ${sourceScopeId}`);
 
     // 获取当天各产线的标准产量数据（实际产量 × 转换系数）
     const equivalentProductionByLine = await this.getEquivalentProductionByLine({
       calcDate,
     });
 
-    // 根据分摊范围配置获取映射
-    let lineToScope: Record<number, number>;
-    let scopeName = '层级';
+    // ✅ 过滤shiftLines：只保留账户路径包含源账户路径的产线
+    console.log(`[分摊��算] 开始过滤产线，源账户路径: ${sourceAccountPath}`);
+    console.log(`[分摊计算] shiftLines:`, shiftLines.map((l: any) => ({ id: l.id, orgId: l.orgId, orgName: l.orgName })));
 
-    if (rule.allocationScopeId) {
-      // 使用配置的层级
-      scopeName = allocationScopeConfig?.name || '层级';
-      lineToScope = await this.getLineToHierarchyMapping(shiftLines, rule.allocationScopeId);
-    } else {
-      // 默认使用车间级别
-      lineToScope = lineToWorkshop;
-      scopeName = '车间';
-    }
-
-    // 过滤shiftLines，只保留属于源账户所在层级的产线
     const filteredShiftLines = shiftLines.filter((lineShift: any) => {
-      if (!lineShift.orgId) return false;
-      const lineScopeId = lineToScope[lineShift.orgId];
-      return lineScopeId === sourceScopeId;
+      const lineAccountPath = lineToAccountPath[lineShift.orgId];
+      if (!lineAccountPath) {
+        console.log(`  产线 ${lineShift.orgName} (orgId=${lineShift.orgId}) 没有找到账户路径，跳过`);
+        return false;
+      }
+
+      // TODO: 实现新的层级值匹配逻辑
+      const isContained = false; // 暂时返回false，等实现新逻辑后再修改
+      console.log(`  产线 ${lineShift.orgName} (orgId=${lineShift.orgId}): 账户路径=${lineAccountPath}, 是否包含源路径=${isContained}`);
+
+      return isContained;
     });
 
     console.log(`原始产线数: ${shiftLines.length}，过滤后产线数: ${filteredShiftLines.length}`);
 
     if (filteredShiftLines.length === 0) {
-      console.log(`没有找到属于${allocationScopeConfig?.name || '工厂'} ${sourceScopeId} 的产线，跳过分摊`);
+      console.log(`没有找到账户路径包含 ${sourceAccountPath} 的产线，跳过分摊`);
       return 0;
     }
 
-    // 计算分摊范围的总标准产量（只计算属于源层级的产线）
+    // ✅ 计算分摊范围的总标准产量（只计算filteredShiftLines中的产线）
     const scopeTotalEquivalentProduction: Record<string, number> = {};
     for (const key in equivalentProductionByLine) {
       const [lineId, shiftId] = key.split('-').map(Number);
-      const scopeId = lineToScope[lineId];
-      // 只统计属于源层级的产线
-      if (scopeId === sourceScopeId) {
-        const scopeKey = `${scopeId}-${shiftId}`;
-        if (!scopeTotalEquivalentProduction[scopeKey]) {
-          scopeTotalEquivalentProduction[scopeKey] = 0;
+      const lineAccountPath = lineToAccountPath[lineId];
+      // 只统计账户路径包含源账户路径的产线，并且只统计当前班次的数据
+      if (false) { // TODO: 实现新的层级值匹配逻辑
+        if (!scopeTotalEquivalentProduction['total']) {
+          scopeTotalEquivalentProduction['total'] = 0;
         }
-        scopeTotalEquivalentProduction[scopeKey] += equivalentProductionByLine[key];
+        scopeTotalEquivalentProduction['total'] += equivalentProductionByLine[key];
       }
     }
 
-    const scopeEquivalentProduction = scopeTotalEquivalentProduction[`${sourceScopeId}-${shiftId}`] || 0;
+    const scopeEquivalentProduction = scopeTotalEquivalentProduction['total'] || 0;
 
     if (scopeEquivalentProduction === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的标准产量为0，跳过分摊`);
+      console.log(`账户路径 ${sourceAccountPath} 班次 ${params.shiftName} 的标准产量为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的总标准产量: ${scopeEquivalentProduction}`);
+    console.log(`账户路径 ${sourceAccountPath} 班次 ${params.shiftName} 的总标准产量: ${scopeEquivalentProduction}`);
 
     // 解析分配归属层级
     const allocationHierarchyLevels = JSON.parse(rule.allocationHierarchyLevels || '[]');
@@ -2423,8 +2522,8 @@ export class AllocationService {
         continue;
       }
 
-      // 获取产线的间接设备账户
-      const targetAccount = await this.getLineIndirectAccount(lineShift);
+      // 获取产线的间接设备账户（传递源账户信息进行逐层合并）
+      const targetAccount = await this.getLineIndirectAccount(lineShift, sourceAccountPath, calcResult.accountId);
 
       if (!targetAccount) {
         console.log(`线体 ${lineShift.orgName} 没有找到间接设备账户，跳过`);
@@ -2456,11 +2555,11 @@ export class AllocationService {
             configVersion: config.version,
             ruleId: rule.id,
             sourceEmployeeNo: calcResult.employeeNo,
-            sourceEmployeeName: calcResult.employee.name,
+            sourceEmployeeName: calcResult.employeeName || calcResult.employee?.name || 'N/A',
             sourceAccountId: calcResult.accountId,
             sourceAccountName: calcResult.accountName,
             attendanceCodeId: calcResult.attendanceCodeId,
-            attendanceCode: calcResult.attendanceCode,
+            attendanceCode: calcResult.attendanceCode || calcResult.definitionAttendanceCodeStr,
             sourceHours: calcResult.actualHours,
             targetType: 'LINE',
             targetId: lineShift.orgId,
@@ -2475,30 +2574,21 @@ export class AllocationService {
           },
         });
 
-        // 创建分摊后的工时记录（CalcResult）
+        // 创建分摊后的工时记录（WorkHourResult）
         // 将分摊的工时记录到产线的间接工时账户中
-        await this.prisma.calcResult.create({
-          data: {
-            employeeNo: calcResult.employeeNo,
-            calcDate: calcDate,
-            shiftId: shiftId,
-            shiftName: shiftName,
-            attendanceCodeId: indirectHoursAttendanceCodeId,
-            standardHours: 0, // 间接工时没有标准工时
-            actualHours: allocatedHours,
-            overtimeHours: 0,
-            leaveHours: 0,
-            absenceHours: 0,
-            accountHours: JSON.stringify([{
-              accountId: targetAccount.id,
-              accountName: targetAccount.name,
-              hours: allocatedHours,
-            }]),
-            accountId: targetAccount.id,
-            accountName: targetAccount.name,
-            exceptions: '[]',
-            status: 'PENDING',
-          },
+        await this.createOrUpdateAllocationWorkHour({
+          employeeNo: calcResult.employeeNo,
+          calcDate: calcDate,
+          shiftId: shiftId,
+          shiftName: shiftName,
+          definitionAttendanceCodeId: indirectHoursAttendanceCodeId,
+          definitionAttendanceCodeStr: indirectHoursAttendanceCodeStr,
+          workHours: allocatedHours,
+          accountId: targetAccount.id,
+          accountName: targetAccount.name,
+          accountPath: targetAccount.path,
+          ruleId: rule.id,
+          batchNo: batchNo,
         });
 
         resultCount++;
@@ -2521,8 +2611,9 @@ export class AllocationService {
       shiftId,
       shiftName,
       shiftLines,
-      lineToWorkshop,
+      lineToAccountPath,
       indirectHoursAttendanceCodeId,
+      indirectHoursAttendanceCodeStr,
       calcTime,
       executeById,
       executeByName,
@@ -2530,82 +2621,66 @@ export class AllocationService {
 
     let resultCount = 0;
 
-    // 获取分摊范围配置
-    let allocationScopeConfig: any = null;
-    let allocationScopeLevel = 1; // 默认为工厂级别
-
-    if (rule.allocationScopeId) {
-      allocationScopeConfig = await this.prisma.accountHierarchyConfig.findUnique({
-        where: { id: rule.allocationScopeId },
-      });
-      allocationScopeLevel = allocationScopeConfig?.level || 1;
-    }
-
-    // 确定源账户所属的层级（工厂、车间或产线）
-    let sourceScopeId: number | null = null;
+    // ✅ 获取源账户的路径
+    let sourceAccountPath: string | null = null;
 
     if (calcResult.accountId) {
-      // 通过账户ID获取层级信息
       const sourceAccount = await this.prisma.laborAccount.findUnique({
         where: { id: calcResult.accountId },
+        select: { id: true, name: true, path: true, namePath: true },
       });
 
       if (sourceAccount) {
-        // 尝试从hierarchyValues中获取对应层级的ID
-        try {
-          const hierarchyValues = JSON.parse(sourceAccount.hierarchyValues || '[]');
-
-          // hierarchyValues是一个数组，根据分摊范围的level来查找对应层级
-          if (Array.isArray(hierarchyValues)) {
-            // 根据分摊范围的level确定对应的levelId: 1=工厂(28), 2=车间(29), 3=线体(30)
-            const targetLevelId = allocationScopeLevel === 1 ? 28 : allocationScopeLevel === 2 ? 29 : 30;
-
-            const scopeLevel = hierarchyValues.find((hv: any) => hv.levelId === targetLevelId);
-            if (scopeLevel && scopeLevel.selectedValue && scopeLevel.selectedValue.id) {
-              sourceScopeId = scopeLevel.selectedValue.id;
-              console.log(`从hierarchyValues解析出层级ID (${allocationScopeConfig?.name || '层级'}): ${sourceScopeId}`);
-            } else {
-              console.log(`未找到levelId=${targetLevelId}的层级配置，hierarchyValues:`, hierarchyValues.map(hv => ({ levelId: hv.levelId, name: hv.name })));
-            }
-          }
-        } catch (e) {
-          // 解析失败
-          console.log(`解析hierarchyValues失败: ${e}`);
-        }
+        sourceAccountPath = sourceAccount.path;
+        console.log(`源账户: ${sourceAccount.namePath} (path: ${sourceAccount.path})`);
       }
     }
 
-    if (!sourceScopeId) {
-      console.log(`无法确定源账户 ${calcResult.accountName} 所属的${allocationScopeConfig?.name || '层级'}，跳过分摊`);
+    if (!sourceAccountPath) {
+      console.log(`无法确定源账户路径，跳过分摊`);
       return 0;
     }
-
-    console.log(`源账户: ${calcResult.accountName}，所属${allocationScopeConfig?.name || '层级'}ID: ${sourceScopeId}`);
 
     // 获取当天各产线的标准工时数据（实际产量 × 产品标准工时）
     const standardHoursByLine = await this.getStandardHoursByLine({
       calcDate,
     });
 
-    // 根据分摊范围配置获取映射
-    let lineToScope: Record<number, number>;
-    let scopeName = '层级';
+    // ✅ 过滤shiftLines：只保留账户路径包含源账户路径的产线
+    console.log(`[分摊计算] 开始过滤产线，源账户路径: ${sourceAccountPath}`);
+    console.log(`[分摊计算] shiftLines:`, shiftLines.map((l: any) => ({ id: l.id, orgId: l.orgId, orgName: l.orgName })));
 
-    if (rule.allocationScopeId) {
-      // 使用配置的层级
-      scopeName = allocationScopeConfig?.name || '层级';
-      lineToScope = await this.getLineToHierarchyMapping(shiftLines, rule.allocationScopeId);
-    } else {
-      // 默认使用车间级别
-      lineToScope = lineToWorkshop;
-      scopeName = '车间';
-    }
-
-    // 过滤shiftLines，只保留属于源账户所在层级的产线
+    // ✅ 修复路径匹配逻辑：正确处理层级账户路径
+    // 源账户路径可能是：DH/DH01/// (车间层级，///表示空层级)
+    // 产线路径可能是：DH/DH01/DH01001// (产线层级)
+    // 需要检查产线是否在源账户的范围内
     const filteredShiftLines = shiftLines.filter((lineShift: any) => {
-      if (!lineShift.orgId) return false;
-      const lineScopeId = lineToScope[lineShift.orgId];
-      return lineScopeId === sourceScopeId;
+      const lineAccountPath = lineToAccountPath[lineShift.orgId];
+      if (!lineAccountPath) {
+        console.log(`  产线 ${lineShift.orgName} (orgId=${lineShift.orgId}) 没有找到账户路径，跳过`);
+        return false;
+      }
+
+      // ✅ 路径包含关系判断：
+      // 1. 如果源路径末尾全是///（如 DH/DH01///），去掉末尾的空层级
+      // 2. 检查产线路径是否以处理后的源路径开头
+      let effectiveSourcePath = sourceAccountPath;
+
+      // 去掉末尾的连续斜杠（空层级）
+      while (effectiveSourcePath.endsWith('/')) {
+        effectiveSourcePath = effectiveSourcePath.slice(0, -1);
+      }
+
+      // 如果源路径不是以/结尾，添加/以确保匹配前缀
+      if (!effectiveSourcePath.endsWith('/')) {
+        effectiveSourcePath += '/';
+      }
+
+      const isContained = lineAccountPath.startsWith(effectiveSourcePath);
+
+      console.log(`  产线 ${lineShift.orgName} (orgId=${lineShift.orgId}): 账户路径=${lineAccountPath}, 源路径=${sourceAccountPath}, 有效源路径=${effectiveSourcePath}, 是否包含=${isContained}`);
+
+      return isContained;
     });
 
     console.log(`原始产线数: ${shiftLines.length}，过滤后产线数: ${filteredShiftLines.length}`);
@@ -2617,40 +2692,39 @@ export class AllocationService {
     }
 
     if (filteredShiftLines.length === 0) {
-      console.log(`没有找到属于${allocationScopeConfig?.name || '工厂'} ${sourceScopeId} 的产线，跳过分摊`);
+      console.log(`没有找到账户路径包含 ${sourceAccountPath} 的产线，跳过分摊`);
       return 0;
     }
 
-    // 计算分摊范围的总标准工时（只计算属于源层级的产线）
+    // ✅ 计算分摊范围的总标准工时（只计算filteredShiftLines中的产线）
     const scopeTotalStandardHours: Record<string, number> = {};
     for (const key in standardHoursByLine) {
       const [lineId, shiftId] = key.split('-').map(Number);
-      const scopeId = lineToScope[lineId];
-      // 只统计属于源层级的产线
-      if (scopeId === sourceScopeId) {
-        const scopeKey = `${scopeId}-${shiftId}`;
-        if (!scopeTotalStandardHours[scopeKey]) {
-          scopeTotalStandardHours[scopeKey] = 0;
+      const lineAccountPath = lineToAccountPath[lineId];
+      // 只统计账户路径包含源账户路径的产线，并且只统计当前班次的数据
+      if (false) { // TODO: 实现新的层级值匹配逻辑
+        if (!scopeTotalStandardHours['total']) {
+          scopeTotalStandardHours['total'] = 0;
         }
-        scopeTotalStandardHours[scopeKey] += standardHoursByLine[key];
+        scopeTotalStandardHours['total'] += standardHoursByLine[key];
       }
     }
 
-    const scopeStandardHours = scopeTotalStandardHours[`${sourceScopeId}-${shiftId}`] || 0;
+    const scopeStandardHours = scopeTotalStandardHours['total'] || 0;
 
     if (scopeStandardHours === 0) {
-      console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的标准工时为0，跳过分摊`);
+      console.log(`账户路径 ${sourceAccountPath} 班次 ${params.shiftName} 的标准工时为0，跳过分摊`);
       return 0;
     }
 
-    console.log(`车间 ${sourceScopeId} 班次 ${shiftName} 的总标准工时: ${scopeStandardHours}`);
+    console.log(`账户路径 ${sourceAccountPath} 班次 ${params.shiftName} 的总标准工时: ${scopeStandardHours}`);
 
     // 输出所有标准工时数据用于调试
     console.log(`[executeStandardHoursAllocation] 所有标准工时数据:`);
     for (const key in standardHoursByLine) {
       const [lineId, shiftId] = key.split('-').map(Number);
-      const scopeId = lineToScope[lineId];
-      console.log(`  产线 ${lineId} (车间 ${scopeId}) 班次 ${shiftId}: ${standardHoursByLine[key]}`);
+      const lineAccountPath = lineToAccountPath[lineId];
+      console.log(`  产线 ${lineId} (账户路径: ${lineAccountPath || 'N/A'}) 班次 ${shiftId}: ${standardHoursByLine[key]}`);
     }
 
     // 解析分配归属层级
@@ -2663,8 +2737,8 @@ export class AllocationService {
         continue;
       }
 
-      // 获取产线的间接设备账户
-      const targetAccount = await this.getLineIndirectAccount(lineShift);
+      // 获取产线的间接设备账户（传递源账户信息进行逐层合并）
+      const targetAccount = await this.getLineIndirectAccount(lineShift, sourceAccountPath, calcResult.accountId);
 
       if (!targetAccount) {
         console.log(`线体 ${lineShift.orgName} 没有找到间接设备账户，跳过`);
@@ -2696,11 +2770,11 @@ export class AllocationService {
             configVersion: config.version,
             ruleId: rule.id,
             sourceEmployeeNo: calcResult.employeeNo,
-            sourceEmployeeName: calcResult.employee.name,
+            sourceEmployeeName: calcResult.employeeName || calcResult.employee?.name || 'N/A',
             sourceAccountId: calcResult.accountId,
             sourceAccountName: calcResult.accountName,
             attendanceCodeId: calcResult.attendanceCodeId,
-            attendanceCode: calcResult.attendanceCode,
+            attendanceCode: calcResult.attendanceCode || calcResult.definitionAttendanceCodeStr,
             sourceHours: calcResult.actualHours,
             targetType: 'LINE',
             targetId: lineShift.orgId,
@@ -2715,30 +2789,21 @@ export class AllocationService {
           },
         });
 
-        // 创建分摊后的工时记录（CalcResult）
+        // 创建分摊后的工时记录（WorkHourResult）
         // 将分摊的工时记录到产线的间接工时账户中
-        await this.prisma.calcResult.create({
-          data: {
-            employeeNo: calcResult.employeeNo,
-            calcDate: calcDate,
-            shiftId: shiftId,
-            shiftName: shiftName,
-            attendanceCodeId: indirectHoursAttendanceCodeId,
-            standardHours: 0, // 间接工时没有标准工时
-            actualHours: allocatedHours,
-            overtimeHours: 0,
-            leaveHours: 0,
-            absenceHours: 0,
-            accountHours: JSON.stringify([{
-              accountId: targetAccount.id,
-              accountName: targetAccount.name,
-              hours: allocatedHours,
-            }]),
-            accountId: targetAccount.id,
-            accountName: targetAccount.name,
-            exceptions: '[]',
-            status: 'PENDING',
-          },
+        await this.createOrUpdateAllocationWorkHour({
+          employeeNo: calcResult.employeeNo,
+          calcDate: calcDate,
+          shiftId: shiftId,
+          shiftName: shiftName,
+          definitionAttendanceCodeId: indirectHoursAttendanceCodeId,
+          definitionAttendanceCodeStr: indirectHoursAttendanceCodeStr,
+          workHours: allocatedHours,
+          accountId: targetAccount.id,
+          accountName: targetAccount.name,
+          accountPath: targetAccount.path,
+          ruleId: rule.id,
+          batchNo: batchNo,
         });
 
         resultCount++;
@@ -2845,13 +2910,105 @@ export class AllocationService {
   }
 
   /**
-   * 获取指定日期各产线的实际产量
-   * 从产量记录表中获取，按产线汇总
+   * 按分摊目标值获取直接工时
+   * 从WorkHourResult表中查询直接工时，按accountPath的指定层级值分组汇总
+   * @param params.calcDate - 计算日期
+   * @param params.actualHoursAttendanceCodeId - 直接工时出勤代码ID
+   * @param params.targetLevelIndex - 分摊目标层级索引（从WH1001配置获取）
+   * @returns Record<string, number> - key为分摊目标值（从accountPath提取的层级值），value为直接工时总数
    */
-  private async getProductionByLine(params: { calcDate: Date }): Promise<Record<string, number>> {
-    const { calcDate } = params;
+  private async getDirectHoursByTarget(params: {
+    calcDate: Date;
+    actualHoursAttendanceCodeId: number;
+    targetLevelIndex: number;
+  }): Promise<Record<string, number>> {
+    const { calcDate, actualHoursAttendanceCodeId, targetLevelIndex } = params;
 
-    // 获取当天的产量记录
+    console.log(`\n[getDirectHoursByTarget] 开始查询直接工时`);
+    console.log(`  计算日期: ${calcDate.toISOString().split('T')[0]}`);
+    console.log(`  直接工时出勤代码ID: ${actualHoursAttendanceCodeId}`);
+    console.log(`  目标层级索引: ${targetLevelIndex}`);
+
+    // 查询WorkHourResult表中当天的直接工时数据
+    const directResults = await this.prisma.workHourResult.findMany({
+      where: {
+        calcDate,
+        definitionAttendanceCodeId: actualHoursAttendanceCodeId,
+      },
+    });
+
+    console.log(`  查询到 ${directResults.length} 条直接工时记录`);
+
+    if (directResults.length === 0) {
+      return {};
+    }
+
+    // 按分摊目标值（从accountPath的指定层级提取）分组汇总直接工时
+    const directHoursByTarget: Record<string, number> = {};
+
+    for (const result of directResults) {
+      if (!result.accountPath) {
+        console.log(`  跳过记录 ID=${result.id}：没有accountPath`);
+        continue;
+      }
+
+      // 从accountPath中提取指定层级的值作为分摊目标值
+      const pathParts = result.accountPath.split('/');
+      const targetValue = pathParts[targetLevelIndex];
+
+      if (!targetValue) {
+        console.log(`  跳过记录 ID=${result.id}：路径中层级${targetLevelIndex}的值为空`);
+        console.log(`    accountPath: ${result.accountPath}`);
+        continue;
+      }
+
+      // 累加该分摊目标值的直接工时
+      if (!directHoursByTarget[targetValue]) {
+        directHoursByTarget[targetValue] = 0;
+      }
+      directHoursByTarget[targetValue] += result.workHours || 0;
+
+      console.log(`  记录 ID=${result.id}: 员工=${result.employeeNo}, 工时=${result.workHours}, 目标值=${targetValue}`);
+    }
+
+    console.log(`\n[getDirectHoursByTarget] 直接工时汇总结果:`);
+
+    for (const [targetValue, hours] of Object.entries(directHoursByTarget)) {
+      console.log(`  目标值=${targetValue}: ${hours}小时`);
+    }
+
+    return directHoursByTarget;
+  }
+
+  /**
+   * 获取指定日期各产线的实际产量
+   * ✅ 使用劳动力账户code路径进行匹配
+   * @param params.calcDate - 计算日期
+   * @param params.lineOrgs - 产线组织列表（从filteredShiftLines获取）
+   * @param params.productionLineHierarchyLevel - 产线层级配置（从SystemConfig获取）
+   * @returns 按"orgId-shiftId"为key的产量Map
+   */
+  private async getProductionByLine(params: {
+    calcDate: Date;
+    lineOrgs?: Array<{ id: number; code: string; name: string }>;
+    productionLineHierarchyLevel?: number;
+  }): Promise<Record<string, number>> {
+    const { calcDate, lineOrgs, productionLineHierarchyLevel } = params;
+
+    // 如果没有提供产线组织列表，返回空结果
+    if (!lineOrgs || lineOrgs.length === 0) {
+      console.log(`[getProductionByLine] 未提供产线组织列表，返回空结果`);
+      return {};
+    }
+
+    // 如果没有提供产线层级配置，从SystemConfig获取
+    const hierarchyLevel = productionLineHierarchyLevel ||
+      (await this.getProductionLineHierarchyLevel());
+
+    console.log(`[getProductionByLine] 开始获取产量数据，日期=${calcDate.toISOString()}, 产线层级=${hierarchyLevel}`);
+    console.log(`[getProductionByLine] 产线组织数量=${lineOrgs.length}`);
+
+    // 获取当天的产量记录，包含劳动力账户信息
     const productionRecords = await this.prisma.productionRecord.findMany({
       where: {
         recordDate: calcDate,
@@ -2859,22 +3016,90 @@ export class AllocationService {
       },
     });
 
-    // 按产线和班次汇总实际产量
-    // Key格式: "lineId-shiftId"
-    const productionByLineAndShift: Record<string, number> = {};
+    console.log(`[getProductionByLine] 查询到${productionRecords.length}条产量记录`);
 
-    for (const record of productionRecords) {
-      if (record.lineId && record.shiftId) {
-        const key = `${record.lineId}-${record.shiftId}`;
-        if (!productionByLineAndShift[key]) {
-          productionByLineAndShift[key] = 0;
+    // 获取所有相关的劳动力账户
+    const orgIds = lineOrgs.map(org => org.id);
+    const laborAccounts = await this.prisma.laborAccount.findMany({
+      where: {
+        path: {
+          contains: '/', // 确保是有效路径
+        },
+        status: 'ACTIVE',
+      },
+    });
+
+    // 按产线编码分组劳动力账户
+    // 从路径中提取产线层级的值（第hierarchyLevel层）
+    const laborAccountsByLineCode = new Map<string, typeof laborAccounts>();
+    for (const account of laborAccounts) {
+      const pathParts = account.path.split('/').filter(p => p !== '');
+      if (pathParts.length >= hierarchyLevel) {
+        const lineCode = pathParts[hierarchyLevel - 1]; // 层级从1开始，数组从0开始
+        if (!laborAccountsByLineCode.has(lineCode)) {
+          laborAccountsByLineCode.set(lineCode, []);
         }
-        // 使用实际产量
-        productionByLineAndShift[key] += record.actualQty || 0;
+        laborAccountsByLineCode.get(lineCode)!.push(account);
       }
     }
 
+    console.log(`[getProductionByLine] 劳动力账户按产线编码分组完成，分组数=${laborAccountsByLineCode.size}`);
+
+    // 按产线和班次汇总实际产量
+    // Key格式: "orgId-shiftId" （orgId是Organization.id）
+    const productionByLineAndShift: Record<string, number> = {};
+
+    for (const record of productionRecords) {
+      if (!record.shiftId) {
+        continue;
+      }
+
+      // 通过ProductionRecord.orgId获取劳动力账户
+      const recordLaborAccount = laborAccounts.find(la => la.id === record.orgId);
+      if (!recordLaborAccount) {
+        continue;
+      }
+
+      // 从劳动力账户路径中提取产线编码
+      const pathParts = recordLaborAccount.path.split('/').filter(p => p !== '');
+      if (pathParts.length < hierarchyLevel) {
+        continue;
+      }
+
+      const lineCode = pathParts[hierarchyLevel - 1];
+
+      // 查找对应的产线组织（通过code匹配）
+      const lineOrg = lineOrgs.find(org => org.code === lineCode);
+      if (!lineOrg) {
+        continue;
+      }
+
+      // 使用产线组织的ID作为key
+      const key = `${lineOrg.id}-${record.shiftId}`;
+      if (!productionByLineAndShift[key]) {
+        productionByLineAndShift[key] = 0;
+      }
+      productionByLineAndShift[key] += record.actualQty || 0;
+
+      console.log(`[getProductionByLine] 匹配产量记录: orgId=${lineOrg.id}, code=${lineCode}, shiftId=${record.shiftId}, actualQty=${record.actualQty}`);
+    }
+
+    console.log(`[getProductionByLine] 产量汇总完成，结果条数=${Object.keys(productionByLineAndShift).length}`);
+    Object.entries(productionByLineAndShift).forEach(([key, qty]) => {
+      console.log(`  ${key}: ${qty}`);
+    });
+
     return productionByLineAndShift;
+  }
+
+  /**
+   * 获取产线层级配置
+   */
+  private async getProductionLineHierarchyLevel(): Promise<number> {
+    const config = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'productionLineHierarchyLevel' },
+    });
+    return config?.configValue ? parseInt(config.configValue, 10) : 3;
   }
 
   /**
@@ -2891,9 +3116,6 @@ export class AllocationService {
         recordDate: calcDate,
         deletedAt: null,
       },
-      include: {
-        product: true, // 包含产品信息以获取转换系数
-      },
     });
 
     // 按产线和班次汇总标准产量
@@ -2901,14 +3123,13 @@ export class AllocationService {
     const equivalentProductionByLineAndShift: Record<string, number> = {};
 
     for (const record of productionRecords) {
-      if (record.lineId && record.shiftId && record.product) {
+      if (record.lineId && record.shiftId) {
         const key = `${record.lineId}-${record.shiftId}`;
         if (!equivalentProductionByLineAndShift[key]) {
           equivalentProductionByLineAndShift[key] = 0;
         }
-        // 标准产量 = 实际产量 × 转换系数
-        const conversionFactor = record.product.conversionFactor || 1.0;
-        equivalentProductionByLineAndShift[key] += (record.actualQty || 0) * conversionFactor;
+        // 标准产量 = 实际产量（不使用转换系数）
+        equivalentProductionByLineAndShift[key] += record.actualQty || 0;
       }
     }
 
@@ -2931,9 +3152,6 @@ export class AllocationService {
         recordDate: calcDate,
         deletedAt: null,
       },
-      include: {
-        product: true, // 包含产品信息以获取标准工时
-      },
     });
 
     console.log(`[getStandardHoursByLine] 查询到 ${productionRecords.length} 条产量记录`);
@@ -2943,19 +3161,19 @@ export class AllocationService {
     const standardHoursByLineAndShift: Record<string, number> = {};
 
     for (const record of productionRecords) {
-      if (record.lineId && record.shiftId && record.product) {
+      if (record.lineId && record.shiftId) {
         const key = `${record.lineId}-${record.shiftId}`;
         if (!standardHoursByLineAndShift[key]) {
           standardHoursByLineAndShift[key] = 0;
         }
-        // 标准工时 = 实际产量 × 产品标准工时
-        const productStandardHours = record.product.standardHours || 0;
+        // 标准工时 = 实际产量 × 产品标准工时（从记录中获取）
+        const productStandardHours = record.standardHours || 0;
         const actualQty = record.actualQty || 0;
         const calculatedHours = actualQty * productStandardHours;
         standardHoursByLineAndShift[key] += calculatedHours;
 
         console.log(`[getStandardHoursByLine] 产线ID: ${record.lineId}, 班次ID: ${record.shiftId}, ` +
-                    `产品: ${record.product.name}, 实际产量: ${actualQty}, 产品标准工时: ${productStandardHours}, ` +
+                    `产品: ${record.productName}, 实际产量: ${actualQty}, 产品标准工时: ${productStandardHours}, ` +
                     `计算标准工时: ${calculatedHours}, 累计: ${standardHoursByLineAndShift[key]}`);
       } else {
         if (!record.lineId) {
@@ -2963,9 +3181,6 @@ export class AllocationService {
         }
         if (!record.shiftId) {
           console.log(`[getStandardHoursByLine] 产量记录缺少班次ID: ${record.id}`);
-        }
-        if (!record.product) {
-          console.log(`[getStandardHoursByLine] 产量记录 ${record.id} 缺少产品信息`);
         }
       }
     }
@@ -2984,16 +3199,21 @@ export class AllocationService {
    * 只返回参与分摊的产线（participateInAllocation = true）
    */
   private async getActiveLinesForDate(calcDate: Date): Promise<any[]> {
-    const lineShifts = await this.prisma.lineShift.findMany({
-      where: {
-        scheduleDate: calcDate,
-        status: 'ACTIVE',
-        participateInAllocation: true, // 只获取参与分摊的产线
-        deletedAt: null,
-      },
-    });
+    // ✅ 修复日期类型匹配：使用原始SQL查询
+    // LineShift.scheduleDate 存储的是 integer（毫秒时间戳）
+    // Prisma schema定义是DateTime，但实际数据类型不匹配，所以使用原始查询
+    const calcTimestamp = calcDate.getTime();
 
-    return lineShifts;
+    const lineShifts = await this.prisma.$queryRaw`
+      SELECT *
+      FROM "LineShift"
+      WHERE "scheduleDate" = ${calcTimestamp}
+        AND "status" = 'ACTIVE'
+        AND "participateInAllocation" = 1
+        AND "deletedAt" IS NULL
+    `;
+
+    return lineShifts as any[];
   }
 
   /**
@@ -3034,6 +3254,57 @@ export class AllocationService {
       const workshopId = orgToParent[lineShift.orgId];
       if (workshopId) {
         mapping[lineShift.orgId] = workshopId;
+      }
+    }
+
+    return mapping;
+  }
+
+  /**
+   * ✅ 获取产线到劳动力账户路径的映射
+   * 通过LineShift.accountId获取LaborAccount.path
+   */
+  private async getLineToAccountPathMapping(lineShifts: any[]): Promise<Record<number, string>> {
+    const mapping: Record<number, string> = {};
+
+    // 收集所有唯一的accountId
+    const uniqueAccountIds = [...new Set(lineShifts.map((ls) => ls.accountId).filter(id => id))];
+
+    if (uniqueAccountIds.length === 0) {
+      console.warn('[getLineToAccountPathMapping] 没有找到任何accountId');
+      return mapping;
+    }
+
+    // 批量查询劳动力账户信息
+    const accounts = await this.prisma.laborAccount.findMany({
+      where: {
+        id: { in: uniqueAccountIds },
+      },
+      select: {
+        id: true,
+        path: true,
+        namePath: true,
+      },
+    });
+
+    // 建立accountId → path的映射
+    const accountToPath: Record<number, string> = {};
+    for (const account of accounts) {
+      if (account.path) {
+        accountToPath[account.id] = account.path;
+      }
+    }
+
+    // 为lineShift建立映射：orgId → accountPath
+    for (const lineShift of lineShifts) {
+      if (lineShift.accountId && lineShift.orgId) {
+        const accountPath = accountToPath[lineShift.accountId];
+        if (accountPath) {
+          mapping[lineShift.orgId] = accountPath;
+          console.log(`[getLineToAccountPathMapping] 产线orgId=${lineShift.orgId}, accountId=${lineShift.accountId}, path=${accountPath}`);
+        } else {
+          console.warn(`[getLineToAccountPathMapping] 产线orgId=${lineShift.orgId}, accountId=${lineShift.accountId} 没有找到path`);
+        }
       }
     }
 
@@ -3322,6 +3593,8 @@ export class AllocationService {
     const mappingType = hierarchyConfig.mappingType;
     const mappingValue = hierarchyConfig.mappingValue;
 
+    console.log(`[getLineToHierarchyMapping] hierarchyLevelId=${hierarchyLevelId}, mappingType=${mappingType}, mappingValue=${mappingValue}`);
+
     // 收集所有唯一的orgId
     const uniqueOrgIds = [...new Set(lineShifts.map((ls) => ls.orgId))];
 
@@ -3350,7 +3623,7 @@ export class AllocationService {
 
       let scopeId: number | undefined;
 
-      if (mappingType === 'ORG_TYPE' && mappingValue) {
+      if ((mappingType === 'ORG_TYPE' || mappingType === 'ORG') && mappingValue) {
         // 根据组织类型映射
         const orgType = mappingValue.toUpperCase();
 
@@ -3385,6 +3658,7 @@ export class AllocationService {
       }
     }
 
+    console.log(`[getLineToHierarchyMapping] Final mapping:`, mapping);
     return mapping;
   }
 
@@ -3426,18 +3700,28 @@ export class AllocationService {
     const aggregatedMap = new Map<string, any>();
 
     calcResults.forEach(result => {
-      // 使用员工编号、出勤代码ID和班次ID作为唯一键
-      // 这样不同班次的工时会分别汇总处理
-      const key = `${result.employeeNo}-${result.attendanceCodeId}-${result.shiftId}`;
+      // ✅ 使用员工编号、出勤代码字符串、班次ID和账户ID作为唯一键
+      // 兼容WorkHourResult和CalcResult两种数据结构
+      // WorkHourResult: 使用 workHours, definitionAttendanceCodeId
+      // CalcResult: 使用 actualHours, attendanceCodeId
+      const attendanceCode = result.attendanceCode || result.calcAttendanceCode || '';
+      const key = `${result.employeeNo}-${attendanceCode}-${result.shiftId}-${result.accountId}`;
 
       if (aggregatedMap.has(key)) {
         // 如果已存在，累加工时
         const existing = aggregatedMap.get(key);
-        existing.actualHours += result.actualHours;
-        existing.standardHours += result.standardHours || 0;
-        existing.overtimeHours += result.overtimeHours || 0;
-        existing.leaveHours += result.leaveHours || 0;
-        existing.absenceHours += result.absenceHours || 0;
+
+        // ✅ 兼容两种数据结构的工时字段
+        const workHours = result.actualHours || result.workHours || 0;
+        existing.actualHours = (existing.actualHours || 0) + workHours;
+        existing.workHours = (existing.workHours || 0) + workHours;
+
+        // CalcResult特有字段
+        existing.standardHours = (existing.standardHours || 0) + (result.standardHours || 0);
+        existing.overtimeHours = (existing.overtimeHours || 0) + (result.overtimeHours || 0);
+        existing.leaveHours = (existing.leaveHours || 0) + (result.leaveHours || 0);
+        existing.absenceHours = (existing.absenceHours || 0) + (result.absenceHours || 0);
+
         // 保存原始记录ID列表，用于追踪
         if (!existing.sourceIds) {
           existing.sourceIds = [];
@@ -3445,8 +3729,18 @@ export class AllocationService {
         existing.sourceIds.push(result.id);
       } else {
         // 如果不存在，创建新记录
+        // ✅ 字段映射：将WorkHourResult的字段映射为CalcResult格式
+        const workHours = result.actualHours || result.workHours || 0;
         aggregatedMap.set(key, {
           ...result,
+          actualHours: workHours,
+          workHours: workHours,
+          attendanceCodeId: result.definitionAttendanceCodeId || result.attendanceCodeId,
+          definitionAttendanceCodeId: result.definitionAttendanceCodeId,
+          standardHours: result.standardHours || 0,
+          overtimeHours: result.overtimeHours || 0,
+          leaveHours: result.leaveHours || 0,
+          absenceHours: result.absenceHours || 0,
           sourceIds: [result.id],
         });
       }
@@ -3456,115 +3750,170 @@ export class AllocationService {
   }
 
   /**
-   * 获取产线的间接设备账户
-   * 根据产线名称查找对应的间接设备账户
-   * 账户名称格式：富阳工厂/{车间名称}/{产线名称}////间接设备
-   * 如果账户不存在，自动创建
+   * 获取或创建产线的间接工时账户
+   * 通过源账户路径与目标层级逐层合并生成目标账户
    *
-   * @param line 产线对象
-   * @returns 间接设备账户对象，如果创建失败返回null
+   * @param lineShift 产线班次对象
+   * @param sourceAccountPath 源账户路径（格式：工厂/车间/产线/产品/工序）
+   * @param sourceAccountId 源账户ID
+   * @returns 目标账户对象
    */
-  private async getLineIndirectAccount(lineShift: any): Promise<any> {
-    // 账户名称格式：富阳工厂/{车间名称}/{线体名称}////间接设备
-    // 通过组织层级获取车间和工厂信息
-    let workshopName = '';
-    let workshopId: number | null = null;
-    let orgId = 1; // 默认工厂组织ID
-    let lineName = lineShift.orgName || `线体${lineShift.orgId}`;
+  private async getLineIndirectAccount(lineShift: any, sourceAccountPath?: string, sourceAccountId?: number): Promise<any> {
+    // 查询源账户信息
+    let sourceAccount: any = null;
+    if (sourceAccountId) {
+      sourceAccount = await this.prisma.laborAccount.findUnique({
+        where: { id: sourceAccountId },
+        select: { id: true, name: true, namePath: true, path: true, hierarchyValues: true }
+      });
+    }
 
-    // 通过线体组织ID查询车间信息
+    // 通过线体组织查询产线信息
     const lineOrg = await this.prisma.organization.findUnique({
       where: { id: lineShift.orgId },
-      select: { id: true, name: true, parentId: true, type: true },
+      select: { id: true, name: true, code: true, parentId: true, type: true },
     });
 
-    if (lineOrg && lineOrg.parentId) {
-      // 查询车间组织
-      const workshop = await this.prisma.organization.findUnique({
+    if (!lineOrg) {
+      console.log(`线体组织不存在 (orgId: ${lineShift.orgId})`);
+      return null;
+    }
+
+    // 查询车间和工厂信息
+    let workshopOrg: any = null;
+    let factoryOrg: any = null;
+
+    if (lineOrg.parentId) {
+      workshopOrg = await this.prisma.organization.findUnique({
         where: { id: lineOrg.parentId },
-        select: { id: true, name: true, parentId: true, type: true },
+        select: { id: true, name: true, code: true, parentId: true, type: true },
       });
 
-      if (workshop) {
-        workshopName = workshop.name;
-        workshopId = workshop.id;
-        // 获取工厂ID（车间的父组织）
-        orgId = workshop.parentId || 1;
-        lineName = lineOrg.name;
+      if (workshopOrg && workshopOrg.parentId) {
+        factoryOrg = await this.prisma.organization.findUnique({
+          where: { id: workshopOrg.parentId },
+          select: { id: true, name: true, code: true, type: true },
+        });
       }
     }
 
-    const accountName = `富阳工厂/${workshopName || '未知车间'}/${lineName}////间接设备`;
+    // 逐层合并生成目标账户路径
+    // 路径格式：工厂/车间/产线/产品/工序
+    let targetPathParts = ['', '', '', '', '']; // 初始化5层
+    let targetNamePathParts = ['', '', '', '', ''];
+    let targetCodePathParts = ['', '', '', '', ''];
 
-    // 先查找账户是否存在
+    if (sourceAccount && sourceAccount.path) {
+      // 从源账户路径中提取各层级的值
+      const sourcePathParts = sourceAccount.path.split('/').filter(p => p !== '');
+      const sourceNamePathParts = (sourceAccount.namePath || sourceAccount.name).split('/').filter(p => p !== '');
+
+      // 复制源账户的层级值（工厂、车间）
+      for (let i = 0; i < Math.min(2, sourcePathParts.length); i++) {
+        targetCodePathParts[i] = sourcePathParts[i];
+      }
+      for (let i = 0; i < Math.min(2, sourceNamePathParts.length); i++) {
+        targetNamePathParts[i] = sourceNamePathParts[i];
+      }
+    } else {
+      // 使用组织信息
+      if (factoryOrg) {
+        targetCodePathParts[0] = factoryOrg.code;
+        targetNamePathParts[0] = factoryOrg.name;
+      }
+      if (workshopOrg) {
+        targetCodePathParts[1] = workshopOrg.code;
+        targetNamePathParts[1] = workshopOrg.name;
+      }
+    }
+
+    // 目标层级（产线）优先级高，替换第3层
+    targetCodePathParts[2] = lineOrg.code;
+    targetNamePathParts[2] = lineOrg.name;
+
+    // 产品和工序层级保持为空（第4、5层）
+    // 因为源账户是车间层级（DH/DH01///），后面都是空的
+
+    const targetPath = targetCodePathParts.join('/');
+    const targetNamePath = targetNamePathParts.join('/');
+    const targetName = targetNamePath;
+
+    console.log(`[逐层合并] 源账户路径: ${sourceAccount?.path || 'N/A'}`);
+    console.log(`[逐层合并] 目标产线: ${lineOrg.name} (${lineOrg.code})`);
+    console.log(`[逐层合并] 合并后路径: ${targetPath}`);
+    console.log(`[逐层合并] 合并后名称: ${targetName}`);
+
+    // 查找或创建目标账户
     let account = await this.prisma.laborAccount.findFirst({
       where: {
-        name: accountName,
+        path: targetPath,
         status: 'ACTIVE',
       },
     });
 
-    // 如果账户不存在，自动创建
     if (!account) {
-      console.log(`线体 ${lineName} 的间接设备账户不存在，自动创建: ${accountName}`);
+      console.log(`目标账户不存在，自动创建: ${targetName}`);
 
       try {
-        // 查找车间级别的账户作为父账户
-        const parentAccountName = `富阳工厂/${workshopName || '未知车间'}/////间接设备`;
+        // 查找父账户（去掉最后一层）
+        const parentPath = targetCodePathParts.slice(0, 2).join('/');
         let parentAccount = await this.prisma.laborAccount.findFirst({
           where: {
-            name: parentAccountName,
+            path: parentPath,
             status: 'ACTIVE',
           },
         });
 
-        // 如果车间账户也不存在，先创建车间账户
-        if (!parentAccount) {
-          console.log(`车间间接设备账户不存在，先创建: ${parentAccountName}`);
-          parentAccount = await this.prisma.laborAccount.create({
-            data: {
-              name: parentAccountName,
-              code: `WORKSHOP_INDIRECT_${workshopId || 'UNKNOWN'}`,
-              type: 'WORKSHOP',
-              level: 2,
-              path: `/富阳工厂/${workshopName || '未知车间'}/////间接设备`,
-              namePath: `/富阳工厂/${workshopName || '未知车间'}/////间接设备`,
-              hierarchyValues: JSON.stringify({
-                orgId: orgId,
-                workshopId: workshopId,
-              }),
-              status: 'ACTIVE',
-              effectiveDate: new Date('2020-01-01'),
-              usageType: 'SHIFT',
-            },
-          });
-          console.log(`✓ 成功创建车间间接设备账户: ${parentAccount.name} (ID: ${parentAccount.id})`);
+        // 如果父账户也不存在，先创建父账户
+        if (!parentAccount && sourceAccount) {
+          // 使用源账户作为父账户
+          parentAccount = sourceAccount;
         }
 
-        // 创建线体间接设备账户
+        // 解析hierarchyValues
+        let hierarchyValues: any = {};
+        try {
+          if (sourceAccount && sourceAccount.hierarchyValues) {
+            const sourceHv = JSON.parse(sourceAccount.hierarchyValues);
+            if (Array.isArray(sourceHv)) {
+              // 从源账户的层级值中复制，并添加产线层级
+              hierarchyValues = {
+                orgId: sourceHv.find((hv: any) => hv.levelId === 4)?.selectedValue?.id,
+                workshopId: sourceHv.find((hv: any) => hv.levelId === 5)?.selectedValue?.id,
+                lineId: lineOrg.id,
+              };
+            } else {
+              hierarchyValues = sourceHv;
+            }
+          }
+        } catch (e) {
+          console.log(`解析源账户hierarchyValues失败，使用默认值`);
+        }
+
+        // 创建目标账户
         account = await this.prisma.laborAccount.create({
           data: {
-            name: accountName,
-            code: `LINE_INDIRECT_${lineShift.orgId}`,
+            name: targetName,
+            code: `LINE_${lineOrg.code}_${lineShift.orgId}`,
+            path: targetPath,
+            namePath: targetNamePath,
+            accountPath: targetPath,
             type: 'LINE',
             level: 3,
-            parentId: parentAccount.id,
-            path: `${parentAccount.path}/${lineName}`,
-            namePath: `${parentAccount.namePath}/${lineName}`,
-            hierarchyValues: JSON.stringify({
-              orgId: orgId,
-              workshopId: workshopId,
-              lineId: lineShift.orgId,
-            }),
+            parentId: parentAccount?.id,
+            parentPath: parentAccount?.path,
+            hierarchyValues: JSON.stringify(hierarchyValues),
+            orgId: lineOrg.id,
+            orgName: lineOrg.name,
             status: 'ACTIVE',
-            effectiveDate: new Date('2020-01-01'),
-            usageType: 'SHIFT',
+            effectiveDate: new Date(),
+            usageType: 'ALLOCATED', // 标记为分摊工时账户
           },
         });
 
-        console.log(`✓ 成功创建线体间接设备账户: ${account.name} (ID: ${account.id})`);
+        console.log(`✓ 成功创建目标账户: ${account.name} (ID: ${account.id}, path: ${account.path})`);
       } catch (error: any) {
-        console.error(`✗ 创建线体间接设备账户失败: ${error.message}`);
+        console.error(`✗ 创建目标账户失败: ${error.message}`);
         return null;
       }
     }
@@ -3744,6 +4093,99 @@ export class AllocationService {
   }
 
   /**
+   * 根据筛选条件过滤员工列表
+   * 支持多字段组合条件（fieldGroups结构）
+   */
+  private filterEmployeesByConditions(employees: any[], employeeFilter: any): string[] {
+    const filteredEmployeeNos: string[] = [];
+
+    // employeeFilter结构: { fieldGroups: [{ id: "xxx", fieldGroups: [{ id: "xxx", conditions: [...] }] }] }
+    if (!employeeFilter.fieldGroups || employeeFilter.fieldGroups.length === 0) {
+      return employees.map(e => e.employeeNo);
+    }
+
+    // 遍历每个字段组（OR关系）
+    for (const fieldGroup of employeeFilter.fieldGroups) {
+      if (!fieldGroup.fieldGroups || fieldGroup.fieldGroups.length === 0) {
+        continue;
+      }
+
+      // 每个字段组内的子组是AND关系
+      let groupMatchedEmployeeNos = [...employees.map(e => e.employeeNo)];
+
+      for (const subGroup of fieldGroup.fieldGroups) {
+        if (!subGroup.conditions || subGroup.conditions.length === 0) {
+          continue;
+        }
+
+        // 子组内的条件是AND关系
+        const subGroupEmployeeNos: string[] = [];
+
+        for (const employee of employees) {
+          let matchesAllConditions = true;
+
+          for (const condition of subGroup.conditions) {
+            const { fieldCode, operator, value } = condition;
+
+            // 获取员工的字段值
+            const fieldValue = employee[fieldCode];
+
+            // 根据操作符判断
+            if (!this.evaluateCondition(fieldValue, operator, value)) {
+              matchesAllConditions = false;
+              break;
+            }
+          }
+
+          if (matchesAllConditions) {
+            subGroupEmployeeNos.push(employee.employeeNo);
+          }
+        }
+
+        // 取交集（AND关系）
+        groupMatchedEmployeeNos = groupMatchedEmployeeNos.filter(no => subGroupEmployeeNos.includes(no));
+      }
+
+      // 取并集（OR关系）
+      for (const employeeNo of groupMatchedEmployeeNos) {
+        if (!filteredEmployeeNos.includes(employeeNo)) {
+          filteredEmployeeNos.push(employeeNo);
+        }
+      }
+    }
+
+    return filteredEmployeeNos;
+  }
+
+  /**
+   * 评估单个筛选条件
+   */
+  private evaluateCondition(fieldValue: any, operator: string, conditionValue: any): boolean {
+    switch (operator) {
+      case 'eq': // 等于
+        return fieldValue == conditionValue;
+      case 'ne': // 不等于
+        return fieldValue != conditionValue;
+      case 'gt': // 大于
+        return fieldValue > conditionValue;
+      case 'gte': // 大于等于
+        return fieldValue >= conditionValue;
+      case 'lt': // 小于
+        return fieldValue < conditionValue;
+      case 'lte': // 小于等于
+        return fieldValue <= conditionValue;
+      case 'like': // 模糊匹配
+        return fieldValue && fieldValue.toString().includes(conditionValue.toString());
+      case 'in': // 包含于
+        return Array.isArray(conditionValue) && conditionValue.includes(fieldValue);
+      case 'notIn': // 不包含于
+        return Array.isArray(conditionValue) && !conditionValue.includes(fieldValue);
+      default:
+        return false;
+    }
+  }
+
+  /**
    * 根据筛选条件获取工时记录
    */
   private async getFilteredCalcResults(params: any): Promise<any[]> {
@@ -3757,14 +4199,11 @@ export class AllocationService {
         gte: startDate,
         lt: nextDate,
       },
-      status: {
-        in: ['PENDING', 'APPROVED', 'COMPLETED'], // 包含COMPLETED状态，因为分摊计算需要处理的工时记录
-      },
     };
 
-    // 出勤代码筛选
+    // 出勤代码筛选（使用definitionAttendanceCodeId）
     if (attendanceCodeIds && attendanceCodeIds.length > 0) {
-      where.attendanceCodeId = { in: attendanceCodeIds };
+      where.definitionAttendanceCodeId = { in: attendanceCodeIds };
     }
 
     // 劳动力账户筛选
@@ -3789,41 +4228,79 @@ export class AllocationService {
       }
     }
 
-    const results = await this.prisma.calcResult.findMany({
+    const results = await this.prisma.workHourResult.findMany({
       where,
-      include: {
-        employee: {
-          include: {
-            org: true,
-          },
-        },
-      },
     });
 
     // 人员筛选（在查询后处理）
     let filteredResults = results;
 
+
+    // ✅ 人员筛选（在查���后处理）
     if (employeeFilter && Object.keys(employeeFilter).length > 0) {
-      filteredResults = results.filter((result) => {
-        const employee = result.employee;
+      console.log(`[分摊计算] 开始应用人员筛选条件: ${JSON.stringify(employeeFilter)}`);
 
-        // 组织筛选
-        if (employeeFilter.orgIds && employeeFilter.orgIds.length > 0) {
-          if (!employeeFilter.orgIds.includes(employee.orgId)) {
-            return false;
-          }
+      // 提取所有唯一的employeeNo
+      const uniqueEmployeeNos = [...new Set(results.map(r => r.employeeNo))];
+      console.log(`[分摊计算] 待筛选的员工数量: ${uniqueEmployeeNos.length}`);
+
+      if (uniqueEmployeeNos.length > 0) {
+        // 批量查询员工信息及其当前岗位信息
+        const employees = await this.prisma.employee.findMany({
+          where: {
+            employeeNo: { in: uniqueEmployeeNos },
+          },
+          select: {
+            id: true,
+            employeeNo: true,
+            name: true,
+          },
+        });
+
+        // 查询员工的岗位信息（从WorkInfoHistory表）
+        const employeeIds = employees.map(e => e.id);
+        const workInfoList = await this.prisma.workInfoHistory.findMany({
+          where: {
+            employeeId: { in: employeeIds },
+            isCurrent: true,
+          },
+          select: {
+            employeeId: true,
+            position: true,
+            jobLevel: true,
+            employeeType: true,
+          },
+        });
+
+        // 构建employeeNo到岗位信息的映射
+        const employeeWorkInfoMap = new Map();
+        for (const employee of employees) {
+          const workInfo = workInfoList.find(w => w.employeeId === employee.id);
+          employeeWorkInfoMap.set(employee.employeeNo, {
+            ...employee,
+            position: workInfo?.position || null,
+            jobLevel: workInfo?.jobLevel || null,
+            employeeType: workInfo?.employeeType || null,
+          });
         }
 
-        // 人事字段筛选
-        if (employeeFilter.customFields) {
-          for (const [fieldKey, fieldValue] of Object.entries(employeeFilter.customFields)) {
-            const employeeFieldValue = employee.customFields?.[fieldKey];
-            if (employeeFieldValue !== fieldValue) return false;
-          }
-        }
+        // 解析筛选条件并过滤
+        const filteredEmployeeNos = this.filterEmployeesByConditions(
+          Array.from(employeeWorkInfoMap.values()),
+          employeeFilter
+        );
 
-        return true;
-      });
+        console.log(`[分摊计算] 人员筛选后符合条件的员工数量: ${filteredEmployeeNos.length}`);
+        console.log(`[分摊计算] 符合条件的员工编号: ${filteredEmployeeNos.join(', ')}`);
+
+        // 过滤WorkHourResult
+        filteredResults = results.filter(r => filteredEmployeeNos.includes(r.employeeNo));
+        console.log(`[分摊计算] 人员筛选后工时记录数量: ${filteredResults.length} (原始: ${results.length})`);
+      } else {
+        filteredResults = results;
+      }
+    } else {
+      filteredResults = results;
     }
 
     return filteredResults;
@@ -3889,7 +4366,7 @@ export class AllocationService {
                 configVersion: config.version,
                 ruleId: rule.id,
                 sourceEmployeeNo: calcResult.employeeNo,
-                sourceEmployeeName: calcResult.employee?.name,
+                sourceEmployeeName: null,
                 sourceAccountId: calcResult.accountId,
                 sourceAccountName: calcResult.accountName,
                 attendanceCodeId: calcResult.attendanceCodeId,
@@ -4071,6 +4548,24 @@ export class AllocationService {
       this.prisma.allocationResult.count({ where }),
     ]);
 
+    // 获取所有规则信息
+    const ruleIds = items.map(item => item.ruleId).filter(id => id != null);
+    const rules = await this.prisma.allocationRuleConfig.findMany({
+      where: {
+        id: { in: ruleIds as number[] },
+      },
+      select: {
+        id: true,
+        ruleName: true,
+      },
+    });
+
+    // 建立规则的映射
+    const ruleMap: Record<number, any> = {};
+    rules.forEach(rule => {
+      ruleMap[rule.id] = rule;
+    });
+
     // 获取所有相关的源工时记录详细信息
     const calcResultIds = items.map(item => item.calcResultId);
     const calcResults = await this.prisma.calcResult.findMany({
@@ -4110,11 +4605,12 @@ export class AllocationService {
       targetAccountMap[acc.id] = acc;
     });
 
-    // 为每条结果添加源工时记录和目标账户的详细信息
+    // 为每条结果添加源工时记录、目标账户和规则的详细信息
     const enrichedItems = items.map(item => ({
       ...item,
       sourceCalcResult: calcResultMap[item.calcResultId] || null,
       targetAccountName: item.targetAccountId ? (targetAccountMap[item.targetAccountId]?.name || null) : null,
+      rule: ruleMap[item.ruleId] || null,
     }));
 
     return {
@@ -4214,13 +4710,10 @@ export class AllocationService {
   private async getAccountsByHierarchySelections(hierarchySelections: any[]): Promise<any[]> {
     console.log(`[层级筛选] 开始查找账户，层级条件数: ${hierarchySelections.length}`);
 
-    // 获取所有有层级值的账户
+    // 获取所有活跃状态的账户
     const allAccounts = await this.prisma.laborAccount.findMany({
       where: {
         status: 'ACTIVE',
-        hierarchyValues: {
-          not: null,
-        },
       },
       select: {
         id: true,
@@ -4230,7 +4723,7 @@ export class AllocationService {
       },
     });
 
-    console.log(`[层级筛选] 找到 ${allAccounts.length} 个有层级值的账户`);
+    console.log(`[层级筛选] 找到 ${allAccounts.length} 个活跃账户`);
 
     // 筛选符合条件的账户
     const matchedAccounts: any[] = [];
@@ -4259,13 +4752,21 @@ export class AllocationService {
             break;
           }
 
+          // ✅ 支持使用 code 匹配（优先）或 ID 匹配
+          const accountValueCode = levelValue.selectedValue.code;
           const accountValueId = levelValue.selectedValue.id;
 
-          // 检查账户的层级值是否在筛选条件的valueIds中
-          if (!valueIds.includes(accountValueId) && !valueIds.includes(String(accountValueId))) {
+          // 检查账户的层级值是否在筛选条件中
+          // 支持 code 匹配或 ID 匹配
+          const matchesByCode = accountValueCode && valueIds.includes(accountValueCode);
+          const matchesById = valueIds.includes(accountValueId) || valueIds.includes(String(accountValueId));
+
+          if (!matchesByCode && !matchesById) {
             matchesAll = false;
             break;
           }
+
+          console.log(`[层级筛选]   层级 ${levelName} (${levelId}): 账户值=code(${accountValueCode}), id(${accountValueId}), 匹配方式=${matchesByCode ? 'code' : 'id'}`);
         }
 
         if (matchesAll) {
@@ -4279,5 +4780,502 @@ export class AllocationService {
 
     console.log(`[层级筛选] 最终匹配 ${matchedAccounts.length} 个账户`);
     return matchedAccounts;
+  }
+
+  /**
+   * 创建或更新分摊产生的工时记录到 WorkHourResult 表
+   * 实现唯一性约束：同一员工 + 同一分摊规则 + 同一日期 + 同一考勤代码 = 只存一条记录
+   */
+  private async createOrUpdateAllocationWorkHour(params: {
+    employeeNo: string;
+    calcDate: Date;
+    shiftId: number;
+    shiftName?: string;
+    definitionAttendanceCodeId: number;
+    definitionAttendanceCodeStr: string;
+    workHours: number;
+    accountId: number;
+    accountName: string;
+    accountPath?: string;
+    ruleId: number;
+    batchNo: string;
+  }): Promise<any> {
+    // ✅ 唯一性约束：员工 + 日期 + 考勤代码 + 规则 + 目标账户
+    // 这样同一员工分摊到不同目标账户的工时会分别存储
+    const existing = await this.prisma.workHourResult.findFirst({
+      where: {
+        employeeNo: params.employeeNo,
+        calcDate: params.calcDate,
+        definitionAttendanceCodeId: params.definitionAttendanceCodeId,
+        source: '3',
+        sourceId: params.ruleId,
+        accountId: params.accountId,  // ✅ 添加目标账户到唯一性约束
+      },
+    });
+
+    if (existing) {
+      // 如果已存在，累加工时（同一次分摊再次执行）
+      console.log(`  更新工时记录: ID=${existing.id}, 原工时=${existing.workHours}, 新增工时=${params.workHours}`);
+      return this.prisma.workHourResult.update({
+        where: { id: existing.id },
+        data: {
+          workHours: existing.workHours + params.workHours,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      // 如果不存在，创建新记录
+      console.log(`  创建工时记录: 员工=${params.employeeNo}, 工时=${params.workHours}, 账户=${params.accountName}`);
+      return this.prisma.workHourResult.create({
+        data: {
+          employeeNo: params.employeeNo,
+          workDate: params.calcDate,
+          calcDate: params.calcDate,
+          shiftId: params.shiftId,
+          shiftName: params.shiftName,
+          definitionAttendanceCodeId: params.definitionAttendanceCodeId,
+          definitionAttendanceCodeStr: params.definitionAttendanceCodeStr,
+          calcAttendanceCode: '',
+          attendanceCodeName: '分摊工时',
+          workHours: params.workHours,
+          amount: 0,
+          source: '3',
+          sourceType: 'ALLOCATION',
+          sourceId: params.ruleId,
+          sourceBatchId: params.batchNo,
+          accountId: params.accountId,
+          accountName: params.accountName,
+          accountPath: params.accountPath,
+          status: 'DRAFT',
+        },
+      });
+    }
+  }
+
+  // ============ Product Standard Hours (Not Implemented) ============
+
+  async getProductStandardHours(productId: number) {
+    throw new BadRequestException('Product standard hours feature not implemented');
+  }
+
+  async createProductStandardHours(productId: number, dto: any) {
+    throw new BadRequestException('Product standard hours feature not implemented');
+  }
+
+  async updateProductStandardHours(id: number, dto: any) {
+    throw new BadRequestException('Product standard hours feature not implemented');
+  }
+
+  async deleteProductStandardHours(id: number) {
+    throw new BadRequestException('Product standard hours feature not implemented');
+  }
+
+  // ============ Product Standard Hour By Levels (Not Implemented) ============
+
+  async getProductStandardHourByLevels(productId: number) {
+    throw new BadRequestException('Product standard hour by levels feature not implemented');
+  }
+
+  async getAllProductStandardHourByLevels(query: any) {
+    throw new BadRequestException('Product standard hour by levels feature not implemented');
+  }
+
+  async createProductStandardHourByLevel(dto: any) {
+    throw new BadRequestException('Product standard hour by levels feature not implemented');
+  }
+
+  async updateProductStandardHourByLevel(id: number, dto: any) {
+    throw new BadRequestException('Product standard hour by levels feature not implemented');
+  }
+
+  async deleteProductStandardHourByLevel(id: number) {
+    throw new BadRequestException('Product standard hour by levels feature not implemented');
+  }
+
+  // ============ Product Processes (Not Implemented) ============
+
+  async getProductProcesses(productId: number) {
+    throw new BadRequestException('Product processes feature not implemented');
+  }
+
+  async addProcessToProduct(productId: number, dto: any) {
+    throw new BadRequestException('Product processes feature not implemented');
+  }
+
+  async removeProcessFromProduct(productId: number, processId: number) {
+    throw new BadRequestException('Product processes feature not implemented');
+  }
+
+  async updateProductProcess(id: number, dto: any) {
+    throw new BadRequestException('Product processes feature not implemented');
+  }
+
+  // ============ Earned Hours Configs (Not Implemented) ============
+
+  async getEarnedHoursConfigs(query: any) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async getEarnedHoursConfig(id: number) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async createEarnedHoursConfig(dto: any) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async updateEarnedHoursConfig(id: number, dto: any) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async deleteEarnedHoursConfig(id: number) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async activateEarnedHoursConfig(id: number, dto: any) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async deactivateEarnedHoursConfig(id: number, dto: any) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async copyEarnedHoursConfig(id: number, dto: any) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  async archiveEarnedHoursConfig(id: number) {
+    throw new BadRequestException('Earned hours configs feature not implemented');
+  }
+
+  // ============ Earned Hours Rules (Not Implemented) ============
+
+  async getEarnedHoursRules(query: any) {
+    throw new BadRequestException('Earned hours rules feature not implemented');
+  }
+
+  async getEarnedHoursRule(id: number) {
+    throw new BadRequestException('Earned hours rules feature not implemented');
+  }
+
+  async createEarnedHoursRule(dto: any) {
+    throw new BadRequestException('Earned hours rules feature not implemented');
+  }
+
+  async updateEarnedHoursRule(id: number, dto: any) {
+    throw new BadRequestException('Earned hours rules feature not implemented');
+  }
+
+  async deleteEarnedHoursRule(id: number) {
+    throw new BadRequestException('Earned hours rules feature not implemented');
+  }
+
+  // ============ Earned Hours Rule Targets (Not Implemented) ============
+
+  async getEarnedHoursRuleTargets(ruleId: number) {
+    throw new BadRequestException('Earned hours rule targets feature not implemented');
+  }
+
+  async createEarnedHoursRuleTarget(dto: any) {
+    throw new BadRequestException('Earned hours rule targets feature not implemented');
+  }
+
+  async updateEarnedHoursRuleTarget(id: number, dto: any) {
+    throw new BadRequestException('Earned hours rule targets feature not implemented');
+  }
+
+  async deleteEarnedHoursRuleTarget(id: number) {
+    throw new BadRequestException('Earned hours rule targets feature not implemented');
+  }
+
+  // ============ Earned Hours Calculation Progress (Not Implemented) ============
+
+  async getEarnedHoursCalculationProgress(batchNo: string) {
+    throw new BadRequestException('Earned hours calculation progress feature not implemented');
+  }
+
+  // ============ Personal Production Records ============
+
+  async getPersonalProductionRecords(query: any) {
+    const { page = 1, pageSize = 10, startDate, endDate, employeeNo, orgId, shiftId, productId } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+    if (startDate) where.recordDate = { gte: new Date(startDate) };
+    if (endDate) where.recordDate = { ...where.recordDate, lte: new Date(endDate) };
+    if (employeeNo) where.employeeNo = employeeNo;
+    if (orgId) where.orgId = +orgId;
+    if (shiftId) where.shiftId = +shiftId;
+    if (productId) where.productId = +productId;
+
+    const [items, total] = await Promise.all([
+      this.prisma.personalProductionRecord.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { recordDate: 'desc' },
+      }),
+      this.prisma.personalProductionRecord.count({ where }),
+    ]);
+
+    // 添加计算字段
+    const itemsWithCalculations = items.map((item: any) => ({
+      ...item,
+      conversionFactor: 1.0,
+      convertedQty: item.actualQty || 0,
+    }));
+
+    return {
+      items: itemsWithCalculations,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  async getPersonalProductionRecord(id: number) {
+    const record = await this.prisma.personalProductionRecord.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!record) {
+      throw new NotFoundException('个人产量记录不存在');
+    }
+
+    return record;
+  }
+
+  async createPersonalProductionRecord(dto: any) {
+    const {
+      recordDate,
+      employeeNo,
+      employeeName,
+      orgId,
+      orgName,
+      lineId,
+      lineName,
+      shiftId,
+      shiftName,
+      productId,
+      productCode,
+      productName,
+      actualQty,
+      standardHours,
+      source,
+      recorderId,
+      recorderName,
+      description
+    } = dto;
+
+    // 验证员工是否存在
+    const employee = await this.prisma.employee.findUnique({
+      where: { employeeNo },
+    });
+
+    if (!employee) {
+      throw new BadRequestException('员工不存在');
+    }
+
+    // 查询产品信息获取标准工时
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new BadRequestException('产品不存在');
+    }
+
+    const productStandardHours = product.standardHours || standardHours || 0;
+
+    // 检查是否已存在相同记录
+    const existing = await this.prisma.personalProductionRecord.findFirst({
+      where: {
+        recordDate: new Date(recordDate),
+        employeeNo,
+        productId,
+        deletedAt: null,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('该员工该日期该产品的产量记录已存在');
+    }
+
+    // 计算挣得工时 = 实际产量 * 标准工时
+    const earnedHours = (actualQty || 0) * productStandardHours;
+
+    // 创建个人产量记录
+    const record = await this.prisma.personalProductionRecord.create({
+      data: {
+        recordDate: new Date(recordDate),
+        employeeNo,
+        employeeName: employeeName || employee.name || '',
+        orgId,
+        orgName,
+        lineId,
+        lineName,
+        shiftId,
+        shiftName,
+        productId,
+        productCode,
+        productName,
+        actualQty: actualQty || 0,
+        standardHours: productStandardHours,
+        earnedHours,
+        source: source || 'MANUAL',
+        recorderId,
+        recorderName,
+        description,
+      },
+    });
+
+    // 往CalcResult表插入挣得工时记录
+    // 首先需要查找是否有对应的AttendanceCode
+    const attendanceCode = await this.prisma.attendanceCode.findFirst({
+      where: { code: 'EARNED_HOURS' },
+    });
+
+    // 创建或更新CalcResult记录
+    const calcDate = new Date(recordDate);
+    calcDate.setHours(0, 0, 0, 0);
+
+    await this.prisma.calcResult.create({
+      data: {
+        employeeNo,
+        calcDate,
+        shiftId: shiftId || null,
+        shiftName: shiftName || null,
+        attendanceCodeId: attendanceCode?.id || null,
+        standardHours: 0,
+        actualHours: 0,
+        overtimeHours: 0,
+        leaveHours: 0,
+        absenceHours: 0,
+        accountHours: JSON.stringify([
+          {
+            accountId: lineId || orgId,
+            accountName: lineName || orgName,
+            hours: earnedHours,
+            type: 'EARNED_HOURS',
+          }
+        ]),
+        status: 'COMPLETED',
+      },
+    });
+
+    return record;
+  }
+
+  async updatePersonalProductionRecord(id: number, dto: any) {
+    const record = await this.prisma.personalProductionRecord.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!record) {
+      throw new NotFoundException('个人产量记录不存在');
+    }
+
+    const { actualQty, description } = dto;
+
+    // 重新计算挣得工时
+    const earnedHours = (actualQty || record.actualQty) * record.standardHours;
+
+    // 更新个人产量记录
+    const updatedRecord = await this.prisma.personalProductionRecord.update({
+      where: { id },
+      data: {
+        actualQty,
+        earnedHours,
+        description,
+      },
+    });
+
+    // 更新CalcResult表中的挣得工时记录
+    const calcDate = new Date(record.recordDate);
+    calcDate.setHours(0, 0, 0, 0);
+
+    const calcResults = await this.prisma.calcResult.findMany({
+      where: {
+        employeeNo: record.employeeNo,
+        calcDate,
+      },
+    });
+
+    for (const calcResult of calcResults) {
+      try {
+        const accountHours = JSON.parse(calcResult.accountHours || '[]');
+        const earnedHoursIndex = accountHours.findIndex((ah: any) => ah.type === 'EARNED_HOURS');
+
+        if (earnedHoursIndex >= 0) {
+          accountHours[earnedHoursIndex].hours = earnedHours;
+          await this.prisma.calcResult.update({
+            where: { id: calcResult.id },
+            data: {
+              accountHours: JSON.stringify(accountHours),
+            },
+          });
+        }
+      } catch (error) {
+        console.error('更新CalcResult失败:', error);
+      }
+    }
+
+    return updatedRecord;
+  }
+
+  async deletePersonalProductionRecord(id: number) {
+    const record = await this.prisma.personalProductionRecord.findUnique({
+      where: { id, deletedAt: null },
+    });
+
+    if (!record) {
+      throw new NotFoundException('个人产量记录不存在');
+    }
+
+    // 软删除个人产量记录
+    await this.prisma.personalProductionRecord.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+
+    // 删除或更新CalcResult表中的挣得工时记录
+    const calcDate = new Date(record.recordDate);
+    calcDate.setHours(0, 0, 0, 0);
+
+    const calcResults = await this.prisma.calcResult.findMany({
+      where: {
+        employeeNo: record.employeeNo,
+        calcDate,
+      },
+    });
+
+    for (const calcResult of calcResults) {
+      try {
+        const accountHours = JSON.parse(calcResult.accountHours || '[]');
+        const filteredAccountHours = accountHours.filter((ah: any) => ah.type !== 'EARNED_HOURS');
+
+        if (filteredAccountHours.length === 0) {
+          // 如果没有其他工时记录，则删除这条CalcResult
+          await this.prisma.calcResult.delete({
+            where: { id: calcResult.id },
+          });
+        } else {
+          // 否则更新accountHours
+          await this.prisma.calcResult.update({
+            where: { id: calcResult.id },
+            data: {
+              accountHours: JSON.stringify(filteredAccountHours),
+            },
+          });
+        }
+      } catch (error) {
+        console.error('删除CalcResult失败:', error);
+      }
+    }
+
+    return { message: '删除成功' };
   }
 }

@@ -20,7 +20,7 @@ const AVAILABLE_PAGES = [
   { code: 'employee-list', name: '人员管理页面' },
   { code: 'punch-records', name: '打卡记录页面' },
   { code: 'schedules', name: '排班管理页面' },
-  { code: 'pair-results', name: '打卡结果页面' },
+  { code: 'punch-results', name: '摆卡结果页面' },
   { code: 'work-hour-results', name: '工时结果页面' },
   { code: 'workhour-details', name: '工时明细管理页面' },
 ];

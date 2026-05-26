@@ -513,8 +513,30 @@ export class PairingService {
    * 创建摆卡记录
    */
   private async createPunchPair(data: any) {
+    // ✅ 如果有accountId，查询账户信息并设置accountName和accountPath
+    let finalData = { ...data };
+
+    if (data.accountId) {
+      const account = await this.prisma.laborAccount.findUnique({
+        where: { id: data.accountId },
+        select: {
+          id: true,
+          namePath: true,
+          path: true,
+        },
+      });
+
+      if (account) {
+        finalData = {
+          ...finalData,
+          accountName: account.namePath,
+          accountPath: account.path,
+        };
+      }
+    }
+
     return this.prisma.punchPair.create({
-      data,
+      data: finalData,
       include: {
         inPunch: {
           include: {
@@ -546,9 +568,31 @@ export class PairingService {
       },
     });
 
+    // ✅ 如果有accountId，查询账户信息并设置accountName和accountPath
+    let finalData = { ...data };
+
+    if (data.accountId) {
+      const account = await this.prisma.laborAccount.findUnique({
+        where: { id: data.accountId },
+        select: {
+          id: true,
+          namePath: true,
+          path: true,
+        },
+      });
+
+      if (account) {
+        finalData = {
+          ...finalData,
+          accountName: account.namePath,
+          accountPath: account.path,
+        };
+      }
+    }
+
     // 创建新的摆卡记录
     return this.prisma.punchPair.create({
-      data,
+      data: finalData,
       include: {
         inPunch: {
           include: {

@@ -8,6 +8,7 @@ import {
   Table,
   Tag,
   Space,
+  Popconfirm,
   message,
   Row,
   Col,
@@ -19,15 +20,27 @@ import {
   InputNumber,
   TreeSelect,
   Spin,
+  List,
+  Dropdown,
+  Avatar,
+  Divider,
+  Upload,
+  Alert,
 } from 'antd';
+
+const { Option } = Select;
 import {
   ArrowLeftOutlined,
   EditOutlined,
   PlusOutlined,
+  DeleteOutlined,
   ReloadOutlined,
   HistoryOutlined,
   SaveOutlined,
   CloseOutlined,
+  UserOutlined,
+  CheckCircleFilled,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
@@ -49,6 +62,27 @@ const EmployeeDetailPage: React.FC = () => {
   const [editingSubRecord, setEditingSubRecord] = useState<any>(null);
   const [subRecordModalVisible, setSubRecordModalVisible] = useState(false);
   const [subRecordType, setSubRecordType] = useState<'education' | 'workExperience' | 'familyMember' | null>(null);
+
+  // 异动操作类型状态
+  const [changeOperationType, setChangeOperationType] = useState<'TRANSFER' | 'RESIGNATION' | null>(null);
+
+  // 金额系数相关状态
+  const [isBasicInfoEdit, setIsBasicInfoEdit] = useState(false);
+  const [coefficientModalOpen, setCoefficientModalOpen] = useState(false);
+  const [editingCoefficient, setEditingCoefficient] = useState<any>(null);
+  const [coefficientForm] = Form.useForm();
+
+  // 考勤规则组相关状态
+  const [ruleGroupGrantModalOpen, setRuleGroupGrantModalOpen] = useState(false);
+  const [ruleGroupEditModalOpen, setRuleGroupEditModalOpen] = useState(false);
+  const [editingRuleGroupRecord, setEditingRuleGroupRecord] = useState<any>(null);
+  const [ruleGroupGrantForm] = Form.useForm();
+  const [ruleGroupEditForm] = Form.useForm();
+
+  // 照片上传相关状态
+  const [photoFileList, setPhotoFileList] = useState<any[]>([]);
+  const [photoUploadUrl, setPhotoUploadUrl] = useState<string>('');
+
   const queryClient = useQueryClient();
 
   const { data: employee, isLoading } = useQuery({
@@ -56,6 +90,19 @@ const EmployeeDetailPage: React.FC = () => {
     queryFn: () => request.get(`/hr/employees/${id}`).then((res: any) => res),
     enabled: !!id && id !== 'new',
   });
+
+  // 当员工数据加载时，初始化照片上传组件的值
+  useEffect(() => {
+    if (employee?.photo) {
+      setPhotoUploadUrl(employee.photo);
+      setPhotoFileList([{
+        uid: '-1',
+        name: 'photo.jpg',
+        status: 'done',
+        url: employee.photo,
+      }]);
+    }
+  }, [employee]);
 
   const { data: accounts } = useQuery({
     queryKey: ['employeeAccounts', id],
@@ -66,16 +113,20 @@ const EmployeeDetailPage: React.FC = () => {
   // 重新生成账户的mutation
   const regenerateAccountsMutation = useMutation({
     mutationFn: () => {
+      console.log('🔄 开始重新生成账户, 员工ID:', id);
       return request.post(`/hr/employees/${id}/accounts/regenerate`);
     },
-    onSuccess: () => {
-      message.success('重新生成账户成功');
+    onSuccess: (result: any) => {
+      console.log('✅ 重新生成账户成功:', result);
+      message.success(result?.message || '重新生成账户成功');
       queryClient.invalidateQueries({ queryKey: ['employeeAccounts', id] });
     },
     onError: (error: any) => {
+      console.error('❌ 重新生成账户失败:', error);
+      console.error('❌ 错误响应:', error?.response);
+      console.error('❌ 错误数据:', error?.response?.data);
       const errorMsg = error?.response?.data?.message || error?.message || '重新生成账户失败';
       message.error(errorMsg);
-      console.error('重新生成账户失败:', error);
     },
   });
 
@@ -96,22 +147,31 @@ const EmployeeDetailPage: React.FC = () => {
     queryFn: () => request.get('/hr/employee-info-tabs/for-display').then((res: any) => res),
   });
 
+  // 确保 infoTabs 是数组
+  const infoTabsList = Array.isArray(infoTabs) ? infoTabs : [];
+
   // 设置默认激活第一个页签
   useEffect(() => {
-    if (infoTabs && infoTabs.length > 0 && activeTab === 'info') {
-      setActiveTab(infoTabs[0].code);
+    if (infoTabsList && infoTabsList.length > 0 && activeTab === 'info') {
+      setActiveTab(infoTabsList[0].code);
     }
-  }, [infoTabs]);
+  }, [infoTabsList]);
 
   const { data: customFields } = useQuery({
     queryKey: ['customFields'],
     queryFn: () => request.get('/hr/custom-fields').then((res: any) => res || []),
   });
 
+  // 确保 customFields 是数组
+  const customFieldsList = Array.isArray(customFields) ? customFields : [];
+
   const { data: dataSources } = useQuery({
     queryKey: ['dataSources'],
     queryFn: () => request.get('/hr/data-sources').then((res: any) => res || []),
   });
+
+  // 确保 dataSources 是数组
+  const dataSourcesList = Array.isArray(dataSources) ? dataSources : [];
 
   const { data: orgTree } = useQuery({
     queryKey: ['orgTree'],
@@ -125,7 +185,14 @@ const EmployeeDetailPage: React.FC = () => {
     enabled: !!id && id !== 'new',
   });
 
-  // 获取指定版本的工作信息
+  // 获取固定的当前版本信息（用于异动记录列表显示，不受选中影响）
+  const { data: fixedCurrentWorkInfo } = useQuery({
+    queryKey: ['workInfo', id, 'current-fixed'],
+    queryFn: () => request.get(`/hr/employees/${id}/work-info/current`).then((res: any) => res),
+    enabled: !!id && id !== 'new',
+  });
+
+  // 获取指定版本的工作信息（根据选中状态变化）
   const { data: currentWorkInfo, refetch: refetchWorkInfo } = useQuery({
     queryKey: ['workInfo', id, selectedWorkInfoVersion],
     queryFn: () => {
@@ -236,10 +303,12 @@ const EmployeeDetailPage: React.FC = () => {
       // 立即重新获取所有相关数据
       await queryClient.refetchQueries({ queryKey: ['employee', id] });
       await queryClient.refetchQueries({ queryKey: ['workInfo', id, selectedWorkInfoVersion] });
+      await queryClient.refetchQueries({ queryKey: ['workInfo', id, 'current-fixed'] }); // 刷新固定的当前版本
       await queryClient.refetchQueries({ queryKey: ['workInfoVersions', id] });
 
       setEditingTabCode(null);
       form.resetFields();
+      setEditingWorkInfoHistoryId(null);
     },
     onError: (error: any) => {
       const errorMsg = error?.response?.data?.message || error?.message || '更正失败';
@@ -371,6 +440,170 @@ const EmployeeDetailPage: React.FC = () => {
     },
   });
 
+  // 金额系数相关查询和变更
+  const { data: coefficients, isLoading: coefficientsLoading } = useQuery({
+    queryKey: ['employeeCoefficients', id],
+    queryFn: async () => {
+      const res = await request.get(`/amount/employee-coefficients?employeeId=${id}`);
+      // 后端返回 { items, total, page, pageSize, totalPages }
+      // 确保返回数组格式
+      const data = res.items || res.data || res;
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!id && id !== 'new',
+  });
+
+  const saveCoefficientMutation = useMutation({
+    mutationFn: async (data: any) => {
+      // 处理日期字段格式
+      const submitData = {
+        ...data,
+        effectiveDate: data.effectiveDate ? dayjs(data.effectiveDate).format('YYYY-MM-DD') : null,
+        expiryDate: data.expiryDate ? dayjs(data.expiryDate).format('YYYY-MM-DD') : null,
+      };
+
+      console.log('💰 保存金额系数 - 原始数据:', data);
+      console.log('💰 保存金额系数 - 提交数据:', submitData);
+      console.log('💰 编辑中的系数:', editingCoefficient);
+
+      if (editingCoefficient) {
+        console.log('💰 发送PUT请求到:', `/amount/employee-coefficients/${editingCoefficient.id}`);
+        const res = await request.put(`/amount/employee-coefficients/${editingCoefficient.id}`, submitData);
+        return res;
+      }
+      console.log('💰 发送POST请求到:', '/amount/employee-coefficients');
+      const res = await request.post('/amount/employee-coefficients', { ...submitData, employeeId: parseInt(id as string) });
+      return res;
+    },
+    onSuccess: () => {
+      message.success('保存成功');
+      queryClient.invalidateQueries({ queryKey: ['employeeCoefficients', id] });
+      setCoefficientModalOpen(false);
+      setEditingCoefficient(null);
+      coefficientForm.resetFields();
+    },
+    onError: (error: any) => {
+      message.error(error?.response?.data?.message || '保存失败');
+    },
+  });
+
+  const deleteCoefficientMutation = useMutation({
+    mutationFn: (coefficientId: number) => {
+      const res = request.delete(`/amount/employee-coefficients/${coefficientId}`);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['employeeCoefficients', id] });
+    },
+    onError: (error: any) => {
+      message.error(error?.response?.data?.message || '删除失败');
+    },
+  });
+
+  // 考勤规则组相关查询和变更
+  const { data: ruleGroupsData, isLoading: ruleGroupsLoading } = useQuery({
+    queryKey: ['employeeRuleGroups', id],
+    queryFn: async () => {
+      const res = await request.get(`/attendance-rule-groups/employee-groups/${id}`);
+      return res;
+    },
+    enabled: !!id && id !== 'new',
+  });
+
+  const ruleGroups = ruleGroupsData?.items || [];
+
+  const { data: allRuleGroupsData } = useQuery({
+    queryKey: ['allAttendanceRuleGroups'],
+    queryFn: async () => {
+      const res = await request.get('/attendance-rule-groups?status=ACTIVE');
+      return res;
+    },
+  });
+
+  const allRuleGroups = allRuleGroupsData?.items || [];
+
+  const updateRuleGroupMutation = useMutation({
+    mutationFn: async (data: any) => {
+      // 处理日期字段：将 dayjs 对象转换为字符串
+      // 处理数字字段：将字符串转换为数字（Select 组件返回的是字符串）
+      const processedData = {
+        ruleGroupId: typeof data.ruleGroupId === 'string' ? Number(data.ruleGroupId) : data.ruleGroupId,
+        effectiveDate: data.effectiveDate ? data.effectiveDate.format('YYYY-MM-DD') : undefined,
+        expiryDate: data.expiryDate ? data.expiryDate.format('YYYY-MM-DD') : null,
+        reason: data.reason,
+      };
+
+      console.log('🔍 更新考勤规则组 - 原始表单数据:', JSON.stringify(data, null, 2));
+      console.log('🔍 更新考勤规则组 - 处理后数据:', JSON.stringify(processedData, null, 2));
+      console.log('🔍 ruleGroupId 类型:', typeof processedData.ruleGroupId, '值:', processedData.ruleGroupId);
+      console.log('🔍 请求 URL:', `/attendance-rule-groups/employee-groups/${id}`);
+
+      await request.put(`/attendance-rule-groups/employee-groups/${id}`, processedData);
+    },
+    onSuccess: () => {
+      message.success('更新成功');
+      queryClient.invalidateQueries({ queryKey: ['employeeRuleGroups'] });
+      setRuleGroupEditModalOpen(false);
+      setEditingRuleGroupRecord(null);
+      ruleGroupEditForm.resetFields();
+    },
+    onError: (error: any) => {
+      console.error('更新考勤规则组失败:', error);
+      const errorMsg = error?.response?.data?.message || error?.message || '更新失败';
+      message.error(errorMsg);
+    },
+  });
+
+  const grantRuleGroupMutation = useMutation({
+    mutationFn: async (data: any) => {
+      // 处理日期字段：将 dayjs 对象转换为字符串
+      // 处理数字字段：将字符串转换为数字（Select 组件返回的是字符串）
+      const processedData = {
+        ...data,
+        ruleGroupId: typeof data.ruleGroupId === 'string' ? Number(data.ruleGroupId) : data.ruleGroupId,
+        effectiveDate: data.effectiveDate ? data.effectiveDate.format('YYYY-MM-DD') : undefined,
+        expiryDate: data.expiryDate ? data.expiryDate.format('YYYY-MM-DD') : null,
+      };
+
+      console.log('处理后的数据:', processedData);
+      console.log('员工ID (字符串):', id, '类型:', typeof id);
+      console.log('员工ID (数字):', Number(id), '类型:', typeof Number(id));
+
+      await request.post('/attendance-rule-groups/grant-to-employees', {
+        ...processedData,
+        employeeIds: [Number(id)], // 将字符串转换为数字
+      });
+    },
+    onSuccess: () => {
+      message.success('授予成功');
+      queryClient.invalidateQueries({ queryKey: ['employeeRuleGroups'] });
+      setRuleGroupGrantModalOpen(false);
+      ruleGroupGrantForm.resetFields();
+    },
+    onError: (error: any) => {
+      console.error('授予考勤规则组失败:', error);
+      const errorMsg = error?.response?.data?.message || error?.message || '授予失败';
+      message.error(errorMsg);
+    },
+  });
+
+  // 删除考勤规则组记录
+  const deleteRuleGroupMutation = useMutation({
+    mutationFn: async (recordId: number) => {
+      return await request.delete(`/attendance-rule-groups/employee-groups/${recordId}`);
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['employeeRuleGroups'] });
+    },
+    onError: (error: any) => {
+      console.error('删除考勤规则组失败:', error);
+      const errorMsg = error?.response?.data?.message || error?.message || '删除失败';
+      message.error(errorMsg);
+    },
+  });
+
   if (id === 'new') {
     return (
       <div>
@@ -390,16 +623,6 @@ const EmployeeDetailPage: React.FC = () => {
 
   const accountColumns = [
     {
-      title: '账户编码',
-      dataIndex: 'code',
-      key: 'code',
-    },
-    {
-      title: '账户名称',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
       title: '类型',
       dataIndex: 'type',
       key: 'type',
@@ -410,14 +633,9 @@ const EmployeeDetailPage: React.FC = () => {
       ),
     },
     {
-      title: '层级',
-      dataIndex: 'level',
-      key: 'level',
-    },
-    {
-      title: '路径',
-      dataIndex: 'path',
-      key: 'path',
+      title: '劳动力账户',
+      dataIndex: 'namePath',
+      key: 'namePath',
     },
     {
       title: '生效日期',
@@ -466,9 +684,483 @@ const EmployeeDetailPage: React.FC = () => {
     </Card>
   );
 
+  // 渲染员工金额系数
+  // 渲染员工金额系数
+  const renderEmployeeCoefficient = () => {
+    const columns = [
+      {
+        title: '数值',
+        dataIndex: 'coefficient',
+        key: 'coefficient',
+        render: (value: number) => (
+          <Tag color="blue" style={{ fontSize: 16, padding: '4px 12px' }}>
+            {value}
+          </Tag>
+        ),
+      },
+      {
+        title: '生效日期',
+        dataIndex: 'effectiveDate',
+        key: 'effectiveDate',
+        render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
+      },
+      {
+        title: '失效日期',
+        dataIndex: 'expiryDate',
+        key: 'expiryDate',
+        render: (date: string | null) => (date ? dayjs(date).format('YYYY-MM-DD') : '永久'),
+      },
+      {
+        title: '调整原因',
+        dataIndex: 'reason',
+        key: 'reason',
+        ellipsis: true,
+      },
+      {
+        title: '状态',
+        dataIndex: 'status',
+        key: 'status',
+        render: (status: string) =>
+          status === 'ACTIVE' ? <Tag color="success">启用</Tag> : <Tag color="default">停用</Tag>,
+      },
+      {
+        title: '操作',
+        key: 'action',
+        width: 150,
+        render: (_: any, record: any) => (
+          <Space>
+            <Button
+              type="link"
+              icon={<EditOutlined />}
+              onClick={() => {
+                setEditingCoefficient(record);
+                coefficientForm.setFieldsValue({
+                  coefficient: record.coefficient,
+                  effectiveDate: dayjs(record.effectiveDate),
+                  expiryDate: record.expiryDate ? dayjs(record.expiryDate) : null,
+                  reason: record.reason || '',
+                  status: record.status || 'ACTIVE',
+                });
+                setCoefficientModalOpen(true);
+              }}
+            >
+              编辑
+            </Button>
+            <Popconfirm
+              title="确认删除"
+              description="删除后不可恢复"
+              onConfirm={() => deleteCoefficientMutation.mutate(record.id)}
+            >
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
+    ];
+
+    return (
+      <Card
+        title="金额"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+            setEditingCoefficient(null);
+            coefficientForm.resetFields();
+            setCoefficientModalOpen(true);
+          }}>
+            新增
+          </Button>
+        }
+      >
+        <Table
+          columns={columns}
+          dataSource={coefficients || []}
+          rowKey="id"
+          loading={coefficientsLoading}
+          pagination={{
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+          }}
+        />
+
+        <Modal
+          title={editingCoefficient ? '编辑金额系数' : '新增金额系数'}
+          open={coefficientModalOpen}
+          onOk={() => coefficientForm.submit()}
+          onCancel={() => {
+            setCoefficientModalOpen(false);
+            setEditingCoefficient(null);
+            coefficientForm.resetFields();
+          }}
+          width={600}
+          confirmLoading={saveCoefficientMutation.isPending}
+        >
+          <Form form={coefficientForm} layout="vertical" style={{ marginTop: 24 }} onFinish={saveCoefficientMutation.mutate}>
+            <Form.Item
+              label="系数值"
+              name="coefficient"
+              rules={[{ required: true, message: '请输入系数值' }]}
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：20" />
+            </Form.Item>
+
+            <Form.Item
+              label="生效日期"
+              name="effectiveDate"
+              rules={[{ required: true, message: '请选择生效日期' }]}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item
+              label="失效日期"
+              name="expiryDate"
+              tooltip="留空表示永久有效"
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item
+              label="调整原因"
+              name="reason"
+            >
+              <Input.TextArea rows={3} placeholder="请输入调整原因" maxLength={200} showCount />
+            </Form.Item>
+
+            <Form.Item
+              label="状态"
+              name="status"
+              initialValue="ACTIVE"
+            >
+              <Select
+                options={[
+                  { label: '启用', value: 'ACTIVE' },
+                  { label: '停用', value: 'INACTIVE' },
+                ]}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+      </Card>
+    );
+  };
+
+  // 渲染员工考勤规则组
+  const renderEmployeeRuleGroups = () => {
+    const columns = [
+      {
+        title: '规则组名称',
+        dataIndex: ['ruleGroup', 'name'],
+        key: 'ruleGroupName',
+      },
+      {
+        title: '生效日期',
+        dataIndex: 'effectiveDate',
+        key: 'effectiveDate',
+        render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
+      },
+      {
+        title: '失效日期',
+        dataIndex: 'expiryDate',
+        key: 'expiryDate',
+        render: (date: string | null) => (date ? dayjs(date).format('YYYY-MM-DD') : '永久'),
+      },
+      {
+        title: '是否当前',
+        dataIndex: 'isCurrent',
+        key: 'isCurrent',
+        render: (isCurrent: boolean) =>
+          isCurrent ? <Tag color="success">当前</Tag> : <Tag>历史</Tag>,
+      },
+      {
+        title: '授予原因',
+        dataIndex: 'reason',
+        key: 'reason',
+        ellipsis: true,
+      },
+      {
+        title: '授予时间',
+        dataIndex: 'createdAt',
+        key: 'createdAt',
+        render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm'),
+      },
+      {
+        title: '操作',
+        key: 'action',
+        width: 150,
+        render: (_: any, record: any) => (
+          <Space>
+            <Button
+              type="link"
+              icon={<EditOutlined />}
+              onClick={() => {
+                setEditingRuleGroupRecord(record);
+                ruleGroupEditForm.setFieldsValue({
+                  ruleGroupId: record.ruleGroupId,
+                  effectiveDate: dayjs(record.effectiveDate),
+                  expiryDate: record.expiryDate ? dayjs(record.expiryDate) : null,
+                  reason: record.reason,
+                });
+                setRuleGroupEditModalOpen(true);
+              }}
+            >
+              编辑
+            </Button>
+            <Popconfirm
+              title="删除确认"
+              description="确定要删除这条考勤规则组记录吗？"
+              onConfirm={() => deleteRuleGroupMutation.mutate(record.id)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button
+                type="link"
+                danger
+                icon={<DeleteOutlined />}
+                disabled={record.isCurrent}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
+    ];
+
+    return (
+      <Card
+        title="考勤规则组历史"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              ruleGroupGrantForm.resetFields();
+              setRuleGroupGrantModalOpen(true);
+            }}
+          >
+            授予新规则组
+          </Button>
+        }
+      >
+        <Table
+          columns={columns}
+          dataSource={ruleGroups}
+          rowKey="id"
+          loading={ruleGroupsLoading}
+          pagination={{
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+          }}
+        />
+
+        {/* Grant Modal */}
+        <Modal
+          title="授予考勤规则组"
+          open={ruleGroupGrantModalOpen}
+          onOk={() => ruleGroupGrantForm.submit()}
+          onCancel={() => {
+            setRuleGroupGrantModalOpen(false);
+            ruleGroupGrantForm.resetFields();
+          }}
+          width={600}
+          confirmLoading={grantRuleGroupMutation.isPending}
+        >
+          <Form
+            form={ruleGroupGrantForm}
+            layout="vertical"
+            style={{ marginTop: 24 }}
+            onFinish={(values) => {
+              console.log('授予考勤规则组表单数据:', values);
+              grantRuleGroupMutation.mutate(values);
+            }}
+          >
+            <Form.Item
+              label="规则组"
+              name="ruleGroupId"
+              rules={[{ required: true, message: '请选择规则组' }]}
+            >
+              <Select placeholder="请选择规则组" showSearch optionFilterProp="children">
+                {allRuleGroups.map((rg: any) => (
+                  <Select.Option key={rg.id} value={rg.id}>
+                    {rg.name} ({rg.code})
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              label="生效日期"
+              name="effectiveDate"
+              rules={[{ required: true, message: '请选择生效日期' }]}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item label="失效日期" name="expiryDate" tooltip="留空表示永久有效">
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item label="授予原因" name="reason">
+              <Input.TextArea rows={3} placeholder="请输入授予原因" maxLength={200} showCount />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        {/* Edit Modal */}
+        <Modal
+          title="编辑考勤规则组"
+          open={ruleGroupEditModalOpen}
+          onOk={() => ruleGroupEditForm.submit()}
+          onCancel={() => {
+            setRuleGroupEditModalOpen(false);
+            setEditingRuleGroupRecord(null);
+            ruleGroupEditForm.resetFields();
+          }}
+          width={600}
+          confirmLoading={updateRuleGroupMutation.isPending}
+        >
+          <Form
+            form={ruleGroupEditForm}
+            layout="vertical"
+            style={{ marginTop: 24 }}
+            onFinish={(values) => {
+              console.log('🔍 表单提交的原始值:', JSON.stringify(values, null, 2));
+              // 明��只提取需要的字段，避免额外的字段
+              const { ruleGroupId, effectiveDate, expiryDate, reason } = values;
+              const cleanValues = { ruleGroupId, effectiveDate, expiryDate, reason };
+              console.log('🔍 清理后的值:', JSON.stringify(cleanValues, null, 2));
+              updateRuleGroupMutation.mutate(cleanValues);
+            }}
+          >
+            <Form.Item label="规则组" name="ruleGroupId">
+              <Select placeholder="请选择规则组" showSearch optionFilterProp="children" disabled>
+                {allRuleGroups.map((rg: any) => (
+                  <Select.Option key={rg.id} value={rg.id}>
+                    {rg.name} ({rg.code})
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              label="生效日期"
+              name="effectiveDate"
+              rules={[{ required: true, message: '请选择生效日期' }]}
+            >
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item label="失效日期" name="expiryDate" tooltip="留空表示永久有效">
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item label="授予原因" name="reason">
+              <Input.TextArea rows={3} placeholder="请输入授予原因" maxLength={200} showCount />
+            </Form.Item>
+          </Form>
+        </Modal>
+      </Card>
+    );
+  };
+
   // 判断是否为工作信息页签
   const isWorkInfoTab = (tabCode: string) => {
     return tabCode === 'work_info';
+  };
+
+  // 加载表单数据
+  const loadFormData = (workInfoData: any, type?: string) => {
+    // 获取当前工作信息数据
+    const data = workInfoData || {};
+    setEditingWorkInfoHistoryId(data?.id || null);
+
+    // 加载所有可能的系统字段
+    const systemFieldsData: any = {};
+
+    // 优先从 employee 对象加载基本信息
+    if (employee) {
+      if (employee.employeeNo) systemFieldsData.employeeNo = employee.employeeNo;
+      if (employee.name) systemFieldsData.name = employee.name;
+      if (employee.gender) systemFieldsData.gender = employee.gender;
+      if (employee.idCard) systemFieldsData.idCard = employee.idCard;
+      if (employee.phone) systemFieldsData.phone = employee.phone;
+      if (employee.email) systemFieldsData.email = employee.email;
+      if (employee.entryDate) {
+        systemFieldsData.entryDate = dayjs(employee.entryDate);
+      }
+      if (employee.status) systemFieldsData.status = employee.status;
+    }
+
+    // 从 workInfoData 加载工作信息字段
+    const workInfoFieldNames = [
+      'orgId', 'position', 'jobLevel', 'employeeType',
+      'workLocation', 'workAddress', 'hireDate',
+      'probationStart', 'probationEnd', 'probationMonths',
+      'regularDate', 'resignationDate', 'resignationReason', 'workYears',
+      'costCenter', 'employmentRelation',
+    ];
+
+    workInfoFieldNames.forEach(fieldName => {
+      const value = data?.[fieldName];
+      if (value !== undefined && value !== null) {
+        if (fieldName.endsWith('Date') || fieldName.endsWith('date') ||
+            fieldName.endsWith('Start') || fieldName.endsWith('End')) {
+          if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            systemFieldsData[fieldName] = dayjs(value);
+          } else {
+            systemFieldsData[fieldName] = value;
+          }
+        } else {
+          systemFieldsData[fieldName] = value;
+        }
+      }
+    });
+
+    // 获取并合并 customFields
+    const employeeCustomFields = employee?.customFields ?
+      (typeof employee.customFields === 'string' ? JSON.parse(employee.customFields) : employee.customFields) : {};
+    const workInfoCustomFields = data?.customFields || {};
+
+    const mergedCustomFields = {
+      ...employeeCustomFields,
+      ...workInfoCustomFields
+    };
+
+    // 将自定义字段展开到表单顶层
+    const flattenedCustomFields = {};
+    Object.entries(mergedCustomFields).forEach(([key, value]) => {
+      if (value && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        flattenedCustomFields[key] = dayjs(value);
+      } else {
+        flattenedCustomFields[key] = value;
+      }
+    });
+
+    // 合并所有字段，确保 changeType 在最外层
+    const formData = {
+      ...flattenedCustomFields,
+      ...systemFieldsData,
+      changeType: type || data?.changeType || 'EDIT', // 确保异动类型被正确设置
+    };
+
+    console.log('设置表单数据:', formData);
+
+    form.setFieldsValue(formData);
+  };
+
+  // 处理异动/离职操作
+  const handleChangeOperation = (type: 'TRANSFER' | 'RESIGNATION') => {
+    setChangeOperationType(type);
+    setEditingTabCode('work_info');
+    setIsCreatingNewVersion(false);
+
+    // 获取当前工作信息数据
+    const workInfoData = currentWorkInfo?.currentWorkInfo || {};
+
+    // 使用 loadFormData 函数加载表单数据
+    loadFormData(workInfoData, type);
   };
 
   // 处理编辑按钮点击
@@ -479,66 +1171,72 @@ const EmployeeDetailPage: React.FC = () => {
       // 工作信息需要选择是创建新版本还是编辑当前版本
       setEditingTabCode(tabCode);
       setEditModalVisible(true);
-    } else {
-      // 其他页签直接进入编辑模式
-      setEditingTabCode(tabCode);
-      // 加载当前数据到表单（包括系统字段和自定义字段）
-      const customFields = employee?.customFields ? JSON.parse(employee.customFields) : {};
-
-      // 将自定义字段展开到表单顶层
-      const flattenedCustomFields = {};
-      Object.entries(customFields).forEach(([key, value]) => {
-        // 转换日期字段为 dayjs 对象
-        if (value && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-          flattenedCustomFields[key] = dayjs(value);
-        } else {
-          flattenedCustomFields[key] = value;
-        }
-      });
-
-      const systemFieldsData = {
-        employeeNo: employee?.employeeNo,
-        name: employee?.name,
-        gender: employee?.gender,
-        idCard: employee?.idCard,
-        phone: employee?.phone,
-        email: employee?.email,
-        orgId: employee?.orgId,
-        position: employee?.position,
-        jobLevel: employee?.jobLevel,
-        employeeType: employee?.employeeType,
-        workLocation: employee?.workLocation,
-        workAddress: employee?.workAddress,
-        entryDate: employee?.entryDate ? dayjs(employee.entryDate) : undefined,
-        hireDate: employee?.hireDate ? dayjs(employee.hireDate) : undefined,
-        birthDate: employee?.birthDate ? dayjs(employee.birthDate) : undefined,
-        probationStart: employee?.probationStart ? dayjs(employee.probationStart) : undefined,
-        probationEnd: employee?.probationEnd ? dayjs(employee.probationEnd) : undefined,
-        // 基本信息页签的其他字段（不包括age，age会自动计算）
-        maritalStatus: employee?.maritalStatus,
-        nativePlace: employee?.nativePlace,
-        politicalStatus: employee?.politicalStatus,
-        householdRegister: employee?.householdRegister,
-        currentAddress: employee?.currentAddress,
-        photo: employee?.photo,
-        emergencyContact: employee?.emergencyContact,
-        emergencyPhone: employee?.emergencyPhone,
-        emergencyRelation: employee?.emergencyRelation,
-        homeAddress: employee?.homeAddress,
-        homePhone: employee?.homePhone,
-        status: employee?.status,
-      };
-      form.setFieldsValue({
-        ...systemFieldsData,
-        ...flattenedCustomFields,
-      });
+      // 获取当前工作信息数据
+      const workInfoData = currentWorkInfo?.currentWorkInfo || {};
+      setEditingWorkInfoHistoryId(workInfoData?.id || null);
+      loadFormData(workInfoData, workInfoData?.changeType || 'EDIT');
       setIsCreatingNewVersion(false);
+      setChangeOperationType(null);
+      setIsBasicInfoEdit(false);  // 标记为非基本信息编辑
+      return;
+    }
+
+    // 非工作信息页签（基本信息），直接编辑不需要版本控制
+    setEditingTabCode(tabCode);
+    loadFormData(employee);
+    setIsCreatingNewVersion(false);
+    setChangeOperationType(null);
+    setIsBasicInfoEdit(true);  // 标记为基本信息编辑
+    setEditModalVisible(true);
+  };
+
+  // 处理异动记录编辑
+  const handleEditVersion = async (versionItem: any) => {
+    try {
+      // 先切换到工作信息页签
+      setActiveTab('work_info');
+
+      // 如果是当前版本，先切换选中状态再编辑
+      if (versionItem.isCurrent) {
+        // 确保当前选中的是 'current'
+        setSelectedWorkInfoVersion('current');
+        // 等待数据加载
+        await refetchWorkInfo();
+
+        // 使用当前版本数据
+        const workInfoData = currentWorkInfo?.currentWorkInfo || {};
+        if (!workInfoData || !workInfoData.id) {
+          message.error('当前版本数据未加载完成，请稍后再试');
+          return;
+        }
+        setEditingWorkInfoHistoryId(workInfoData?.id || null);
+        loadFormData(workInfoData, workInfoData?.changeType || 'EDIT');
+      } else {
+        // 如果是历史版本，需要获取该版本的详细数据
+        const versionData = await request.get(`/hr/employees/${id}/work-info/${versionItem.id}`).then((res: any) => res);
+        const workInfoData = versionData?.currentWorkInfo || {};
+        if (!workInfoData || !workInfoData.id) {
+          message.error('历史版本数据加载失败');
+          return;
+        }
+        setEditingWorkInfoHistoryId(workInfoData?.id || parseInt(versionItem.id));
+        loadFormData(workInfoData, workInfoData?.changeType || 'EDIT');
+      }
+
+      // 打开编辑界面
+      setEditingTabCode('work_info');
+      setIsCreatingNewVersion(false);
+      setChangeOperationType(null);
+    } catch (error) {
+      console.error('加载版本数据失败:', error);
+      message.error(`加载版本数据失败: ${error?.response?.data?.message || error?.message || '未知错误'}`);
     }
   };
 
   // 处理取消编辑
   const handleCancelEdit = () => {
     setEditingTabCode(null);
+    setIsBasicInfoEdit(false);  // 重置基本信息编辑标记
     form.resetFields();
   };
 
@@ -762,13 +1460,132 @@ const EmployeeDetailPage: React.FC = () => {
 
   // 处理工作信息编辑确认
   const handleWorkInfoEditConfirm = async (createNewVersion: boolean) => {
-    if (!effectiveDate && createNewVersion) {
+    // 如果是异动/离职操作，不需要验证生效日期
+    if (!effectiveDate && createNewVersion && !changeOperationType) {
       message.error('请选择生效日期');
       return;
     }
 
     try {
       const values = await form.validateFields();
+
+      // 如果是基本信息编辑（非工作信息页签），直接更新员工信息
+      if (isBasicInfoEdit) {
+        console.log('基本信息编辑 - 直接更新员工信息');
+        
+        // 基本���息字段列表
+        const basicInfoFields = ['employeeNo', 'name', 'gender', 'idCard', 'phone', 'email',
+                                   'birthDate', 'entryDate', 'status', 'age', 'photo', 'maritalStatus',
+                                   'nativePlace', 'politicalStatus', 'householdRegister', 'currentAddress',
+                                   'emergencyContact', 'emergencyPhone', 'emergencyRelation',
+                                   'homeAddress', 'homePhone'];
+        
+        // 构建要更新的数据
+        const updateData: any = {};
+        basicInfoFields.forEach(field => {
+          if (values[field] !== undefined && values[field] !== null) {
+            if (dayjs.isDayjs(values[field])) {
+              updateData[field] = values[field].format('YYYY-MM-DD');
+            } else {
+              updateData[field] = values[field];
+            }
+          }
+        });
+        
+        console.log('提交基本信息更新:', updateData);
+        
+        try {
+          await request.put(`/hr/employees/${id}`, updateData);
+          message.success('保存成功');
+          setIsBasicInfoEdit(false);
+          setEditingTabCode(null);
+          setEditModalVisible(false);
+          form.resetFields();
+          await queryClient.refetchQueries({ queryKey: ['employee', id] });
+        } catch (error: any) {
+          console.error('基本信息更新失败:', error);
+          const errorMsg = error?.response?.data?.message || error?.message || '保存失败';
+          message.error(errorMsg);
+        }
+        return;
+      }
+
+      // 如果是异动/离职操作，调用专门的API
+      if (changeOperationType) {
+        // 基本信息字段列表（这些字段不参与异动保存）
+        const basicInfoFields = ['employeeNo', 'name', 'gender', 'idCard', 'phone', 'email',
+                                   'birthDate', 'entryDate', 'status', 'age', 'photo', 'maritalStatus',
+                                   'nativePlace', 'politicalStatus', 'householdRegister', 'currentAddress',
+                                   'emergencyContact', 'emergencyPhone', 'emergencyRelation',
+                                   'homeAddress', 'homePhone'];
+
+        // 构建自定义字段对象，只包含工作信息相关的自定义字段
+        const customFieldsData: any = {};
+        const workInfoCustomFieldKeys = ['employmentRelation', 'jobPost', 'positionTitle', 'costCenter',
+                                           'usageStartDate', 'serviceYearsStartDate', 'estimatedProbationEndDate'];
+
+        workInfoCustomFieldKeys.forEach(key => {
+          if (values[key] !== undefined && values[key] !== null) {
+            if (dayjs.isDayjs(values[key])) {
+              customFieldsData[key] = values[key].format('YYYY-MM-DD');
+            } else {
+              customFieldsData[key] = values[key];
+            }
+          }
+        });
+
+        // 构建提交数据
+        const changeData: any = {
+          changeType: values.changeType,
+          effectiveDate: values.effectiveDate?.format('YYYY-MM-DD'),
+          customFields: customFieldsData,
+        };
+
+        // 根据异动类型添加字段
+        if (values.changeType === 'RESIGNATION') {
+          changeData.resignationDate = values.resignationDate?.format('YYYY-MM-DD');
+          changeData.resignationReason = values.resignationReason;
+        }
+
+        // 只添加工作信息字段（系统字段），明确排除基本信息字段
+        const workInfoFields = ['orgId', 'position', 'jobLevel', 'employeeType', 'workLocation',
+                                 'workAddress', 'hireDate', 'probationStart', 'probationEnd',
+                                 'probationMonths', 'regularDate', 'costCenter', 'employmentRelation'];
+
+        workInfoFields.forEach(field => {
+          // 跳过基本信息字段
+          if (basicInfoFields.includes(field)) {
+            return;
+          }
+          if (values[field] !== undefined && values[field] !== null) {
+            if (dayjs.isDayjs(values[field])) {
+              changeData[field] = values[field].format('YYYY-MM-DD');
+            } else {
+              changeData[field] = values[field];
+            }
+          }
+        });
+
+        console.log('提交异动数据:', changeData);
+
+        try {
+          await request.post(`/hr/employees/${id}/work-info-changes`, changeData);
+          message.success('操作成功');
+          setChangeOperationType(null);
+          setEditingTabCode(null);
+          form.resetFields();
+          // 使用正确的查询键重新获取数据
+          await queryClient.refetchQueries({ queryKey: ['workInfo', id, 'current'] });
+          await queryClient.refetchQueries({ queryKey: ['workInfoVersions', id] });
+          await queryClient.refetchQueries({ queryKey: ['employee', id] });
+        } catch (error: any) {
+          console.error('异动操作失败:', error);
+          console.error('错误详情:', error?.response);
+          const errorMsg = error?.response?.data?.message || error?.message || '操作失败，请检查后端服务是否正常运行';
+          message.error(errorMsg);
+        }
+        return;
+      }
 
       // 将表单值转换为后端需要的格式
       const customFieldsToSave: any = {};  // 职位信息（支持时间轴）
@@ -778,7 +1595,7 @@ const EmployeeDetailPage: React.FC = () => {
       const basicInfoFields = ['employeeNo', 'name', 'gender', 'idCard', 'phone', 'email', 'birthDate', 'probationStart', 'probationEnd', 'status'];
 
       // 职位信息（支持时间轴，保存到 customFields）
-      const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'orgId', 'workLocation', 'workAddress'];
+      const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'orgId', 'workLocation', 'workAddress', 'costCenter', 'cost_center', 'employmentRelation', 'employment_relation'];
 
       // 入职信息（不支持时间轴，直接更新员工表）
       const entryInfoFields = ['entryDate', 'hireDate'];
@@ -836,9 +1653,9 @@ const EmployeeDetailPage: React.FC = () => {
   };
 
   // 下拉类型的自定义字段
-  const dropdownFields = customFields?.filter((f: any) =>
+  const dropdownFields = customFieldsList.filter((f: any) =>
     f.type === 'SELECT_SINGLE' || f.type === 'SELECT_MULTI' || f.type === 'LOOKUP'
-  ) || [];
+  );
 
   // 获取下拉选项
   const getDropdownOptions = (fieldCode: string) => {
@@ -869,7 +1686,7 @@ const EmployeeDetailPage: React.FC = () => {
 
   // 根据数据源代码获取选项
   const getOptionsByDataSourceCode = (dataSourceCode: string) => {
-    const dataSource = dataSources?.find((ds: any) => ds.code === dataSourceCode);
+    const dataSource = dataSourcesList.find((ds: any) => ds.code === dataSourceCode);
     if (!dataSource || !dataSource.options) {
       return [];
     }
@@ -888,8 +1705,8 @@ const EmployeeDetailPage: React.FC = () => {
 
     // 系统字段的下拉选项
     if (fieldType === 'SYSTEM') {
-      if (fieldCode === 'gender' || fieldCode === 'gender') {
-        const options = getOptionsByDataSourceCode('gender');
+      if (fieldCode === 'gender') {
+        const options = getOptionsByDataSourceCode('GENDER');
         const option = options.find((opt: any) => opt.value === value);
         return option?.label || value;
       }
@@ -909,22 +1726,22 @@ const EmployeeDetailPage: React.FC = () => {
         return option?.label || value;
       }
       if (fieldCode === 'educationLevel' || fieldCode === 'education_level') {
-        const options = getOptionsByDataSourceCode('education_level');
+        const options = getOptionsByDataSourceCode('EDUCATION_LEVEL');
         const option = options.find((opt: any) => opt.value === value);
         return option?.label || value;
       }
       if (fieldCode === 'educationType' || fieldCode === 'education_type') {
-        const options = getOptionsByDataSourceCode('education_type');
+        const options = getOptionsByDataSourceCode('EDUCATION_TYPE');
         const option = options.find((opt: any) => opt.value === value);
         return option?.label || value;
       }
       if (fieldCode === 'maritalStatus' || fieldCode === 'marital_status') {
-        const options = getOptionsByDataSourceCode('marital_status');
+        const options = getOptionsByDataSourceCode('MARITAL_STATUS');
         const option = options.find((opt: any) => opt.value === value);
         return option?.label || value;
       }
       if (fieldCode === 'politicalStatus' || fieldCode === 'political_status') {
-        const options = getOptionsByDataSourceCode('political_status');
+        const options = getOptionsByDataSourceCode('POLITICAL_STATUS');
         const option = options.find((opt: any) => opt.value === value);
         return option?.label || value;
       }
@@ -945,7 +1762,7 @@ const EmployeeDetailPage: React.FC = () => {
       }
       // 在职状态 - employment_status
       if (fieldCode === 'status' || fieldCode === 'employment_status') {
-        const options = getOptionsByDataSourceCode('employment_status');
+        const options = getOptionsByDataSourceCode('EMPLOYMENT_STATUS');
         if (options && options.length > 0) {
           // 大小写不敏感匹配
           const option = options.find((opt: any) => opt.value.toLowerCase() === value.toLowerCase());
@@ -970,7 +1787,7 @@ const EmployeeDetailPage: React.FC = () => {
       }
       // 紧急联系人关系
       if (fieldCode === 'emergency_relation' || fieldCode === 'emergencyRelation') {
-        const options = getOptionsByDataSourceCode('emergency_relation');
+        const options = getOptionsByDataSourceCode('EMERGENCY_CONTACT_RELATION');
         if (options && options.length > 0) {
           const option = options.find((opt: any) => opt.value === value);
           return option?.label || value;
@@ -987,7 +1804,7 @@ const EmployeeDetailPage: React.FC = () => {
       }
       // 民族
       if (fieldCode === 'nation') {
-        const options = getOptionsByDataSourceCode('nation');
+        const options = getOptionsByDataSourceCode('NATION');
         if (options && options.length > 0) {
           const option = options.find((opt: any) => opt.value === value);
           return option?.label || value;
@@ -1009,7 +1826,7 @@ const EmployeeDetailPage: React.FC = () => {
       }
       // 工作地点
       if (fieldCode === 'workLocation' || fieldCode === 'work_location') {
-        const options = getOptionsByDataSourceCode('work_location');
+        const options = getOptionsByDataSourceCode('WORK_LOCATION');
         if (options && options.length > 0) {
           const option = options.find((opt: any) => opt.value === value);
           return option?.label || value;
@@ -1019,6 +1836,38 @@ const EmployeeDetailPage: React.FC = () => {
       // 人员类型（自定义字段A06）
       if (fieldCode === 'A06' || fieldCode === 'person_type') {
         const options = getOptionsByDataSourceCode('EmpType');
+        if (options && options.length > 0) {
+          const option = options.find((opt: any) => opt.value === value);
+          return option?.label || value;
+        }
+      }
+      // 工作关系
+      if (fieldCode === 'employmentRelation' || fieldCode === 'employment_relation') {
+        const options = getOptionsByDataSourceCode('EMPLOYMENT_RELATION');
+        if (options && options.length > 0) {
+          const option = options.find((opt: any) => opt.value === value);
+          return option?.label || value;
+        }
+      }
+      // 成本中心
+      if (fieldCode === 'costCenter' || fieldCode === 'cost_center') {
+        const options = getOptionsByDataSourceCode('COST_CENTER');
+        if (options && options.length > 0) {
+          const option = options.find((opt: any) => opt.value === value);
+          return option?.label || value;
+        }
+      }
+      // 岗位
+      if (fieldCode === 'jobPost' || fieldCode === 'job_post') {
+        const options = getOptionsByDataSourceCode('JOB_POST');
+        if (options && options.length > 0) {
+          const option = options.find((opt: any) => opt.value === value);
+          return option?.label || value;
+        }
+      }
+      // 职务
+      if (fieldCode === 'positionTitle' || fieldCode === 'position_title') {
+        const options = getOptionsByDataSourceCode('POSITION_TITLE');
         if (options && options.length > 0) {
           const option = options.find((opt: any) => opt.value === value);
           return option?.label || value;
@@ -1061,7 +1910,11 @@ const EmployeeDetailPage: React.FC = () => {
       org_id: 'orgId',
       dept_id: 'deptId',
       job_level: 'jobLevel',
+      job_post: 'jobPost',
+      position_title: 'positionTitle',
+      cost_center: 'costCenter',
       employee_type: 'employeeType',
+      employment_relation: 'employmentRelation',
       work_location: 'workLocation',
       work_address: 'workAddress',
       entry_date: 'entryDate',
@@ -1069,6 +1922,10 @@ const EmployeeDetailPage: React.FC = () => {
       probation_start: 'probationStart',
       probation_end: 'probationEnd',
       probation_months: 'probationMonths',
+      regular_date: 'regularDate',
+      usage_start_date: 'usageStartDate',
+      service_years_start_date: 'serviceYearsStartDate',
+      estimated_probation_end_date: 'estimatedProbationEndDate',
       birth_date: 'birthDate',
       native_place: 'nativePlace',
       marital_status: 'maritalStatus',
@@ -1090,7 +1947,6 @@ const EmployeeDetailPage: React.FC = () => {
       // 工作信息页签字段
       change_type: 'changeType',
       effective_date: 'effectiveDate',
-      regular_date: 'regularDate',
       resignation_date: 'resignationDate',
       resignation_reason: 'resignationReason',
       work_years: 'workYears',
@@ -1127,12 +1983,20 @@ const EmployeeDetailPage: React.FC = () => {
         email: '邮箱',
         orgId: '所属组织',
         position: '职位',
+        positionTitle: '职务',
         jobLevel: '职级',
+        jobPost: '岗位',
+        costCenter: '成本中心',
         employeeType: '员工类型',
+        employmentRelation: '工作关系',
         workLocation: '工作地点',
         workAddress: '办公地址',
         entryDate: '入职日期',
         hireDate: '受雇日期',
+        regularDate: '转正日期',
+        usageStartDate: '使用开始日期',
+        serviceYearsStartDate: '工龄开始日期',
+        estimatedProbationEndDate: '预计试用结束日期',
         birthDate: '出生日期',
         nativePlace: '籍贯',
         maritalStatus: '婚姻状况',
@@ -1149,6 +2013,11 @@ const EmployeeDetailPage: React.FC = () => {
         graduateSchool: '毕业院校',
         major: '专业',
         graduationDate: '毕业日期',
+        resignationReason: '离职原因',
+        workYears: '工作年限',
+        probationMonths: '试用期（月）',
+        changeType: '异动类型',
+        effectiveDate: '生效日期',
       };
       return labels[code] || code;
     };
@@ -1189,7 +2058,7 @@ const EmployeeDetailPage: React.FC = () => {
         );
 
       case 'gender':
-        const genderOptions = getOptionsByDataSourceCode('gender');
+        const genderOptions = getOptionsByDataSourceCode('GENDER');
         return (
           <Form.Item name="gender" label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`} disabled={shouldDisable}>
@@ -1232,6 +2101,57 @@ const EmployeeDetailPage: React.FC = () => {
           </Form.Item>
         );
 
+      case 'photo': {
+        return (
+          <Form.Item
+            name="photo"
+            label="照片"
+            key={fieldCode}
+            getValueProps={(value) => ({
+              value: photoUploadUrl,
+            })}
+          >
+            <Upload
+              listType="picture-card"
+              fileList={photoFileList}
+              maxCount={1}
+              beforeUpload={(uploadFile) => {
+                const isImage = uploadFile.type.startsWith('image/');
+                if (!isImage) {
+                  message.error('只能上传图片文件');
+                  return Upload.LIST_IGNORE;
+                }
+                const isLt2M = uploadFile.size / 1024 / 1024 < 2;
+                if (!isLt2M) {
+                  message.error('图片大小不能超过 2MB');
+                  return Upload.LIST_IGNORE;
+                }
+                return true;
+              }}
+              customRequest={({ onSuccess, file: uploadFile }) => {
+                // 这里模拟上传成功，实际项目中需要调用真实的上传接口
+                setTimeout(() => {
+                  const fileUrl = URL.createObjectURL(uploadFile as File);
+                  setPhotoUploadUrl(fileUrl);
+                  form.setFieldValue('photo', fileUrl);
+                  onSuccess?.({});
+                }, 1000);
+              }}
+              onChange={({ fileList: newFileList }) => {
+                setPhotoFileList(newFileList);
+              }}
+            >
+              {photoFileList.length === 0 && (
+                <div>
+                  <PlusOutlined />
+                  <div style={{ marginTop: 8 }}>上传照片</div>
+                </div>
+              )}
+            </Upload>
+          </Form.Item>
+        );
+      }
+
       case 'email':
         return (
           <Form.Item
@@ -1271,6 +2191,13 @@ const EmployeeDetailPage: React.FC = () => {
       case 'probation_end':
       case 'graduationDate':
       case 'graduation_date':
+      case 'regularDate':
+      case 'regular_date':
+      case 'resignationDate':
+      case 'resignation_date':
+      case 'usageStartDate':
+      case 'serviceYearsStartDate':
+      case 'estimatedProbationEndDate':
         return (
           <Form.Item
             name={mapFieldName(fieldCode)}
@@ -1318,12 +2245,15 @@ const EmployeeDetailPage: React.FC = () => {
       case 'age':
         // 年龄字段：禁用编辑，从出生日期自动计算
         return (
-          <Form.Item name="age" label={label} key={fieldCode}>
-            <Input
-              placeholder="自动计算"
-              disabled
-              value={employee?.birthDate ? `${dayjs().diff(dayjs(employee.birthDate), 'year')}岁` : undefined}
-            />
+          <Form.Item
+            name="age"
+            label={label}
+            key={fieldCode}
+            getValueProps={(value) => ({
+              value: employee?.birthDate ? `${dayjs().diff(dayjs(employee.birthDate), 'year')}岁` : '',
+            })}
+          >
+            <Input placeholder="自动计算" disabled />
           </Form.Item>
         );
 
@@ -1344,7 +2274,7 @@ const EmployeeDetailPage: React.FC = () => {
 
       case 'educationLevel':
       case 'education_level':
-        const educationLevelOptions = getOptionsByDataSourceCode('education_level');
+        const educationLevelOptions = getOptionsByDataSourceCode('EDUCATION_LEVEL');
         return (
           <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`}>
@@ -1359,7 +2289,7 @@ const EmployeeDetailPage: React.FC = () => {
 
       case 'maritalStatus':
       case 'marital_status':
-        const maritalStatusOptions = getOptionsByDataSourceCode('marital_status');
+        const maritalStatusOptions = getOptionsByDataSourceCode('MARITAL_STATUS');
         return (
           <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`}>
@@ -1374,7 +2304,7 @@ const EmployeeDetailPage: React.FC = () => {
 
       case 'politicalStatus':
       case 'political_status':
-        const politicalStatusOptions = getOptionsByDataSourceCode('political_status');
+        const politicalStatusOptions = getOptionsByDataSourceCode('POLITICAL_STATUS');
         return (
           <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`}>
@@ -1388,7 +2318,7 @@ const EmployeeDetailPage: React.FC = () => {
         );
 
       case 'status':
-        const employmentStatusOptions = getOptionsByDataSourceCode('employment_status');
+        const employmentStatusOptions = getOptionsByDataSourceCode('EMPLOYMENT_STATUS');
         return (
           <Form.Item name="status" label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`} disabled={shouldDisable}>
@@ -1424,7 +2354,7 @@ const EmployeeDetailPage: React.FC = () => {
         );
 
       case 'nation':
-        const nationOptions = getOptionsByDataSourceCode('nation');
+        const nationOptions = getOptionsByDataSourceCode('NATION');
         return (
           <Form.Item name="nation" label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`} allowClear showSearch>
@@ -1439,7 +2369,7 @@ const EmployeeDetailPage: React.FC = () => {
 
       case 'emergencyRelation':
       case 'emergency_relation':
-        const emergencyRelationOptions = getOptionsByDataSourceCode('family_relation');
+        const emergencyRelationOptions = getOptionsByDataSourceCode('EMERGENCY_CONTACT_RELATION');
         return (
           <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
             <Select placeholder={`请选择${label}`} allowClear showSearch>
@@ -1449,6 +2379,111 @@ const EmployeeDetailPage: React.FC = () => {
                 </Select.Option>
               ))}
             </Select>
+          </Form.Item>
+        );
+
+      case 'jobPost':
+      case 'job_post':
+        const jobPostOptions = getOptionsByDataSourceCode('JOB_POST');
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {jobPostOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      case 'positionTitle':
+      case 'position_title':
+        const positionTitleOptions = getOptionsByDataSourceCode('POSITION_TITLE');
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {positionTitleOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      case 'costCenter':
+      case 'cost_center':
+        const costCenterOptions = getOptionsByDataSourceCode('COST_CENTER');
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {costCenterOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      case 'employmentRelation':
+      case 'employment_relation':
+        const employmentRelationOptions = getOptionsByDataSourceCode('EMPLOYMENT_RELATION');
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {employmentRelationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      case 'workLocation':
+      case 'work_location':
+        const workLocationOptions = getOptionsByDataSourceCode('WORK_LOCATION');
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Select placeholder={`请选择${label}`} allowClear showSearch>
+              {workLocationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      case 'workAddress':
+      case 'work_address':
+      case 'nativePlace':
+      case 'native_place':
+      case 'householdRegister':
+      case 'household_register':
+      case 'currentAddress':
+      case 'current_address':
+      case 'homeAddress':
+      case 'home_address':
+      case 'emergencyContact':
+      case 'emergency_contact':
+      case 'emergencyPhone':
+      case 'emergency_phone':
+      case 'homePhone':
+      case 'home_phone':
+      case 'resignationReason':
+      case 'resignation_reason':
+      case 'graduateSchool':
+      case 'major':
+      case 'probationMonths':
+      case 'probation_months':
+      case 'workYears':
+      case 'work_years':
+        return (
+          <Form.Item name={mapFieldName(fieldCode)} label={label} rules={createRules()} key={fieldCode}>
+            <Input placeholder={`请输入${label}`} />
           </Form.Item>
         );
 
@@ -1581,11 +2616,38 @@ const EmployeeDetailPage: React.FC = () => {
     }
   };
 
-  // 渲染版本选择器（仅工作信息页签）
+  // 渲染工作信息历史记录列表（仅工作信息页签）
   const renderVersionSelector = () => {
-    if (workInfoVersions.length === 0) {
+    // 如果没有固定的当前工作信息，不显示列表
+    if (!fixedCurrentWorkInfo?.currentWorkInfo) {
       return null;
     }
+
+    // 获取异动类型标签
+    const getChangeTypeLabel = (changeType: string) => {
+      const options = getOptionsByDataSourceCode('CHANGE_TYPE');
+      const option = options.find((opt: any) => opt.value === changeType);
+      return option?.label || changeType || '-';
+    };
+
+    // 合并当前版本和历史版本，按生效日期倒序排列
+    // 使用固定的当前版本数据，不受选中状态影响
+    const currentVersionData = {
+      id: 'current',
+      effectiveDate: fixedCurrentWorkInfo?.currentWorkInfo?.effectiveDate,
+      changeType: fixedCurrentWorkInfo?.currentWorkInfo?.changeType,
+      isCurrent: true
+    };
+
+    const allVersions = [
+      currentVersionData,
+      ...workInfoVersions.map((v: any) => ({ ...v, isCurrent: false }))
+    ].sort((a, b) => {
+      // 按生效日期倒序排列（最新的在前面）
+      const dateA = dayjs(a.effectiveDate);
+      const dateB = dayjs(b.effectiveDate);
+      return dateB.diff(dateA);
+    });
 
     return (
       <Card
@@ -1594,34 +2656,78 @@ const EmployeeDetailPage: React.FC = () => {
         title={
           <Space>
             <HistoryOutlined />
-            <span>历史版本</span>
+            <span>异动记录</span>
           </Space>
         }
       >
-        <Select
-          style={{ width: '100%' }}
-          placeholder="选择查看历史版本"
-          allowClear
-          value={selectedWorkInfoVersion}
-          onChange={(value) => {
-            setSelectedWorkInfoVersion(value);
-            refetchWorkInfo();
+        <List
+          size="small"
+          dataSource={allVersions}
+          renderItem={(item: any) => {
+            const isSelected = (item.isCurrent && selectedWorkInfoVersion === 'current') || (!item.isCurrent && selectedWorkInfoVersion === item.id);
+
+            return (
+              <List.Item
+                style={{
+                  cursor: 'pointer',
+                  backgroundColor: isSelected ? '#e6f7ff' : 'transparent',
+                  padding: '12px 16px',
+                  borderRadius: '6px',
+                  border: isSelected ? '2px solid #1890ff' : '1px solid #f0f0f0',
+                  marginBottom: '8px',
+                  transition: 'all 0.2s',
+                }}
+                onClick={(e) => {
+                  // 如果点击的是编辑按钮，不触发选中
+                  if ((e.target as HTMLElement).closest('.edit-version-btn')) {
+                    return;
+                  }
+                  setSelectedWorkInfoVersion(item.isCurrent ? 'current' : item.id);
+                  refetchWorkInfo();
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
+                  <Space size={12}>
+                    {isSelected && <CheckCircleFilled style={{ color: '#1890ff', fontSize: '16px' }} />}
+                    {!isSelected && <CheckCircleOutlined style={{ color: '#d9d9d9', fontSize: '16px' }} />}
+                    <div>
+                      <div style={{ fontWeight: isSelected ? 600 : 400, fontSize: '14px' }}>
+                        {dayjs(item.effectiveDate).format('YYYY-MM-DD')}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: '2px' }}>
+                        {getChangeTypeLabel(item.changeType)}
+                      </div>
+                    </div>
+                  </Space>
+                  <Space>
+                    {item.isCurrent && (
+                      <Tag color="blue">当前生效</Tag>
+                    )}
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      className="edit-version-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditVersion(item);
+                      }}
+                      style={{ color: '#1890ff' }}
+                    >
+                      编辑
+                    </Button>
+                  </Space>
+                </div>
+              </List.Item>
+            );
           }}
-        >
-          <Select.Option value="current">当前版本</Select.Option>
-          {workInfoVersions.map((version: any) => (
-            <Select.Option key={version.id} value={version.id}>
-              {dayjs(version.effectiveDate).format('YYYY-MM-DD')}
-              {version.description && ` - ${version.description}`}
-            </Select.Option>
-          ))}
-        </Select>
+        />
       </Card>
     );
   };
 
   const renderCustomTabs = () => {
-    return (infoTabs || []).map((tab: any) => {
+    return infoTabsList.map((tab: any) => {
       const fields = tab.fields || [];
 
       if (fields.length === 0) {
@@ -1848,7 +2954,7 @@ const EmployeeDetailPage: React.FC = () => {
 
 
     // 1. 配置的页签（从人事信息配置读取）
-    (infoTabs || []).forEach((tab: any) => {
+    infoTabsList.forEach((tab: any) => {
       const isWorkInfo = isWorkInfoTab(tab.code);
       const isSubRecord = isSubRecordTab(tab.code);
       const isEditing = editingTabCode === tab.code;
@@ -1858,160 +2964,140 @@ const EmployeeDetailPage: React.FC = () => {
         label: tab.name,
         children: (
           <div>
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-              <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/hr/employees')}>
-                返回列表
-              </Button>
-              {/* 工作信息页签：显示更新和更正按钮 */}
-              {isWorkInfo && !isEditing ? (
-                <Space>
-                  <Button
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => {
-                      // 更正：直接编辑当前选择的版本
-                      setEditingTabCode('work_info');
-                      setIsCreatingNewVersion(false);
+            {/* 工作信息页签：使用左右两列布局 */}
+            {isWorkInfo && !isEditing ? (
+              <Row gutter={16}>
+                <Col span={16}>
+                  {/* 左侧：字段内容 */}
+                  {tab.groups.map((group: any) => {
+                    // 只显示启用的分组
+                    if (group.status === 'INACTIVE') {
+                      return null;
+                    }
 
-                      // 获取当前工作信息数据
-                      const workInfoData = currentWorkInfo?.currentWorkInfo || {};
+                    // 过滤掉隐藏的字段
+                    const systemFields = group.fields?.filter((f: any) =>
+                      f.isSystem && !f.isHidden
+                    ) || [];
+                    const groupCustomFields = group.fields?.filter((f: any) =>
+                      !f.isSystem && !f.isHidden
+                    ) || [];
+                    const allFields = [...systemFields, ...groupCustomFields];
 
-                      // 保存当前编辑的工作信息历史记录ID
-                      // 如果是 'current'，使用 currentWorkInfo.currentWorkInfo.id
-                      // 如果是历史版本，使用该版本的 id
-                      if (selectedWorkInfoVersion === 'current' || selectedWorkInfoVersion === undefined) {
-                        setEditingWorkInfoHistoryId(workInfoData?.id || null);
-                      } else {
-                        // 从 workInfoVersions 中找到对应版本的 id
-                        const selectedVersion = workInfoVersions.find((v: any) => v.id === selectedWorkInfoVersion);
-                        setEditingWorkInfoHistoryId(selectedVersion?.id || null);
-                      }
+                    // 获取数据源（工作信息使用当前版本）
+                    const dataSource = currentWorkInfo?.currentWorkInfo;
 
-                      // 加载所有可能的系统字段（从 employee 对象加载基本信息，从 currentWorkInfo.currentWorkInfo 加载工作信息）
-                      const systemFieldsData: any = {};
+                    // 如果分组内没有可见字段，不显示该分组
+                    if (allFields.length === 0) {
+                      return null;
+                    }
 
-                      // 优先从 employee 对象加载基本信息（工号、入职日期等）
-                      if (employee) {
-                        if (employee.employeeNo) systemFieldsData.employeeNo = employee.employeeNo;
-                        if (employee.name) systemFieldsData.name = employee.name;
-                        if (employee.gender) systemFieldsData.gender = employee.gender;
-                        if (employee.idCard) systemFieldsData.idCard = employee.idCard;
-                        if (employee.phone) systemFieldsData.phone = employee.phone;
-                        if (employee.email) systemFieldsData.email = employee.email;
-                        if (employee.entryDate) {
-                          systemFieldsData.entryDate = dayjs(employee.entryDate);
-                        }
-                        if (employee.status) systemFieldsData.status = employee.status;
-                      }
+                    return (
+                      <Card
+                        key={group.id}
+                        title={group.name}
+                        bordered={false}
+                        style={{ marginBottom: 16 }}
+                      >
+                        <Spin spinning={!dataSource} tip="加载中...">
+                          {!dataSource ? (
+                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                              暂无数据
+                            </div>
+                          ) : (
+                            <Descriptions bordered column={2}>
+                              {allFields.map((field: any) => {
+                                // 获取字段值
+                                let value;
 
-                      // 从 workInfoData (currentWorkInfo.currentWorkInfo) 加载工作信息字段
-                      const workInfoFieldNames = [
-                        'orgId', 'position', 'jobLevel', 'employeeType',
-                        'workLocation', 'workAddress', 'hireDate',
-                        'probationStart', 'probationEnd', 'probationMonths',
-                        'regularDate', 'resignationDate', 'resignationReason', 'workYears',
-                        'changeType', 'effectiveDate'
-                      ];
+                                // 工���信息字段
+                                const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'orgId', 'workLocation', 'workAddress', 'hireDate', 'probationStart', 'probationEnd', 'probationMonths', 'regularDate', 'resignationDate', 'resignationReason', 'workYears', 'changeType', 'effectiveDate', 'costCenter', 'cost_center', 'employmentRelation', 'employment_relation'];
 
-                      workInfoFieldNames.forEach(fieldName => {
-                        const value = workInfoData?.[fieldName];
-                        if (value !== undefined && value !== null) {
-                          // 日期字段转换为 dayjs 对象
-                          if (fieldName.endsWith('Date') || fieldName.endsWith('date') ||
-                              fieldName.endsWith('Start') || fieldName.endsWith('End')) {
-                            if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                              systemFieldsData[fieldName] = dayjs(value);
-                            } else {
-                              systemFieldsData[fieldName] = value;
-                            }
-                          } else {
-                            systemFieldsData[fieldName] = value;
-                          }
-                        }
-                      });
+                                // 工作信息存储在 customFields 中的字段
+                                const workInfoCustomFieldCodes = ['jobPost', 'positionTitle', 'usageStartDate', 'serviceYearsStartDate', 'estimatedProbationEndDate'];
 
-                      // 获取 customFields 并合并（从 employee 和 workInfoData）
-                      const employeeCustomFields = employee?.customFields ?
-                        (typeof employee.customFields === 'string' ? JSON.parse(employee.customFields) : employee.customFields) : {};
-                      const workInfoCustomFields = workInfoData?.customFields || {};
+                                if (field.isSystem) {
+                                  // 工作信息页签特殊处理：工号、入职日期和在职状态从employee读取
+                                  if (isWorkInfo && (field.fieldCode === 'employee_no' || field.fieldCode === 'employeeNo' || field.fieldCode === 'entry_date' || field.fieldCode === 'entryDate' || field.fieldCode === 'status')) {
+                                    value = employee?.[mapFieldName(field.fieldCode)];
+                                  } else if (positionInfoFields.includes(field.fieldCode)) {
+                                    const fieldName = mapFieldName(field.fieldCode);
+                                    value = dataSource?.[fieldName];
+                                  } else if (workInfoCustomFieldCodes.includes(field.fieldCode)) {
+                                    const customFields = getCustomFields(dataSource);
+                                    const employeeCustomFields = getCustomFields(employee);
+                                    value = customFields[field.fieldCode] ?? employeeCustomFields[field.fieldCode];
+                                  }
+                                } else {
+                                  const customFields = getCustomFields(dataSource);
+                                  const employeeCustomFields = getCustomFields(employee);
+                                  value = customFields[field.fieldCode] ?? employeeCustomFields[field.fieldCode];
+                                }
 
-                      const mergedCustomFields = {
-                        ...employeeCustomFields,
-                        ...workInfoCustomFields
-                      };
+                                const formatValue = (val: any, fieldCode: string, fieldObj?: any) => {
+                                  if (val === undefined || val === null || val === '') {
+                                    return '-';
+                                  }
 
-                      // 将自定义字段展开到表单顶层
-                      const flattenedCustomFields = {};
-                      Object.entries(mergedCustomFields).forEach(([key, value]) => {
-                        // 转换日期字段为 dayjs 对象
-                        if (value && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-                          flattenedCustomFields[key] = dayjs(value);
-                        } else {
-                          flattenedCustomFields[key] = value;
-                        }
-                      });
+                                  const isSystemField = fieldObj?.isSystem || false;
+                                  const actualFieldType = fieldObj?.fieldType || 'TEXT';
 
-                      form.setFieldsValue({
-                        ...systemFieldsData,
-                        ...flattenedCustomFields,
-                      });
-                    }}
-                  >
-                    更正
-                  </Button>
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      // 更新：创建新版本，打开选择生效日期的模态框
-                      setEditModalVisible(true);
-                    }}
-                  >
-                    更新
-                  </Button>
-                </Space>
-              ) : !isSubRecord && !isEditing && !isWorkInfo ? (
-                <Button
-                  type="primary"
-                  icon={<EditOutlined />}
-                  onClick={() => handleEditTab(tab.code)}
-                >
-                  编辑
-                </Button>
-              ) : !isSubRecord && isEditing ? (
-                <Space>
-                  <Button
-                    icon={<CloseOutlined />}
-                    onClick={handleCancelEdit}
-                  >
-                    取消
-                  </Button>
-                  <Button
-                    type="primary"
-                    icon={<SaveOutlined />}
-                    onClick={handleSave}
-                    loading={updateEmployeeMutation.isPending || updateWorkInfoMutation.isPending || createWorkInfoVersionMutation.isPending}
-                  >
-                    保存
-                  </Button>
-                </Space>
-              ) : null}
-            </div>
+                                  // 日期字段列表
+                                  const dateFieldCodes = ['entry_date', 'entryDate', 'hire_date', 'hireDate', 'birth_date', 'birthDate', 'probation_start', 'probationStart', 'probation_end', 'probationEnd', 'graduation_date', 'graduationDate', 'regular_date', 'regularDate', 'resignation_date', 'resignationDate', 'effective_date', 'effectiveDate', 'usageStartDate', 'serviceYearsStartDate', 'estimatedProbationEndDate'];
+                                  const isDateField = actualFieldType === 'DATE' || dateFieldCodes.includes(fieldCode) || fieldCode.endsWith('_date') || fieldCode.endsWith('Date') || fieldCode.endsWith('Start') || fieldCode.endsWith('End');
 
-            {/* 工作信息页签显示版本选择器（仅在非编辑模式） */}
-            {isWorkInfo && !isEditing && renderVersionSelector()}
+                                  // 日期字段格式化
+                                  if (isDateField) {
+                                    if (typeof val === 'string') {
+                                      const formatted = dayjs(val).format('YYYY-MM-DD');
+                                      return formatted === 'Invalid Date' ? val : formatted;
+                                    }
+                                    if (dayjs.isDayjs(val)) {
+                                      return val.format('YYYY-MM-DD');
+                                    }
+                                    try {
+                                      const formatted = dayjs(val).format('YYYY-MM-DD');
+                                      return formatted === 'Invalid Date' ? val : formatted;
+                                    } catch (e) {
+                                      return val;
+                                    }
+                                  }
 
-            {/* 子表页签渲染表格 */}
-            {isSubRecord ? (
+                                  // 系统字段中的下拉类型
+                                  if (isSystemField) {
+                                    const dropdownSystemFields = ['changeType', 'position', 'jobLevel', 'employeeType', 'orgId', 'status'];
+                                    if (dropdownSystemFields.includes(fieldCode) || actualFieldType === 'DATASOURCE' || actualFieldType === 'ORG') {
+                                      return getLabelByValue(fieldCode, 'SYSTEM', val);
+                                    }
+                                  }
+
+                                  // 其他字段
+                                  return String(val);
+                                };
+
+                                return (
+                                  <Descriptions.Item label={field.fieldName} key={field.id}>
+                                    {formatValue(value, field.fieldCode, field)}
+                                  </Descriptions.Item>
+                                );
+                              })}
+                            </Descriptions>
+                          )}
+                        </Spin>
+                      </Card>
+                    );
+                  })}
+                </Col>
+                <Col span={8}>
+                  {/* 右侧：历史记录列表 */}
+                  {renderVersionSelector()}
+                </Col>
+              </Row>
+            ) : isSubRecord ? (
               <>
                 {tab.code === 'education_info' && renderEducationTable()}
                 {tab.code === 'work_experience' && renderWorkExperienceTable()}
-                {tab.code === 'family_info' && (
-                  tab.groups?.filter((g: any) => g.status === 'ACTIVE').length > 0
-                    ? renderFamilyMemberTable()
-                    : <Card title={tab.name} bordered={false}>该页签的分组已禁用</Card>
-                )}
+                {tab.code === 'family_info' && renderFamilyMemberTable()}
               </>
             ) : (
               <>
@@ -2028,16 +3114,16 @@ const EmployeeDetailPage: React.FC = () => {
 
                 // 过滤掉隐藏的字段
                 const systemFields = group.fields?.filter((f: any) =>
-                  f.fieldType === 'SYSTEM' && !f.isHidden
+                  f.isSystem && !f.isHidden
                 ) || [];
                 const groupCustomFields = group.fields?.filter((f: any) =>
-                  f.fieldType === 'CUSTOM' && !f.isHidden
+                  !f.isSystem && !f.isHidden
                 ) || [];
                 const allFields = [...systemFields, ...groupCustomFields];
 
                 // 获取数据源（工作信息使用当前版本，其他使用主数据）
-                // 注意：currentWorkInfo是API响应对象，真正的WorkInfoHistory数据在currentWorkInfo.currentWorkInfo中
-                const dataSource = isWorkInfo ? currentWorkInfo?.currentWorkInfo : employee;
+                // 注意：currentWorkInfo本身就是包含WorkInfoHistory数据的对象（从API /work-info/:version返回）
+                const dataSource = isWorkInfo ? currentWorkInfo : employee;
 
                 // 如果分组内没有可见字段，不显示该分组
                 if (allFields.length === 0) {
@@ -2053,58 +3139,121 @@ const EmployeeDetailPage: React.FC = () => {
                   >
                     <Spin spinning={!dataSource && isWorkInfo} tip="加载中...">
                       {!dataSource && isWorkInfo ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                           正在加载工作信息...
                           <div style={{ marginTop: '10px', fontSize: '12px' }}>
                             如果长时间未加载，请刷新页面重试
                           </div>
                         </div>
                       ) : !dataSource ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                           暂无数据
                         </div>
                       ) : isEditing ? (
                         <Form form={form} layout="vertical">
-                          {/* 工作信息创建新版本时显示生效日期字段 */}
-                          {isWorkInfo && isCreatingNewVersion && (
-                            <Row gutter={16} style={{ marginBottom: 16 }}>
-                              <Col span={24}>
-                                <Card size="small" style={{ backgroundColor: '#f0f8ff' }}>
+                          {/* 编辑历史版本时的提示信息 */}
+                          {isWorkInfo && editingWorkInfoHistoryId && !isCreatingNewVersion && !changeOperationType && (
+                            <Alert
+                              message="您正在编辑历史版本"
+                              description="修改历史版本将会更正该版本的数据，不会创建新的异动记录。"
+                              type="info"
+                              showIcon
+                              style={{ marginBottom: 16 }}
+                            />
+                          )}
+                          {/* 工作信息异动/离职操作或创建新版本时显示异动类型和日期字段 */}
+                          {(isWorkInfo && (changeOperationType || isCreatingNewVersion)) && (
+                            <Card size="small" style={{ backgroundColor: 'var(--color-bg-light)', marginBottom: 16 }}>
+                              <Row gutter={16}>
+                                <Col span={12}>
+                                  <Form.Item
+                                    name="changeType"
+                                    label="异动类型"
+                                    rules={[{ required: true, message: '请选择异动类型' }]}
+                                  >
+                                    <Select
+                                      placeholder="请选择异动类型"
+                                      allowClear
+                                      showSearch
+                                      disabled={changeOperationType === 'RESIGNATION'}
+                                    >
+                                      {getOptionsByDataSourceCode('CHANGE_TYPE')
+                                        .filter((opt: any) => changeOperationType === 'RESIGNATION' ? opt.value === 'RESIGNATION' : opt.value !== 'ENTRY')
+                                        .map((option: any) => (
+                                          <Select.Option key={option.id} value={option.value}>
+                                            {option.label}
+                                          </Select.Option>
+                                        ))}
+                                    </Select>
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item
+                                    noStyle
+                                    shouldUpdate={(prevValues, currentValues) => prevValues.changeType !== currentValues.changeType}
+                                  >
+                                    {({ getFieldValue }) => {
+                                      const currentChangeType = getFieldValue('changeType');
+                                      const isResignation = currentChangeType === 'RESIGNATION' || changeOperationType === 'RESIGNATION';
+                                      if (isResignation) {
+                                        return (
+                                          <Form.Item
+                                            name="resignationDate"
+                                            label="离职日期"
+                                            rules={[{ required: true, message: '请选择离职日期' }]}
+                                          >
+                                            <DatePicker style={{ width: '100%' }} placeholder="请选择离职日期" />
+                                          </Form.Item>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                              <Row gutter={16}>
+                                <Col span={12}>
                                   <Form.Item
                                     name="effectiveDate"
-                                    label="异动生效日期"
-                                    rules={[{ required: true, message: '请选择异动生效日期' }]}
-                                    getValueProps={(value) => ({
-                                      value: value && dayjs.isDayjs(value) ? value : (value ? dayjs(value) : null),
-                                    })}
-                                    normalize={(value) => value}
+                                    label="生效日期"
+                                    rules={[{ required: true, message: '请选择生效日期' }]}
                                   >
-                                    <DatePicker style={{ width: '100%' }} placeholder="请选择异动生效日期" />
+                                    <DatePicker style={{ width: '100%' }} placeholder="请选择生效日期" />
                                   </Form.Item>
-                                </Card>
-                              </Col>
-                            </Row>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item
+                                    noStyle
+                                    shouldUpdate={(prevValues, currentValues) => prevValues.changeType !== currentValues.changeType}
+                                  >
+                                    {({ getFieldValue }) => {
+                                      const currentChangeType = getFieldValue('changeType');
+                                      const isResignation = currentChangeType === 'RESIGNATION' || changeOperationType === 'RESIGNATION';
+                                      if (isResignation) {
+                                        return (
+                                          <Form.Item
+                                            name="resignationReason"
+                                            label="离职原因"
+                                            rules={[{ required: true, message: '请选择离职原因' }]}
+                                          >
+                                            <Select placeholder="请选择离职原因">
+                                              {getOptionsByDataSourceCode('RESIGNATION_REASON').map((option: any) => (
+                                                <Select.Option key={option.id} value={option.value}>
+                                                  {option.label}
+                                                </Select.Option>
+                                              ))}
+                                            </Select>
+                                          </Form.Item>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  </Form.Item>
+                                </Col>
+                              </Row>
+                            </Card>
                           )}
-                          {/* 工作信息创建新版本时显示异动类型字段 */}
-                          {isWorkInfo && isCreatingNewVersion && (
-                            <Row gutter={16} style={{ marginBottom: 16 }}>
-                              <Col span={12}>
-                                <Form.Item
-                                  name="changeType"
-                                  label="异动类型"
-                                  rules={[{ required: true, message: '请选择异动类型' }]}
-                                >
-                                  <Select placeholder="请选择异动类型" allowClear showSearch>
-                                    {getOptionsByDataSourceCode('change_type').map((option: any) => (
-                                      <Select.Option key={option.id} value={option.value}>
-                                        {option.label}
-                                      </Select.Option>
-                                    ))}
-                                  </Select>
-                                </Form.Item>
-                              </Col>
-                            </Row>
-                          )}
+
                           <Row gutter={16}>
                             {systemFields.map((field: any) => (
                               <Col span={12} key={field.id}>
@@ -2125,22 +3274,25 @@ const EmployeeDetailPage: React.FC = () => {
                           let value;
 
                           // 职位信息字段（从 currentWorkInfo 读取）
-                          const positionInfoFields = ['position', 'jobLevel', 'job_level', 'employeeType', 'employee_type', 'orgId', 'org_id', 'workLocation', 'work_location', 'workAddress', 'work_address', 'changeType', 'change_type', 'effectiveDate', 'effective_date', 'hireDate', 'hire_date', 'probationStart', 'probation_start', 'probationEnd', 'probation_end', 'probationMonths', 'probation_months', 'regularDate', 'regular_date', 'resignationDate', 'resignation_date', 'resignationReason', 'resignation_reason', 'workYears', 'work_years'];
+                          const positionInfoFields = ['position', 'jobLevel', 'job_level', 'employeeType', 'employee_type', 'orgId', 'org_id', 'workLocation', 'work_location', 'workAddress', 'work_address', 'changeType', 'change_type', 'effectiveDate', 'effective_date', 'hireDate', 'hire_date', 'probationStart', 'probation_start', 'probationEnd', 'probation_end', 'probationMonths', 'probation_months', 'regularDate', 'regular_date', 'resignationDate', 'resignation_date', 'resignationReason', 'resignation_reason', 'workYears', 'work_years', 'costCenter', 'cost_center', 'employmentRelation', 'employment_relation'];
+
+                          // 工作信息存储在 customFields 中的字段
+                          const workInfoCustomFieldCodes = ['jobPost', 'job_post', 'positionTitle', 'position_title', 'usageStartDate', 'usage_start_date', 'serviceYearsStartDate', 'service_years_start_date', 'estimatedProbationEndDate', 'estimated_probation_end_date'];
 
                           // 基本信息字段（从 employee 读取）
-                          const basicInfoFields = ['employeeNo', 'employee_no', 'name', 'gender', 'idCard', 'id_card', 'mobile', 'phone', 'email', 'birthDate', 'birth_date', 'age', 'maritalStatus', 'marital_status', 'nativePlace', 'native_place', 'politicalStatus', 'political_status', 'householdRegister', 'household_register', 'currentAddress', 'current_address', 'photo', 'emergencyContact', 'emergency_contact', 'emergencyPhone', 'emergency_phone', 'emergencyRelation', 'emergency_relation', 'homeAddress', 'home_address', 'homePhone', 'home_phone'];
+                          const basicInfoFields = ['employeeNo', 'employee_no', 'name', 'gender', 'idCard', 'id_card', 'mobile', 'phone', 'email', 'birthDate', 'birth_date', 'age', 'maritalStatus', 'marital_status', 'nativePlace', 'native_place', 'politicalStatus', 'political_status', 'householdRegister', 'household_register', 'currentAddress', 'current_address', 'photo', 'emergencyContact', 'emergency_contact', 'emergencyPhone', 'emergency_phone', 'emergencyRelation', 'emergency_relation', 'homeAddress', 'home_address', 'homePhone', 'home_phone', 'status'];
 
-                          if (field.fieldType === 'SYSTEM') {
-                            // 特殊处理：employee_no始终从employee读取
-                            if (field.fieldCode === 'employee_no') {
+                          if (field.isSystem) {
+                            // 特殊处理：employeeNo始终从employee读取
+                            if (field.fieldCode === 'employee_no' || field.fieldCode === 'employeeNo') {
                               value = employee?.employeeNo;
-                            } else if (field.fieldCode === 'entry_date' || field.fieldCode === 'status') {
+                            } else if (field.fieldCode === 'entry_date' || field.fieldCode === 'entryDate' || field.fieldCode === 'status') {
                               // entry_date和status也从employee读取
                               value = employee?.[mapFieldName(field.fieldCode)];
                             } else if (positionInfoFields.includes(field.fieldCode)) {
-                              // 工作信息字段：从 currentWorkInfo.currentWorkInfo 读取
+                              // 工作信息字段：从 currentWorkInfo 读取
                               if (isWorkInfo) {
-                                const workInfoData = currentWorkInfo?.currentWorkInfo || {};
+                                const workInfoData = currentWorkInfo || {};
                                 if (field.fieldCode === 'org_id') {
                                   value = workInfoData?.orgId || employee?.orgId;
                                 } else {
@@ -2151,6 +3303,21 @@ const EmployeeDetailPage: React.FC = () => {
                                 // 其他页签：从 employee 读取（如果employee中没有则为undefined）
                                 const fieldName = mapFieldName(field.fieldCode);
                                 value = employee?.[fieldName];
+                              }
+                            } else if (workInfoCustomFieldCodes.includes(field.fieldCode)) {
+                              // 工作信息的 customFields 字段：需要从 employee.customFields 或 workInfoData.customFields 中读取
+                              if (isWorkInfo) {
+                                // 工作信息页签：优先从 workInfoData.customFields 读取，如果没有则从 employee.customFields 读取
+                                const workInfoData = currentWorkInfo || {};
+                                const workInfoCustomFields = getCustomFields(workInfoData);
+                                const employeeCustomFields = getCustomFields(employee);
+
+                                // 优先使用 workInfoData 的值，如果没有则使用 employee 的值
+                                value = workInfoCustomFields[field.fieldCode] ?? employeeCustomFields[field.fieldCode];
+                              } else {
+                                // 其他页签：从 employee.customFields 读取
+                                const employeeCustomFields = getCustomFields(employee);
+                                value = employeeCustomFields[field.fieldCode];
                               }
                             } else if (basicInfoFields.includes(field.fieldCode)) {
                               // 基本信息：优先从 employee 读取，如果没有则从 customFields 读取
@@ -2178,6 +3345,10 @@ const EmployeeDetailPage: React.FC = () => {
                               return '-';
                             }
 
+                            // 获取字段对象（用于判断是否为系统字段）
+                            const isSystemField = fieldObj?.isSystem || false;
+                            const actualFieldType = fieldObj?.fieldType || fieldType;
+
                             // 年龄字段 - 从出生日期动态计算
                             if (fieldCode === 'age' || fieldCode === 'age') {
                               const birthDate = employee?.birthDate;
@@ -2189,8 +3360,8 @@ const EmployeeDetailPage: React.FC = () => {
                             }
 
                             // 日期字段
-                            const dateFieldCodes = ['entry_date', 'entryDate', 'hire_date', 'hireDate', 'birth_date', 'birthDate', 'probation_start', 'probationStart', 'probation_end', 'probationEnd', 'graduation_date', 'graduationDate', 'regular_date', 'regularDate', 'resignation_date', 'resignationDate', 'effective_date', 'effectiveDate'];
-                            const isDateField = fieldType === 'DATE' || dateFieldCodes.includes(fieldCode) || fieldCode.endsWith('_date') || fieldCode.endsWith('Date');
+                            const dateFieldCodes = ['entry_date', 'entryDate', 'hire_date', 'hireDate', 'birth_date', 'birthDate', 'probation_start', 'probationStart', 'probation_end', 'probationEnd', 'graduation_date', 'graduationDate', 'regular_date', 'regularDate', 'resignation_date', 'resignationDate', 'effective_date', 'effectiveDate', 'usageStartDate', 'serviceYearsStartDate', 'estimatedProbationEndDate'];
+                            const isDateField = actualFieldType === 'DATE' || dateFieldCodes.includes(fieldCode) || fieldCode.endsWith('_date') || fieldCode.endsWith('Date') || fieldCode.endsWith('Start') || fieldCode.endsWith('End');
 
                             if (isDateField) {
                               if (typeof val === 'string') {
@@ -2209,7 +3380,7 @@ const EmployeeDetailPage: React.FC = () => {
                             }
 
                             // 自定义字段的下拉选择
-                            if (fieldType === 'CUSTOM' && fieldObj) {
+                            if (!isSystemField && fieldObj) {
                               if (fieldObj.type === 'SELECT_SINGLE' || fieldObj.type === 'LOOKUP') {
                                 return getLabelByValue(fieldCode, fieldObj.type, val);
                               }
@@ -2222,25 +3393,25 @@ const EmployeeDetailPage: React.FC = () => {
                             }
 
                             // 下拉选择字段 - 显示label而不是value
-                            if (fieldType === 'SELECT_SINGLE' || fieldType === 'LOOKUP') {
-                              return getLabelByValue(fieldCode, fieldType, val);
+                            if (!isSystemField && (actualFieldType === 'SELECT_SINGLE' || actualFieldType === 'LOOKUP')) {
+                              return getLabelByValue(fieldCode, actualFieldType, val);
                             }
 
                             // 多选字段
-                            if (fieldType === 'SELECT_MULTI') {
-                              return getLabelByValue(fieldCode, fieldType, val);
+                            if (!isSystemField && actualFieldType === 'SELECT_MULTI') {
+                              return getLabelByValue(fieldCode, actualFieldType, val);
                             }
 
-                            // 系统字段中的下拉类型
-                            if (fieldType === 'SYSTEM') {
-                              const dropdownSystemFields = ['gender', 'position', 'jobLevel', 'employeeType', 'educationLevel', 'educationType', 'maritalStatus', 'politicalStatus', 'orgId', 'org_id', 'emergencyRelation', 'emergency_relation', 'nation', 'workLocation', 'work_location'];
-                              if (dropdownSystemFields.includes(fieldCode)) {
-                                return getLabelByValue(fieldCode, fieldType, val);
+                            // 系统字段中的下拉类型（DATASOURCE 或 ORG）
+                            if (isSystemField) {
+                              const dropdownSystemFields = ['gender', 'position', 'jobLevel', 'employeeType', 'educationLevel', 'educationType', 'maritalStatus', 'politicalStatus', 'orgId', 'org_id', 'emergencyRelation', 'emergency_relation', 'nation', 'workLocation', 'work_location', 'employmentRelation', 'costCenter', 'jobPost', 'positionTitle', 'status'];
+                              if (dropdownSystemFields.includes(fieldCode) || actualFieldType === 'DATASOURCE' || actualFieldType === 'ORG') {
+                                return getLabelByValue(fieldCode, 'SYSTEM', val);
                               }
                             }
 
                             // 布尔类型
-                            if (fieldType === 'BOOLEAN') {
+                            if (actualFieldType === 'BOOLEAN') {
                               return val ? '是' : '否';
                             }
 
@@ -2260,28 +3431,33 @@ const EmployeeDetailPage: React.FC = () => {
                   </Card>
                 );
               })
-            )}
+                )}
               </>
             )}
           </div>
-        ),
-      });
+        )
+      })
     });
 
     // 2. 劳动力账户页签（始终在最后）
     items.push({
       key: 'accounts',
       label: '劳动力账户',
-      children: (
-        <div>
-          <div style={{ marginBottom: 16 }}>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/hr/employees')}>
-              返回列表
-            </Button>
-          </div>
-          {renderLaborAccounts()}
-        </div>
-      ),
+      children: <div>{renderLaborAccounts()}</div>,
+    });
+
+    // 3. 金额系数页签（在劳动力账户之后）
+    items.push({
+      key: 'coefficient',
+      label: '金额',
+      children: <div>{renderEmployeeCoefficient()}</div>,
+    });
+
+    // 4. 考勤规则组页签（在最后）
+    items.push({
+      key: 'ruleGroups',
+      label: '考勤规则组',
+      children: <div>{renderEmployeeRuleGroups()}</div>,
     });
 
     return items;
@@ -2290,11 +3466,95 @@ const EmployeeDetailPage: React.FC = () => {
   const tabItems = buildTabItems();
   const defaultActiveKey = tabItems.length > 0 ? tabItems[0].key : 'info';
 
+  // 获取当前页签信息
+  const currentTab = infoTabsList.find((tab: any) => tab.code === activeTab);
+  const currentIsWorkInfo = currentTab ? isWorkInfoTab(currentTab.code) : false;
+  const currentIsSubRecord = currentTab ? isSubRecordTab(currentTab.code) : false;
+  const isEditing = editingTabCode === activeTab;
+
   return (
     <div>
-      <Card title="人员详情">
+      <Card>
+        {/* 顶部操作栏 */}
+        <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/hr/employees')}>
+            返回列表
+          </Button>
+
+          {/* 操作按钮区域 */}
+          {currentIsWorkInfo && !isEditing ? (
+            <Space>
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'transfer',
+                      label: '异动',
+                      onClick: () => handleChangeOperation('TRANSFER'),
+                    },
+                    {
+                      key: 'resignation',
+                      label: '离职',
+                      onClick: () => handleChangeOperation('RESIGNATION'),
+                    },
+                  ],
+                }}
+              >
+                <Button>
+                  操作
+                </Button>
+              </Dropdown>
+            </Space>
+          ) : !currentIsSubRecord && !isEditing && !currentIsWorkInfo && activeTab !== 'accounts' && activeTab !== 'coefficient' && activeTab !== 'ruleGroups' ? (
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => handleEditTab(activeTab)}
+            >
+              编辑
+            </Button>
+          ) : isEditing ? (
+            <Space>
+              <Button
+                icon={<CloseOutlined />}
+                onClick={handleCancelEdit}
+              >
+                取消
+              </Button>
+              <Button
+                icon={<SaveOutlined />}
+                onClick={handleSave}
+                loading={updateEmployeeMutation.isPending || updateWorkInfoMutation.isPending || createWorkInfoVersionMutation.isPending || updateWorkInfoHistoryMutation.isPending}
+              >
+                保存
+              </Button>
+            </Space>
+          ) : null}
+        </div>
+
+        {/* 用户信息展示 */}
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Avatar
+            size={80}
+            src={employee?.photo}
+            icon={<UserOutlined />}
+            style={{ flexShrink: 0 }}
+          />
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+              {employee?.name || '-'}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginBottom: 2 }}>
+              工号：{employee?.employeeNo || '-'}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}>
+              状态：{employee?.status === 'ACTIVE' ? '在职' : '离职'}
+            </div>
+          </div>
+        </div>
+
+        {/* 页签区域 */}
         <Row gutter={16}>
-          <Col span={4} style={{ borderRight: '1px solid #f0f0f0', paddingRight: '16px' }}>
+          <Col span={5} style={{ borderRight: '1px solid var(--color-border-1)', paddingRight: '16px' }}>
             <Tabs
               defaultActiveKey={defaultActiveKey}
               activeKey={activeTab}
@@ -2303,15 +3563,15 @@ const EmployeeDetailPage: React.FC = () => {
               items={tabItems.map(item => ({
                 key: item.key,
                 label: (
-                  <span style={{ padding: '40px 0', display: 'block' }}>
+                  <span style={{ padding: '8px 0', display: 'block' }}>
                     {item.label}
                   </span>
                 ),
               }))}
-              style={{ borderRight: 'none', marginTop: '16px' }}
+              style={{ borderRight: 'none' }}
             />
           </Col>
-          <Col span={20} style={{ paddingLeft: '24px' }}>
+          <Col span={19} style={{ paddingLeft: '24px' }}>
             {tabItems.find(item => item.key === activeTab)?.children}
           </Col>
         </Row>
@@ -2329,7 +3589,7 @@ const EmployeeDetailPage: React.FC = () => {
         width={500}
       >
         <div style={{ padding: '16px 0' }}>
-          <p style={{ marginBottom: '16px', color: '#666' }}>
+          <p style={{ marginBottom: '16px', color: 'var(--color-text-secondary)' }}>
             请输入新版本的异动生效日期：
           </p>
           <DatePicker
@@ -2372,6 +3632,7 @@ const EmployeeDetailPage: React.FC = () => {
                 'workLocation', 'workAddress', 'hireDate',
                 'probationStart', 'probationEnd', 'probationMonths',
                 'regularDate', 'resignationDate', 'resignationReason', 'workYears',
+                'costCenter', 'employmentRelation',
                 'changeType'
               ];
 

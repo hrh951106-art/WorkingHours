@@ -9,10 +9,17 @@ export class SystemService {
   // ========== 用户管理 ==========
 
   async getUsers(query: any) {
-    const { page = 1, pageSize = 10, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+    const { page = 1, pageSize = 10, sortBy = 'createdAt', sortOrder = 'desc', status } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
+
+    // 默认只返回 ACTIVE 状态的用户，除非明确指定了 status 参数
+    if (status && status.trim()) {
+      where.status = status;
+    } else {
+      where.status = 'ACTIVE';
+    }
 
     const orderBy: any = {};
     if (sortBy) {
@@ -279,14 +286,17 @@ export class SystemService {
     // 根据isAllData设置dataScopeType
     const dataScopeType = isAllData ? 'ALL' : 'CUSTOM';
 
+    // 确保 functionalPermissions 是数组且不为 null
+    const permissions = Array.isArray(functionalPermissions) ? functionalPermissions : [];
+
     const role = await this.prisma.role.create({
       data: {
         code,
         name,
         description,
-        functionalPermissions: JSON.stringify(functionalPermissions),
+        functionalPermissions: JSON.stringify(permissions),
         dataScopeType,
-        dataScopeRuleGroups: !isAllData && dataScopeRuleGroups.length > 0
+        dataScopeRuleGroups: !isAllData && dataScopeRuleGroups && dataScopeRuleGroups.length > 0
           ? JSON.stringify(dataScopeRuleGroups)
           : null,
         isDefault,
@@ -340,7 +350,9 @@ export class SystemService {
     }
 
     if (functionalPermissions !== undefined) {
-      updateData.functionalPermissions = JSON.stringify(functionalPermissions);
+      // 确保 functionalPermissions 是数组且不为 null
+      const permissions = Array.isArray(functionalPermissions) ? functionalPermissions : [];
+      updateData.functionalPermissions = JSON.stringify(permissions);
     }
 
     if (isDefault !== undefined) {

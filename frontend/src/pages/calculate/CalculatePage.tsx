@@ -846,6 +846,46 @@ const CalculatePage: React.FC = () => {
         </Card>
       ),
     },
+    {
+      key: 'amountPolicies',
+      label: '金额政策',
+      children: (
+        <Card>
+          <Alert
+            message="金额政策说明"
+            description="金额政策用于为劳动力账户和出勤代码组合配置浮动金额计算规则。支持增加、翻倍、自定义三种模式。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <Button type="primary" size="large" onClick={() => window.location.href = '/calculate/config/amount-policies'}>
+              进入金额政策配置
+            </Button>
+          </div>
+        </Card>
+      ),
+    },
+    {
+      key: 'attendanceRuleGroups',
+      label: '考勤规则组',
+      children: (
+        <Card>
+          <Alert
+            message="考勤规则组说明"
+            description="考勤规则组将金额政策、打卡规则、出勤代码绑定在一起，支持批量授予员工。可以设置默认规则组，未分配规则组的员工将使用默认规则组。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <Button type="primary" size="large" onClick={() => window.location.href = '/calculate/config/attendance-rule-groups'}>
+              进入考勤规则组配置
+            </Button>
+          </div>
+        </Card>
+      ),
+    },
   ];
 
   return (

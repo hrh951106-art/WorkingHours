@@ -5,6 +5,9 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { PunchService } from './punch.service';
 import { PairingService } from './pairing.service';
+import { AttendancePunchService } from './attendance-punch.service';
+import { AttendancePunchTriggerService } from './attendance-punch-trigger.service';
+import { PrismaService } from '../../database/prisma.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Punch')
@@ -15,6 +18,9 @@ export class PunchController {
   constructor(
     private punchService: PunchService,
     private pairingService: PairingService,
+    private attendancePunchService: AttendancePunchService,
+    private attendancePunchTriggerService: AttendancePunchTriggerService, // ✅ 新增
+    private prisma: PrismaService,
   ) {}
 
   @Get('devices')
@@ -175,6 +181,13 @@ export class PunchController {
     return this.pairingService.deletePunchPair(+id);
   }
 
+  // @Delete('pairing/results/delete-by-date')
+  // @RequirePermissions('punch:record:delete')
+  // @ApiOperation({ summary: '按日期删除摆卡记录' })
+  // async deletePunchPairsByDate(@Query() query: any) {
+  //   return this.pairingService.deletePunchPairsByDate(query);
+  // }
+
   @Put('pairs/:id')
   @RequirePermissions('punch:record:edit')
   @ApiOperation({ summary: '修改摆卡记录时间' })
@@ -194,5 +207,131 @@ export class PunchController {
   @ApiOperation({ summary: '手动触发摆卡（用于新打卡记录）' })
   async triggerPairing(@Param('recordId') recordId: string) {
     return this.pairingService.handleNewPunchRecord(+recordId);
+  }
+
+  // 考勤打卡收卡
+  @Post('attendance-punch/collect')
+  @RequirePermissions('punch:record:edit')
+  @ApiOperation({ summary: '考勤打卡收卡' })
+  async collectAttendancePunch(@Body() dto: { employeeNos?: string[]; punchDate: string }) {
+    // ✅ 解析日期为本地时间（服务器时区），避免使用UTC时区导致日期错误
+    // 例如："2026-05-09" 应该解析为本地时间 2026-05-09T00:00:00，而不是 UTC 时间 2026-05-09T00:00:00Z
+    const punchDate = new Date(dto.punchDate + 'T00:00:00');
+
+    // 如果没有指定员工，获取所有有排班或打卡规则的员工
+    let employeeNos = dto.employeeNos;
+    if (!employeeNos || employeeNos.length === 0) {
+      // TODO: 获取所有需要进行考勤���卡收卡的员工
+      employeeNos = [];
+    }
+
+    return this.attendancePunchService.collectAttendancePunch(employeeNos, punchDate);
+  }
+
+  @Post('attendance-punch/collect-batch')
+  @RequirePermissions('punch:record:edit')
+  @ApiOperation({ summary: '批量考勤打卡收卡（日期范围）' })
+  async collectAttendancePunchBatch(@Body() dto: {
+    employeeNos?: string[];
+    startDate: string;
+    endDate: string;
+  }) {
+    // ✅ 解析日期为本地时间（服务器时区），避免使用UTC时区导致日期范围错误
+    // 例如："2026-05-12" 应该解析为本地时间 2026-05-12T00:00:00，而不是 UTC 时间 2026-05-12T00:00:00Z
+    const startDate = new Date(dto.startDate + 'T00:00:00');
+    const endDate = new Date(dto.endDate + 'T23:59:59');
+
+    // 如果没有指定员工，获取所有在日期范围内有排班的员工
+    let employeeNos = dto.employeeNos;
+    if (!employeeNos || employeeNos.length === 0) {
+      const schedules = await this.prisma.schedule.findMany({
+        where: {
+          status: 'ACTIVE',
+          scheduleDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        select: {
+          employee: {
+            select: {
+              employeeNo: true,
+            },
+          },
+        },
+        distinct: ['employeeId'],
+      });
+
+      employeeNos = schedules.map((s) => s.employee.employeeNo);
+    }
+
+    return this.attendancePunchService.collectAttendancePunchBatch(
+      employeeNos,
+      startDate,
+      endDate,
+    );
+  }
+
+  @Get('attendance-punch/results')
+  @RequirePermissions('punch:record:view')
+  @ApiOperation({ summary: '获取考勤打卡收卡结果' })
+  async getAttendancePunchResults(@Query() query: any) {
+    return this.attendancePunchService.getAttendancePunchResults(query);
+  }
+
+  @Get('attendance-punch/results/:id')
+  @RequirePermissions('punch:record:view')
+  @ApiOperation({ summary: '获取考勤打卡收卡结果详情' })
+  async getAttendancePunchDetail(@Param('id') id: string) {
+    return this.attendancePunchService.getAttendancePunchDetail(+id);
+  }
+
+  // ==================== 考勤打卡自动触发相关接口 ====================
+
+  @Post('attendance-punch/trigger-for-employee')
+  @RequirePermissions('punch:record:edit')
+  @ApiOperation({ summary: '为单个员工触发考勤打卡收卡和工时计算' })
+  async triggerForEmployee(@Body() dto: {
+    employeeNo: string;
+    calcDate: string; // YYYY-MM-DD
+  }) {
+    return this.attendancePunchTriggerService.triggerForEmployee(
+      dto.employeeNo,
+      new Date(dto.calcDate),
+    );
+  }
+
+  @Post('attendance-punch/trigger-schedule-change')
+  @RequirePermissions('punch:record:edit')
+  @ApiOperation({ summary: '触发排班变更事件' })
+  async triggerScheduleChange(@Body() dto: {
+    employeeNos: string[];
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    triggerSource: string;
+  }) {
+    return this.attendancePunchTriggerService.triggerScheduleChange({
+      employeeNos: dto.employeeNos,
+      startDate: new Date(dto.startDate),
+      endDate: new Date(dto.endDate),
+      triggerSource: dto.triggerSource,
+    });
+  }
+
+  @Post('attendance-punch/trigger-punch-change')
+  @RequirePermissions('punch:record:edit')
+  @ApiOperation({ summary: '触发打卡数据变更事件' })
+  async triggerPunchChange(@Body() dto: {
+    employeeNos: string[];
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    triggerSource: string;
+  }) {
+    return this.attendancePunchTriggerService.triggerPunchChange({
+      employeeNos: dto.employeeNos,
+      startDate: new Date(dto.startDate),
+      endDate: new Date(dto.endDate),
+      triggerSource: dto.triggerSource,
+    });
   }
 }

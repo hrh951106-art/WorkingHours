@@ -81,6 +81,16 @@ const EmployeeListPage: React.FC = () => {
       dataIndex: 'employeeNo',
       key: 'employeeNo',
       width: 120,
+      render: (employeeNo: string, record: any) => (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => navigate(`/hr/employees/${record.id}`)}
+          style={{ color: 'var(--color-primary)', padding: 0 }}
+        >
+          {employeeNo}
+        </Button>
+      ),
     },
     {
       title: '姓名',
@@ -128,31 +138,12 @@ const EmployeeListPage: React.FC = () => {
         <Tag
           color={status === 'ACTIVE' ? 'success' : 'error'}
           style={{
-            borderRadius: 4,
+            borderRadius: 'var(--radius-sm)',
             padding: '2px 8px',
           }}
         >
           {status === 'ACTIVE' ? '在职' : '离职'}
         </Tag>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 120,
-      fixed: 'right' as const,
-      render: (_: any, record: any) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/hr/employees/${record.id}`)}
-            style={{ color: '#22B970' }}
-          >
-            查看
-          </Button>
-        </Space>
       ),
     },
   ];
@@ -171,12 +162,11 @@ const EmployeeListPage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={() => navigate('/hr/employees/create')}
           style={{
-            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
+            background: 'var(--color-primary)',
             border: 'none',
-            borderRadius: 8,
+            borderRadius: 'var(--radius-md)',
             height: 40,
             fontWeight: 500,
-            boxShadow: '0 2px 8px rgba(34, 185, 112, 0.3)',
           }}
         >
           新增人员
@@ -185,8 +175,8 @@ const EmployeeListPage: React.FC = () => {
     >
       <Card
         style={{
-          borderRadius: 12,
-          border: '1px solid #e2e8f0',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--color-border-1)',
           marginBottom: 24,
         }}
         bodyStyle={{ padding: '24px' }}
@@ -221,7 +211,7 @@ const EmployeeListPage: React.FC = () => {
               },
             }}
             style={{
-              borderRadius: 8,
+              borderRadius: 'var(--radius-md)',
             }}
             rowClassName={(_, index) =>
               index % 2 === 0 ? '' : 'modern-table-row-even'

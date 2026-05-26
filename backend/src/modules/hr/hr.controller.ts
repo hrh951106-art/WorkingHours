@@ -69,6 +69,22 @@ export class HrController {
     return this.hrService.getEmployees(query, req.user);
   }
 
+  @Get('employees/select-list')
+  @ApiOperation({ summary: '获取员工选择列表（不需要权限）' })
+  async getEmployeeSelectList(
+    @Query() query: { status?: string; keyword?: string; pageSize?: number },
+    @Req() req: any
+  ) {
+    return this.hrService.getEmployeeSelectList(query, req.user);
+  }
+
+  @Get('employees/next-employee-no')
+  @RequirePermissions('hr:emp:view')
+  @ApiOperation({ summary: '获取下一个工号（预览自动生成的工号）' })
+  async getNextEmployeeNo() {
+    return this.hrService.generateEmployeeNo();
+  }
+
   @Get('employees/:id')
   @RequirePermissions('hr:emp:view')
   @ApiOperation({ summary: '获取人员详情' })
@@ -164,6 +180,12 @@ export class HrController {
   @ApiOperation({ summary: '获取人事信息字段配置（用于账户层级）' })
   async getEmployeeInfoConfigs() {
     return this.hrService.getEmployeeInfoConfigs();
+  }
+
+  @Get('employee-info-all-fields')
+  @ApiOperation({ summary: '获取所有人事信息模版字段（包括没有数据源的字段）' })
+  async getAllEmployeeInfoFields() {
+    return this.hrService.getAllEmployeeInfoFields();
   }
 
   @Post('custom-fields')
@@ -315,6 +337,47 @@ export class HrController {
     return this.hrService.batchSaveSearchConditionConfigs(dto);
   }
 
+  // ==================== 统一查询条件配置 ====================
+  @Get('unified-search-condition-configs')
+  @ApiOperation({ summary: '获取统一查询条件配置列表' })
+  async getUnifiedSearchConditionConfigs(@Query() query: any) {
+    return this.hrService.getUnifiedSearchConditionConfigs(query);
+  }
+
+  @Get('unified-search-condition-configs/available-fields')
+  @ApiOperation({ summary: '获取可用的查询字段（从人事信息配置）' })
+  async getAvailableSearchFields() {
+    return this.hrService.getAvailableSearchFields();
+  }
+
+  @Post('unified-search-condition-configs')
+  @RequirePermissions('hr:searchconfig:edit')
+  @ApiOperation({ summary: '创建统一查询条件配置' })
+  async createUnifiedSearchConditionConfig(@Body() dto: any) {
+    return this.hrService.createUnifiedSearchConditionConfig(dto);
+  }
+
+  @Put('unified-search-condition-configs/:id')
+  @RequirePermissions('hr:searchconfig:edit')
+  @ApiOperation({ summary: '更新统一查询条件配置' })
+  async updateUnifiedSearchConditionConfig(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateUnifiedSearchConditionConfig(+id, dto);
+  }
+
+  @Delete('unified-search-condition-configs/:id')
+  @RequirePermissions('hr:searchconfig:delete')
+  @ApiOperation({ summary: '删除统一查询条件配置' })
+  async deleteUnifiedSearchConditionConfig(@Param('id') id: string) {
+    return this.hrService.deleteUnifiedSearchConditionConfig(+id);
+  }
+
+  @Post('unified-search-condition-configs/batch')
+  @RequirePermissions('hr:searchconfig:edit')
+  @ApiOperation({ summary: '批量保存统一查询条件配置' })
+  async batchSaveUnifiedSearchConditionConfigs(@Body() dto: any) {
+    return this.hrService.batchSaveUnifiedSearchConditionConfigs(dto);
+  }
+
   // ==================== 系统配置 ====================
   @Get('system-configs')
   @ApiOperation({ summary: '获取系统配置列表' })
@@ -368,6 +431,13 @@ export class HrController {
   @ApiOperation({ summary: '创建工作信息历史记录' })
   async createWorkInfoHistory(@Param('id') id: string, @Body() dto: any) {
     return this.hrService.createWorkInfoHistory(+id, dto);
+  }
+
+  @Post('employees/:id/work-info-changes')
+  @RequirePermissions('hr:emp:edit')
+  @ApiOperation({ summary: '创建员工异动记录（异动/离职）' })
+  async createWorkInfoChange(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.createWorkInfoChange(+id, dto);
   }
 
   @Put('work-info-history/:id')
@@ -469,5 +539,41 @@ export class HrController {
   @ApiOperation({ summary: '删除家庭成员' })
   async deleteEmployeeFamilyMember(@Param('id') id: string) {
     return this.hrService.deleteEmployeeFamilyMember(+id);
+  }
+
+  // ==================== 工序管理 ====================
+  @Get('processes')
+  @RequirePermissions('hr:org:view')
+  @ApiOperation({ summary: '获取工序列表' })
+  async getProcesses(@Query() query: any) {
+    return this.hrService.getProcesses(query);
+  }
+
+  @Get('processes/:id')
+  @RequirePermissions('hr:org:view')
+  @ApiOperation({ summary: '获取工序详情' })
+  async getProcess(@Param('id') id: string) {
+    return this.hrService.getProcess(+id);
+  }
+
+  @Post('processes')
+  @RequirePermissions('hr:org:edit')
+  @ApiOperation({ summary: '创建工序' })
+  async createProcess(@Body() dto: any) {
+    return this.hrService.createProcess(dto);
+  }
+
+  @Put('processes/:id')
+  @RequirePermissions('hr:org:edit')
+  @ApiOperation({ summary: '更新工序' })
+  async updateProcess(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateProcess(+id, dto);
+  }
+
+  @Delete('processes/:id')
+  @RequirePermissions('hr:org:edit')
+  @ApiOperation({ summary: '删除工序' })
+  async deleteProcess(@Param('id') id: string) {
+    return this.hrService.deleteProcess(+id);
   }
 }

@@ -1011,7 +1011,7 @@ const EmployeeInfoConfigPage: React.FC = () => {
       onDragEnd={handleDragEnd}
     >
       <Card
-        title="人事信息配置"
+        title="人事信息管理"
         extra={
           <Space>
             <span style={{ fontSize: 12, color: '#999' }}>

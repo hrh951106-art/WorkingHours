@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>数据源调试页面</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+    .data { background: #f5f5f5; padding: 10px; margin-top: 10px; }
+    pre { white-space: pre-wrap; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>数据源调试页面</h1>
+
+  <div class="section">
+    <h2>1. 获取Token</h2>
+    <button onclick="login()">登录获取Token</button>
+    <div class="data" id="token-result">等待登录...</div>
+  </div>
+
+  <div class="section">
+    <h2>2. 获取数据源列表</h2>
+    <button onclick="getDataSources()">获取数据源列表</button>
+    <div class="data" id="datasources-result">等待获取...</div>
+  </div>
+
+  <div class="section">
+    <h2>3. 获取PRODUCT数据源选项</h2>
+    <button onclick="getProductOptions()">获取PRODUCT选项</button>
+    <div class="data" id="product-result">等待获取...</div>
+  </div>
+
+  <div class="section">
+    <h2>4. 获取PROCESS数据源选项</h2>
+    <button onclick="getProcessOptions()">获取PROCESS选项</button>
+    <div class="data" id="process-result">等待获取...</div>
+  </div>
+
+  <script>
+    let token = '';
+
+    async function login() {
+      try {
+        const response = await fetch('http://localhost:3001/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: 'admin', password: 'admin123' })
+        });
+        const data = await response.json();
+        if (data.access_token || data.token) {
+          token = data.access_token || data.token;
+          document.getElementById('token-result').innerHTML =
+            '<pre style="color: green;">✓ 登录成功! Token: ' + token.substring(0, 50) + '...</pre>';
+          localStorage.setItem('token', token);
+        } else {
+          document.getElementById('token-result').innerHTML =
+            '<pre style="color: red;">登录失败: ' + JSON.stringify(data, null, 2) + '</pre>';
+        }
+      } catch (error) {
+        document.getElementById('token-result').innerHTML =
+          '<pre style="color: red;">错误: ' + error.message + '</pre>';
+      }
+    }
+
+    async function getDataSources() {
+      try {
+        const response = await fetch('http://localhost:3001/api/hr/data-sources', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await response.json();
+        const productDS = data.find(ds => ds.code === 'PRODUCT');
+        const processDS = data.find(ds => ds.code === 'PROCESS');
+        document.getElementById('datasources-result').innerHTML =
+          '<pre>' + JSON.stringify({ productDS, processDS }, null, 2) + '</pre>';
+      } catch (error) {
+        document.getElementById('datasources-result').innerHTML =
+          '<pre style="color: red;">错误: ' + error.message + '</pre>';
+      }
+    }
+
+    async function getProductOptions() {
+      try {
+        const response = await fetch('http://localhost:3001/api/hr/data-sources/25/options', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await response.json();
+        document.getElementById('product-result').innerHTML =
+          '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+      } catch (error) {
+        document.getElementById('product-result').innerHTML =
+          '<pre style="color: red;">错误: ' + error.message + '</pre>';
+      }
+    }
+
+    async function getProcessOptions() {
+      try {
+        const response = await fetch('http://localhost:3001/api/hr/data-sources/26/options', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await response.json();
+        document.getElementById('process-result').innerHTML =
+          '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+      } catch (error) {
+        document.getElementById('process-result').innerHTML =
+          '<pre style="color: red;">错误: ' + error.message + '</pre>';
+      }
+    }
+
+    // 自动登录
+    window.onload = function() {
+      const savedToken = localStorage.getItem('token');
+      if (savedToken) {
+        token = savedToken;
+        document.getElementById('token-result').innerHTML =
+          '<pre style="color: green;">✓ 使用已保存的Token</pre>';
+        // 自动获取数据
+        getDataSources();
+        getProductOptions();
+        getProcessOptions();
+      } else {
+        login();
+      }
+    };
+  </script>
+</body>
+</html>

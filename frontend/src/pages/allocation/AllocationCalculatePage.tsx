@@ -15,6 +15,7 @@ import {
   Tag,
   Progress,
   Divider,
+  Tabs,
 } from 'antd';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { PlayCircleOutlined, SyncOutlined } from '@ant-design/icons';
@@ -23,6 +24,7 @@ import request from '@/utils/request';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
+const { TabPane } = Tabs;
 
 interface AllocationResult {
   id: number;
@@ -43,6 +45,7 @@ const AllocationCalculatePage: React.FC = () => {
   const [currentBatchNo, setCurrentBatchNo] = useState<string | null>(null);
   const [resultPage, setResultPage] = useState(1);
   const [resultPageSize, setResultPageSize] = useState(10);
+  const [allocationType, setAllocationType] = useState<'normal' | 'earned'>('normal');
   const navigate = useNavigate();
 
   // 设置表单初始值
@@ -57,14 +60,29 @@ const AllocationCalculatePage: React.FC = () => {
       request.get('/allocation/configs', {
         params: { status: 'ACTIVE', pageSize: 100 },
       }).then((res: any) => res.items),
+    enabled: allocationType === 'normal',
+  });
+
+  // 获取生效的挣得工时配置列表
+  const { data: earnedHoursConfigs, isLoading: earnedHoursConfigsLoading } = useQuery({
+    queryKey: ['activeEarnedHoursConfigs'],
+    queryFn: () =>
+      request.get('/earned-hours-allocation/configs', {
+        params: { status: 'ACTIVE', pageSize: 100 },
+      }).then((res: any) => res.items),
+    enabled: allocationType === 'earned',
   });
 
   // 执行分摊计算
   const calculateMutation = useMutation({
-    mutationFn: (data: any) =>
-      request.post('/allocation/calculate', data),
+    mutationFn: (data: any) => {
+      const endpoint = allocationType === 'earned'
+        ? '/earned-hours-allocation/calculate'
+        : '/allocation/calculate';
+      return request.post(endpoint, data);
+    },
     onSuccess: (res: any, variables: any) => {
-      message.success('分摊计算完成');
+      message.success(allocationType === 'earned' ? '挣得工时分摊计算完成' : '分摊计算完成');
 
       // 跳转到分摊结果页面，并传递参数
       navigate('/allocation/results', {
@@ -72,6 +90,7 @@ const AllocationCalculatePage: React.FC = () => {
           startDate: variables.startDate,
           endDate: variables.endDate,
           batchNo: res.batchNo,
+          allocationType,
         },
       });
     },
@@ -191,44 +210,96 @@ const AllocationCalculatePage: React.FC = () => {
   return (
     <div>
       <Card title="执行工时分摊计算">
-        <Form form={form} layout="inline" initialValues={initialValues}>
-          <Form.Item
-            label="分摊配置"
-            name="configId"
-            rules={[{ required: true, message: '请选择分摊配置' }]}
-          >
-            <Select
-              placeholder="请选择生效的配置"
-              style={{ width: 300 }}
-              loading={configsLoading}
-            >
-              {activeConfigs?.map((config: any) => (
-                <Select.Option key={config.id} value={config.id}>
-                  {config.configName} ({config.configCode})
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
+        <Tabs
+          activeKey={allocationType}
+          onChange={(key) => {
+            setAllocationType(key as 'normal' | 'earned');
+            form.resetFields();
+            setCurrentBatchNo(null);
+          }}
+        >
+          <TabPane tab="普通工时分摊" key="normal">
+            <Form form={form} layout="inline" initialValues={initialValues}>
+              <Form.Item
+                label="分摊配置"
+                name="configId"
+                rules={[{ required: true, message: '请选择分摊配置' }]}
+              >
+                <Select
+                  placeholder="请选择生效的配置"
+                  style={{ width: 300 }}
+                  loading={configsLoading}
+                >
+                  {activeConfigs?.map((config: any) => (
+                    <Select.Option key={config.id} value={config.id}>
+                      {config.configName} ({config.configCode})
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
 
-          <Form.Item
-            label="计算日期范围"
-            name="dateRange"
-            rules={[{ required: true, message: '请选择日期范围' }]}
-          >
-            <RangePicker style={{ width: 300 }} />
-          </Form.Item>
+              <Form.Item
+                label="计算日期范围"
+                name="dateRange"
+                rules={[{ required: true, message: '请选择日期范围' }]}
+              >
+                <RangePicker style={{ width: 300 }} />
+              </Form.Item>
 
-          <Form.Item>
-            <Button
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              onClick={handleExecute}
-              loading={calculateMutation.isPending}
-            >
-              执行计算
-            </Button>
-          </Form.Item>
-        </Form>
+              <Form.Item>
+                <Button
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={handleExecute}
+                  loading={calculateMutation.isPending}
+                >
+                  执行计算
+                </Button>
+              </Form.Item>
+            </Form>
+          </TabPane>
+
+          <TabPane tab="挣得工时分摊" key="earned">
+            <Form form={form} layout="inline" initialValues={initialValues}>
+              <Form.Item
+                label="挣得工时配置"
+                name="configId"
+                rules={[{ required: true, message: '请选择挣得工时配置' }]}
+              >
+                <Select
+                  placeholder="请选择生效的挣得工时配置"
+                  style={{ width: 300 }}
+                  loading={earnedHoursConfigsLoading}
+                >
+                  {earnedHoursConfigs?.map((config: any) => (
+                    <Select.Option key={config.id} value={config.id}>
+                      {config.configName} ({config.configCode})
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+
+              <Form.Item
+                label="计算日期范围"
+                name="dateRange"
+                rules={[{ required: true, message: '请选择日期范围' }]}
+              >
+                <RangePicker style={{ width: 300 }} />
+              </Form.Item>
+
+              <Form.Item>
+                <Button
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={handleExecute}
+                  loading={calculateMutation.isPending}
+                >
+                  执行计算
+                </Button>
+              </Form.Item>
+            </Form>
+          </TabPane>
+        </Tabs>
 
         {calculateMutation.isPending && (
           <Alert

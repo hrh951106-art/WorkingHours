@@ -102,16 +102,28 @@ const PunchPairResultPage: React.FC = () => {
     setDynamicFilters({});
   };
 
-  const handleBatchPairing = () => {
-    const data: any = {
-      pairDate: batchDateRange[0].format('YYYY-MM-DD'),
-    };
+  const handleBatchPairing = async () => {
+    // 批量摆卡应该处理日期范围内的每一天
+    const startDate = batchDateRange[0];
+    const endDate = batchDateRange[1];
+    const dates: string[] = [];
 
-    manualPairingMutation.mutate(data, {
-      onSuccess: () => {
-        setIsBatchModalOpen(false);
-      },
-    });
+    // 生成日期范围内的所有日期
+    let current = startDate;
+    while (current.isBefore(endDate) || current.isSame(endDate, 'day')) {
+      dates.push(current.format('YYYY-MM-DD'));
+      current = current.add(1, 'day');
+    }
+
+    // 对每一天执行批量摆卡
+    for (const date of dates) {
+      await manualPairingMutation.mutateAsync({
+        pairDate: date,
+      });
+    }
+
+    setIsBatchModalOpen(false);
+    message.success(`批量摆卡完成，共处理 ${dates.length} 天`);
   };
 
   const columns = [
@@ -220,7 +232,7 @@ const PunchPairResultPage: React.FC = () => {
             onClick={handleManualPairing}
             loading={manualPairingMutation.isPending}
             style={{
-              background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
+              background: 'linear-gradient(135deg, #00B365 0%, rgba(255, 255, 255, 0.2) 100%)',
               border: 'none',
               borderRadius: 8,
               fontWeight: 500,
@@ -234,8 +246,8 @@ const PunchPairResultPage: React.FC = () => {
         {
           title: '摆卡结果数',
           value: punchPairs?.items?.length || 0,
-          prefix: <ClockCircleOutlined style={{ color: '#22B970' }} />,
-          color: '#22B970',
+          prefix: <ClockCircleOutlined style={{ color: '#00B365' }} />,
+          color: '#00B365',
         },
         {
           title: '完整配对',
@@ -259,7 +271,7 @@ const PunchPairResultPage: React.FC = () => {
       >
         <div style={{ marginBottom: 24 }}>
           <DynamicSearchConditions
-            pageCode="pair-results"
+            pageCode="punch-results"
             onSearch={handleSearch}
             onReset={handleReset}
             loading={isLoading}

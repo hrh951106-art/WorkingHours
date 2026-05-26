@@ -16,12 +16,12 @@ import {
   Tag,
   Row,
   Col,
-  TreeSelect,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import request from '@/utils/request';
+import LineAccountSelect from '@/components/common/LineAccountSelect';
 
 const { RangePicker } = DatePicker;
 
@@ -29,6 +29,9 @@ interface LineRecord {
   id?: number;
   orgId: number;
   orgName?: string;
+  accountId?: number;
+  accountName?: string;
+  accountPath?: string;
   orgIds?: number[];
   orgNames?: string[];
   shiftId: number;
@@ -50,17 +53,12 @@ const LineMaintenancePage: React.FC = () => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
 
-  // 获取系统配置 - 产线对应层级和产线班次
+  // 获取系统配置 - 产线班次
   const { data: systemConfigs = [] } = useQuery({
     queryKey: ['systemConfigs'],
     queryFn: () =>
       request.get('/hr/system-configs').then((res: any) => res || []),
   });
-
-  // 根据层级ID获取产线组织列表
-  const productionLineHierarchyLevelId = systemConfigs.find(
-    (c: any) => c.configKey === 'productionLineHierarchyLevel'
-  )?.configValue;
 
   // 获取配置的产线开线班次属性(优先使用属性配置)
   const configuredShiftPropertyKeys = systemConfigs.find(
@@ -71,14 +69,6 @@ const LineMaintenancePage: React.FC = () => {
   const configuredShiftIds = systemConfigs.find(
     (c: any) => c.configKey === 'productionLineShiftIds'
   )?.configValue?.split(',').map((id: string) => parseInt(id)) || [];
-
-  const { data: productionLineOrgs = [] } = useQuery({
-    queryKey: ['productionLineOrgs', productionLineHierarchyLevelId],
-    queryFn: () =>
-      request.get(`/hr/organizations/by-hierarchy-level/${productionLineHierarchyLevelId}`)
-        .then((res: any) => res || []),
-    enabled: !!productionLineHierarchyLevelId,
-  });
 
   // 获取所有班次及其属性
   const { data: allShifts } = useQuery({
@@ -137,14 +127,6 @@ const LineMaintenancePage: React.FC = () => {
           shiftId: filters.shiftId,
         },
       }).then((res: any) => res?.items || []),
-  });
-
-  // 获取产线树（当没有配置层级时使用）
-  const { data: orgTree } = useQuery({
-    queryKey: ['hrOrganizationTree'],
-    queryFn: () =>
-      request.get('/hr/organizations/tree').then((res: any) => res),
-    enabled: !productionLineHierarchyLevelId,
   });
 
   // 创建记录
@@ -221,15 +203,56 @@ const LineMaintenancePage: React.FC = () => {
       // 获取班次信息
       const shiftInfo = shifts?.find((s: any) => s.id === values.shiftId);
 
-      // 获取产线名称
-      const getOrgNames = (ids: number[]) => {
-        if (!ids || ids.length === 0) return [];
-        const names = ids.map((id) => {
-          const org = findOrgById(orgTree, id);
-          return org?.name || `产线${id}`;
-        });
-        return names;
-      };
+      // 获取 WH1001 配置的可选层级
+      const wh1001Config = systemConfigs?.find((c: any) => c.configKey === 'WH1001');
+      const selectableLevelIds = wh1001Config?.configValue
+        ? wh1001Config.configValue.split(',').map((id: string) => parseInt(id.trim()))
+        : [];
+
+      // 获取劳动力账户信息
+      const accountId = values.orgId;
+      let orgId = accountId;
+      let orgName = '';
+      let accountName = '';
+      let accountPath = '';
+
+      // 如果选择了账户，查询账户详情
+      if (accountId) {
+        try {
+          const account = await request.get(`/account/accounts/${accountId}`);
+
+          // 解析 hierarchyValues
+          if (account.hierarchyValues) {
+            const hierarchyValues = typeof account.hierarchyValues === 'string'
+              ? JSON.parse(account.hierarchyValues)
+              : account.hierarchyValues;
+
+            // 获取账户名称和路径
+            accountName = account.namePath || account.name || '';
+            accountPath = account.path || account.code || '';
+
+            // 获取所有组织类型的层级，按层级序号排序
+            const orgLevels = hierarchyValues
+              .filter((hv: any) =>
+                hv.mappingType === 'ORG' || hv.mappingType === 'ORG_TYPE'
+              )
+              .sort((a: any, b: any) => a.level - b.level);
+
+            // 找到用户实际选择的层级：优先使用 WH1001 配置中存在的最深层级（用户最终选择的层级）
+            // 从最深层（level最大）开始找，找到第一个在 WH1001 配置中的层级
+            for (let i = orgLevels.length - 1; i >= 0; i--) {
+              const level = orgLevels[i];
+              if (selectableLevelIds.includes(level.level) && level.selectedValue?.id) {
+                orgId = level.selectedValue.id;
+                orgName = level.selectedValue.name;
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          console.error('获取账户信息失败:', error);
+        }
+      }
 
       // 组合日期和时间创建完整的DateTime字符串
       const scheduleDate = values.scheduleDate.format('YYYY-MM-DD');
@@ -241,10 +264,13 @@ const LineMaintenancePage: React.FC = () => {
         : null;
 
       const data: LineRecord = {
-        orgId: values.orgId,
-        orgName: getOrgNames([values.orgId])[0],
-        orgIds: values.orgIds || [],
-        orgNames: getOrgNames(values.orgIds || []),
+        orgId: orgId,
+        orgName: orgName || `产线${orgId}`,
+        accountId: accountId,
+        accountName: accountName,
+        accountPath: accountPath,
+        orgIds: [orgId],
+        orgNames: [orgName],
         shiftId: values.shiftId,
         shiftCode: shiftInfo?.code,
         shiftName: shiftInfo?.name,
@@ -274,31 +300,6 @@ const LineMaintenancePage: React.FC = () => {
     form.resetFields();
   };
 
-  // 递归查找产线
-  const findOrgById = (nodes: any[], id: number): any => {
-    if (!nodes) return null;
-    for (const node of nodes) {
-      if (node.id === id) {
-        return node;
-      }
-      if (node.children && node.children.length > 0) {
-        const found = findOrgById(node.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  // 渲染产线树节点
-  const renderTreeNodes = (nodes: any[]): any[] => {
-    if (!nodes) return [];
-    return nodes.map((node) => ({
-      title: node.name,
-      value: node.id,
-      children: node.children && node.children.length > 0 ? renderTreeNodes(node.children) : undefined,
-    }));
-  };
-
   // 重置查询
   const handleResetFilters = () => {
     setFilters({
@@ -317,10 +318,19 @@ const LineMaintenancePage: React.FC = () => {
       render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
     },
     {
-      title: '产线',
+      title: '产线组织',
       dataIndex: 'orgName',
       key: 'orgName',
-      width: 200,
+      width: 150,
+      render: (name: string) => name || '-',
+    },
+    {
+      title: '产线账户',
+      dataIndex: 'accountName',
+      key: 'accountName',
+      width: 250,
+      ellipsis: true,
+      render: (name: string, record: LineRecord) => name || record.orgName || '-',
     },
     {
       title: '班次',
@@ -429,33 +439,14 @@ const LineMaintenancePage: React.FC = () => {
             />
           </Form.Item>
           <Form.Item label="产线">
-            {productionLineHierarchyLevelId && productionLineOrgs.length > 0 ? (
-              <Select
-                placeholder="请选择产线"
-                value={filters.orgId}
-                onChange={(value) => setFilters({ ...filters, orgId: value })}
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                style={{ width: 300 }}
-              >
-                {productionLineOrgs.map((org: any) => (
-                  <Select.Option key={org.id} value={org.id} label={org.name}>
-                    {org.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            ) : (
-              <TreeSelect
-                placeholder="请选择产线"
-                value={filters.orgId}
-                onChange={(value) => setFilters({ ...filters, orgId: value })}
-                allowClear
-                style={{ width: 300 }}
-                treeData={orgTree ? renderTreeNodes(orgTree) : []}
-                showSearch
-              />
-            )}
+            <LineAccountSelect
+              value={filters.orgId}
+              onChange={(value) => setFilters({ ...filters, orgId: value as number | null })}
+              placeholder="请选择产线"
+              allowClear
+              showCreateButton={false}
+              style={{ width: 300 }}
+            />
           </Form.Item>
           <Form.Item label="班次">
             <Select
@@ -545,28 +536,16 @@ const LineMaintenancePage: React.FC = () => {
             name="orgId"
             rules={[{ required: true, message: '请选择产线' }]}
           >
-            {productionLineHierarchyLevelId && productionLineOrgs.length > 0 ? (
-              <Select
-                placeholder="请选择产线"
-                showSearch
-                optionFilterProp="label"
-                allowClear
-              >
-                {productionLineOrgs.map((org: any) => (
-                  <Select.Option key={org.id} value={org.id} label={org.name}>
-                    {org.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            ) : (
-              <TreeSelect
-                placeholder="请选择产线"
-                treeData={orgTree ? renderTreeNodes(orgTree) : []}
-                showSearch
-                allowClear
-                style={{ width: '100%' }}
-              />
-            )}
+            <LineAccountSelect
+              placeholder="请选择产线账户"
+              allowClear={false}
+              directOpenCreate={true}
+              onAccountCreated={(accountId) => {
+                // 当账户创建成功后，自动填充到表单
+                form.setFieldsValue({ orgId: accountId });
+                message.success('产线账户创建成功');
+              }}
+            />
           </Form.Item>
 
           <Row gutter={16}>

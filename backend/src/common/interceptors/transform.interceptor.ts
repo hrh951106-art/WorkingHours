@@ -6,6 +6,14 @@ import { ApiResponse } from '../dto/response.dto';
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T>> {
   intercept(context: ExecutionContext, next: CallHandler): Observable<ApiResponse<T>> {
+    const response = context.switchToHttp().getResponse();
+
+    // 禁用缓存
+    response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Expires', '0');
+    response.removeHeader('ETag');
+
     return next.handle().pipe(
       map(data => {
         // 如果返回的数据已经是 ApiResponse 格式，直接返回

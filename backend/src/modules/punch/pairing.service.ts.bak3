@@ -1,0 +1,1327 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
+import { AccountMergeService } from './account-merge.service';
+import { PunchIntervalFilterService } from './punch-interval-filter.service';
+import { PunchCollectionRangeService, CollectionRange } from './punch-collection-range.service';
+import { PunchPairingService, PairingResult } from './punch-pairing.service';
+import { ShiftJunctionService } from './shift-junction.service';
+import { AttendanceCodeService } from '../calculate/attendance-code.service';
+
+@Injectable()
+export class PairingService {
+  constructor(
+    private prisma: PrismaService,
+    private accountMergeService: AccountMergeService,
+    private punchIntervalFilterService: PunchIntervalFilterService,
+    private punchCollectionRangeService: PunchCollectionRangeService,
+    private punchPairingService: PunchPairingService,
+    private shiftJunctionService: ShiftJunctionService,
+    private attendanceCodeService: AttendanceCodeService,
+  ) {}
+
+  /**
+   * 为指定日期和员工执行智能摆卡
+   * @param employeeNo 员工工号
+   * @param pairDate 摆卡日期
+   * @param ruleId 打卡规则ID（可选）
+   */
+  async pairPunches(employeeNo: string, pairDate: Date, ruleId?: number) {
+    // 1. 获取员工当天的排班信息
+    const dayStart = new Date(pairDate);
+    dayStart.setHours(0, 0, 0, 0);
+
+    const dayEnd = new Date(pairDate);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        employee: {
+          employeeNo,
+        },
+        scheduleDate: {
+          gte: dayStart,
+          lte: dayEnd,
+        },
+      },
+      include: {
+        shift: {
+          include: {
+            segments: {
+              orderBy: { startTime: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    // 2. 获取打卡规则
+    const punchRule = ruleId
+      ? await this.prisma.punchRule.findUnique({
+          where: { id: ruleId },
+        })
+      : await this.prisma.punchRule.findFirst({
+          where: { status: 'ACTIVE' },
+          orderBy: { priority: 'asc' },
+        });
+
+    if (!punchRule) {
+      throw new Error('未找到有效的打卡规则');
+    }
+
+    // 【新增】处理未排班日期的情况
+    if (schedules.length === 0) {
+      return await this.handleUnscheduledDay(
+        employeeNo,
+        pairDate,
+        punchRule,
+        dayStart,
+        dayEnd,
+      );
+    }
+
+    // 3. 获取打卡记录并合并账户
+    const punchRecords = await this.getPunchRecordsForPairing(
+      employeeNo,
+      dayStart,
+      dayEnd,
+      punchRule,
+    );
+
+    if (punchRecords.length === 0) {
+      return { message: '无打卡记录', pairs: [] };
+    }
+
+    console.log(`[精益摆卡] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 获取到 ${punchRecords.length} 条打卡记录`);
+
+    // 3.3 【账户合并】将刷卡数据本身的劳动力账户和设备的劳动力账户进行合并
+    const mergeResults = await this.accountMergeService.batchMergeAccounts(punchRecords);
+
+    // 更新打卡记录的账户ID
+    for (const result of mergeResults) {
+      if (result.mergedAccountId) {
+        await this.prisma.punchRecord.update({
+          where: { id: result.id },
+          data: { accountId: result.mergedAccountId },
+        });
+
+        const record = punchRecords.find((r) => r.id === result.id);
+        if (record) {
+          record.accountId = result.mergedAccountId;
+        }
+      }
+    }
+
+    const mergedCount = mergeResults.filter((r) => r.mergedAccountId).length;
+    console.log(`[账户合并] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 合并了 ${mergedCount}/${punchRecords.length} 条打卡记录的账户`);
+
+    // 3.5 获取设备组配置（用于后续摆卡间隔处理）
+    const deviceGroupConfigs = await this.getDeviceGroupConfigs(punchRule.id);
+
+    // 【新增】4. 处理班次连接点跨越打卡
+    const junctionResult = await this.shiftJunctionService.processJunctionPunches(
+      employeeNo,
+      pairDate,
+    );
+
+    // 如果有班次连接点跨越打卡，使用处理后的打卡记录
+    let finalPunchRecords = punchRecords;
+    if (junctionResult.hasJunction && junctionResult.allPunchRecords) {
+      finalPunchRecords = junctionResult.allPunchRecords;
+      console.log(
+        `[班次连接点] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}` +
+        `, 原始打卡: ${punchRecords.length}张` +
+        `, 插入虚拟打卡: ${junctionResult.virtualPunches.length}张` +
+        `, 总计: ${finalPunchRecords.length}张`
+      );
+    }
+
+    // 5. 为每个班次进行精益摆卡
+    const allPairs = [];
+
+    // 【新增】如果有班次连接点，使用特殊的分配逻辑
+    let shiftPunchesMap: Map<number, any[]>;
+    if (junctionResult.hasJunction && junctionResult.junctions.length > 0) {
+      // 使用班次连接点服务分配打卡记录到各个班次
+      shiftPunchesMap = this.shiftJunctionService.assignPunchesToShifts(
+        finalPunchRecords,
+        schedules,
+        junctionResult.junctions,
+      );
+    }
+
+    for (const schedule of schedules) {
+      const shift = schedule.shift;
+
+      // ��取该班次的打卡记录（精益打卡时间范围内）
+      let shiftPunches: any[] = [];
+      if (junctionResult.hasJunction && junctionResult.junctions.length > 0 && shiftPunchesMap) {
+        // 从班次连接点分配结果中获取
+        shiftPunches = shiftPunchesMap.get(schedule.shiftId) || [];
+      } else {
+        // 使用原有的逻辑获取班次时间范围内的打卡记录
+        shiftPunches = await this.getPunchesForShift(
+          finalPunchRecords,
+          shift,
+          schedule.scheduleDate,
+          punchRule,
+        );
+      }
+
+      // 在处理之前，先删除该员工、日期、班次的所有旧摆卡记录（不管 accountId 是什么）
+      // 这样可以避免因账户合并导致的重复摆卡记录
+      await this.prisma.punchPair.deleteMany({
+        where: {
+          employeeNo: employeeNo,
+          pairDate: schedule.scheduleDate,
+          shiftId: schedule.shiftId,
+          // 不限制 accountId，删除所有记录
+        },
+      });
+
+      // 【精益摆卡】按照账户分组进行摆卡
+      // 优先将相同账户的签入签出成对配对
+      const accountGroups = this.groupPunchesByAccount(shiftPunches);
+
+      for (const [accountId, punches] of accountGroups.entries()) {
+        // 为每个账户组进行精益摆卡
+        const pairs = await this.createPunchPairsForAccount(
+          employeeNo,
+          schedule.scheduleDate,
+          schedule.shiftId,
+          schedule.shift.name,
+          punches,
+          punchRule,
+          accountId,
+          deviceGroupConfigs,
+        );
+
+        allPairs.push(...pairs);
+      }
+    }
+
+    return {
+      message: '摆卡完成',
+      pairs: allPairs,
+      totalPairs: allPairs.length,
+    };
+  }
+
+  /**
+   * 获取打卡规则的设备组配置（从关联表读取）
+   * @param punchRuleId 打卡规则ID
+   * @returns 设备组配置Map<deviceGroupId, config>
+   */
+  private async getDeviceGroupConfigs(punchRuleId: number) {
+    const intervals = await this.prisma.punchRuleDeviceGroupInterval.findMany({
+      where: {
+        punchRuleId,
+        status: 'ACTIVE',
+      },
+      include: {
+        deviceGroup: true,
+      },
+    });
+
+    // 构建配置Map，同时兼容旧的configs字段
+    const configMap = new Map<
+      number,
+      { deviceGroupId: number; deviceGroupName: string; beforeShiftMins: number; afterShiftMins: number; pairingInterval?: number }
+    >();
+
+    for (const interval of intervals) {
+      configMap.set(interval.deviceGroupId, {
+        deviceGroupId: interval.deviceGroupId,
+        deviceGroupName: interval.deviceGroupName,
+        beforeShiftMins: interval.beforeShiftMins,
+        afterShiftMins: interval.afterShiftMins,
+        pairingInterval: 0, // 默认值，可以从configs字段读取
+      });
+    }
+
+    return configMap;
+  }
+
+  /**
+   * 获取摆卡间隔配置（兼容旧的configs字段和新的关联表）
+   * @param punchRule 打卡规则
+   * @param deviceGroupId 设备组ID
+   * @returns 摆卡间隔（分钟）
+   */
+  private getPairingInterval(punchRule: any, deviceGroupId?: number): number {
+    // 尝试从新的关联表读取（如果提供了deviceGroupId）
+    if (deviceGroupId && punchRule.deviceGroupIntervals) {
+      const interval = punchRule.deviceGroupIntervals.find(
+        (i: any) => i.deviceGroupId === deviceGroupId && i.status === 'ACTIVE'
+      );
+      if (interval) {
+        // 尝试从扩展字段读取摆卡间隔
+        if (interval.pairingInterval !== undefined) {
+          return interval.pairingInterval;
+        }
+      }
+    }
+
+    // 兼容旧的configs字段（JSON格式）
+    try {
+      const configs = JSON.parse(punchRule.configs || '[]');
+      if (configs.length > 0) {
+        // 查找匹配的设备组配置
+        if (deviceGroupId) {
+          const matchedConfig = configs.find((c: any) => c.groupId === deviceGroupId);
+          if (matchedConfig && matchedConfig.pairingInterval !== undefined) {
+            return matchedConfig.pairingInterval;
+          }
+        }
+        // 默认使用第一个配置
+        const firstConfig = configs[0];
+        if (firstConfig && firstConfig.pairingInterval !== undefined) {
+          return firstConfig.pairingInterval;
+        }
+      }
+    } catch (error) {
+      console.error('解析configs失败:', error);
+    }
+
+    return 0; // 默认值
+  }
+
+  /**
+   * 批量摆卡
+   */
+  async batchPairPunches(pairDate: Date, employeeNos?: string[]) {
+    const dayStart = new Date(pairDate);
+    dayStart.setHours(0, 0, 0, 0);
+
+    const dayEnd = new Date(pairDate);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    // 获取需要摆卡的员工列表
+    let targetEmployees = employeeNos;
+    let schedules: any[] = [];
+
+    if (!targetEmployees || targetEmployees.length === 0) {
+      // 获取当天有排班的员工
+      schedules = await this.prisma.schedule.findMany({
+        where: {
+          scheduleDate: {
+            gte: dayStart,
+            lte: dayEnd,
+          },
+        },
+        select: {
+          employee: {
+            select: {
+              employeeNo: true,
+            },
+          },
+        },
+        distinct: ['employeeId'],
+      });
+
+      targetEmployees = schedules.map((s) => s.employee.employeeNo);
+    }
+
+    // 【新增】获取当天有打卡记录的员工（包括未排班的）
+    if (!employeeNos || employeeNos.length === 0) {
+      const employeesWithPunches = await this.prisma.punchRecord.findMany({
+        where: {
+          punchTime: {
+            gte: dayStart,
+            lte: dayEnd,
+          },
+        },
+        select: {
+          employeeNo: true,
+        },
+        distinct: ['employeeNo'],
+      });
+
+      // 合并排班员工和有打卡的员工，去重
+      const allEmployees = new Set([...targetEmployees, ...employeesWithPunches.map(e => e.employeeNo)]);
+      targetEmployees = Array.from(allEmployees);
+
+      console.log(
+        `[批量摆卡] 日期: ${pairDate.toISOString().split('T')[0]}, ` +
+        `排班员工: ${schedules.length}, ` +
+        `有打卡员工: ${employeesWithPunches.length}, ` +
+        `总计处理员工: ${targetEmployees.length}`
+      );
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const employeeNo of targetEmployees) {
+      try {
+        const result = await this.pairPunches(employeeNo, pairDate);
+        results.push({
+          employeeNo,
+          ...result,
+        });
+      } catch (error: any) {
+        errors.push({
+          employeeNo,
+          error: error.message,
+        });
+      }
+    }
+
+    return {
+      message: '批量摆卡完成',
+      successCount: results.length,
+      errorCount: errors.length,
+      results,
+      errors,
+    };
+  }
+
+  /**
+   * 获取用于摆卡的打卡记录
+   */
+  private async getPunchRecordsForPairing(
+    employeeNo: string,
+    dayStart: Date,
+    dayEnd: Date,
+    punchRule: any,
+  ) {
+    const where: any = {
+      employeeNo,
+      punchTime: {
+        gte: dayStart,
+        lte: dayEnd,
+      },
+    };
+
+    // 解析configs，获取所有配置的设备组ID
+    const configs = JSON.parse(punchRule.configs || '[]');
+    const deviceGroupIds = configs
+      .map((config: any) => config.groupId)
+      .filter((id: any) => id != null && id !== undefined && id !== '');
+
+    // 只有当明确配置了有效的设备组ID，并且能找到对应设备时，才进行过滤
+    if (deviceGroupIds.length > 0) {
+      const devices = await this.prisma.punchDevice
+        .findMany({
+          where: {
+            groupId: { in: deviceGroupIds },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+      const deviceIds = devices.map((d) => d.id);
+
+      // 只有找到有效设备时才进行过滤
+      if (deviceIds.length > 0) {
+        where.deviceId = { in: deviceIds };
+      }
+      // 如果没有找到设备，不过滤，使用所有打卡记录
+    }
+
+    return this.prisma.punchRecord.findMany({
+      where,
+      include: {
+        device: true,
+        account: true,
+      },
+      orderBy: { punchTime: 'asc' },
+    });
+  }
+
+  /**
+   * 获取班次时间范围内的打卡记录
+   */
+  private async getPunchesForShift(
+    punchRecords: any[],
+    shift: any,
+    scheduleDate: Date,
+    punchRule: any,
+  ) {
+    if (!shift.segments || shift.segments.length === 0) {
+      return punchRecords;
+    }
+
+    // 获取班次的开始和结束时间
+    const firstSegment = shift.segments[0];
+    const lastSegment = shift.segments[shift.segments.length - 1];
+
+    // 计算班次开始时间
+    let shiftStart = new Date(scheduleDate);
+    if (firstSegment.startDate === '+0') {
+      const [hours, minutes] = firstSegment.startTime.split(':').map(Number);
+      shiftStart.setHours(hours, minutes, 0, 0);
+    } else {
+      shiftStart.setDate(shiftStart.getDate() + 1);
+      const [hours, minutes] = firstSegment.startTime.split(':').map(Number);
+      shiftStart.setHours(hours, minutes, 0, 0);
+    }
+
+    // 计算班次结束时间
+    let shiftEnd = new Date(scheduleDate);
+    if (lastSegment.endDate === '+0') {
+      const [hours, minutes] = lastSegment.endTime.split(':').map(Number);
+      shiftEnd.setHours(hours, minutes, 0, 0);
+    } else {
+      shiftEnd.setDate(shiftEnd.getDate() + 1);
+      const [hours, minutes] = lastSegment.endTime.split(':').map(Number);
+      shiftEnd.setHours(hours, minutes, 0, 0);
+    }
+
+    // 应用收卡范围（如果没有配置，默认使用前后各2小时）
+    const beforeShiftMins = punchRule.beforeShiftMins ?? 120; // 默认提前2小时
+    const afterShiftMins = punchRule.afterShiftMins ?? 120; // 默认延后2小时
+
+    shiftStart = new Date(shiftStart.getTime() - beforeShiftMins * 60 * 1000);
+    shiftEnd = new Date(shiftEnd.getTime() + afterShiftMins * 60 * 1000);
+
+    // 筛选在收卡范围内的打卡记录
+    return punchRecords.filter((record) => {
+      const punchTime = new Date(record.punchTime);
+      return punchTime >= shiftStart && punchTime <= shiftEnd;
+    });
+  }
+
+  /**
+   * 按账户分组打卡记录
+   * 精益摆卡：优先将相同账户的签入签出成对配对
+   * 如果accountId为null，则使用deviceId作为分组依据
+   */
+  private groupPunchesByAccount(punchRecords: any[]): Map<number | null, any[]> {
+    const groups = new Map<number | null, any[]>();
+
+    for (const record of punchRecords) {
+      // 优先使用accountId分组，如果accountId为null，则使用deviceId分组
+      // 这样可以确保不同设备的打卡不会错误配对
+      const groupKey = record.accountId || record.deviceId || null;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, []);
+      }
+      groups.get(groupKey)!.push(record);
+    }
+
+    return groups;
+  }
+
+  /**
+   * 自动识别打卡记录的punchType（未设置的按时间顺序交替识别）
+   */
+  private autoDeterminePunchType(punchRecords: any[]): any[] {
+    const processed = [];
+    let currentType = 'IN'; // 从签入开始
+
+    // 按时间排序
+    const sorted = [...punchRecords].sort((a, b) =>
+      new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime()
+    );
+
+    for (const record of sorted) {
+      // 如果已经设置了punchType，保持不变
+      if (record.punchType && (record.punchType === 'IN' || record.punchType === 'OUT')) {
+        processed.push(record);
+        // 更新当前类型，使下一个自动识别的类型与当前相反
+        currentType = record.punchType === 'IN' ? 'OUT' : 'IN';
+      } else {
+        // 未设置punchType，根据当前类型自动识别
+        processed.push({
+          ...record,
+          punchType: currentType,
+        });
+        // 切换类型
+        currentType = currentType === 'IN' ? 'OUT' : 'IN';
+      }
+    }
+
+    return processed;
+  }
+
+  /**
+   * 为特定账户创建打卡对
+   */
+  private async createPunchPairsForAccount(
+    employeeNo: string,
+    pairDate: Date,
+    shiftId: number,
+    shiftName: string,
+    punchRecords: any[],
+    punchRule: any,
+    accountId: number | null,
+    deviceGroupConfigs: Map<number, any>,
+  ) {
+    const pairs = [];
+
+    // 【智能配置】根据打卡记录的设备组ID获取对应的摆卡间隔
+    // 如果所有记录都属于同一设备组，使用该组的配置
+    // 否则使用第一个配置作为默认值
+    let filterInterval = 0;
+    if (punchRecords.length > 0) {
+      const firstDeviceGroupId = punchRecords[0]?.device?.groupId;
+      const allSameGroup = punchRecords.every(
+        (r) => r.device?.groupId === firstDeviceGroupId
+      );
+
+      if (allSameGroup && firstDeviceGroupId) {
+        // 所有记录都属于同一设备组，使用该组的配置
+        filterInterval = this.getPairingInterval(punchRule, firstDeviceGroupId);
+      } else {
+        // 记录来自不同设备组，使用默认配置
+        filterInterval = this.getPairingInterval(punchRule);
+      }
+    }
+
+    // 【摆卡间隔过滤】应用摆卡间隔过滤算法
+    const filteredPunches = this.punchIntervalFilterService.applyIntervalFilter(
+      punchRecords,
+      filterInterval,
+    );
+
+    console.log(
+      `[摆卡间隔过滤] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 账户: ${accountId || 'null'}` +
+      `, 过滤前: ${punchRecords.length}张卡, 过滤后: ${filteredPunches.length}张卡` +
+      `, 间隔: ${filterInterval}分钟`
+    );
+
+    // 先处理没有设置punchType的记录，根据时间顺序自动识别
+    const processedPunches = this.autoDeterminePunchType(filteredPunches);
+
+    // 分离签入和签退记录
+    const inPunches = processedPunches.filter((r) => r.punchType === 'IN');
+    const outPunches = processedPunches.filter((r) => r.punchType === 'OUT');
+
+    // 按时间排序
+    inPunches.sort((a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
+    outPunches.sort((a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
+
+    // 【摆卡配对】使用filterInterval作为配对间隔（确保过滤和配对使用相同的间隔）
+    const pairingInterval = filterInterval;
+
+    // 获取第一个打卡记录的设备组ID作为sourceGroupId
+    const firstPunch = punchRecords[0];
+    const sourceGroupId = firstPunch?.device?.groupId || null;
+
+    // 【新增】使用基于优先级的成对收卡逻辑
+    console.log(`[成对收卡] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 签入: ${inPunches.length}张, 签退: ${outPunches.length}张`);
+
+    // 调用基于优先级的成对收卡服务
+    const pairingResults = this.punchPairingService.pairPunchesByPriority(
+      inPunches,
+      outPunches,
+      pairingInterval,
+    );
+
+    // 处理未配对的打卡记录（单卡）
+    const unpairedResults = this.punchPairingService.handleUnpairedPunches(
+      inPunches,
+      outPunches,
+      pairingResults,
+    );
+
+    // 合并配对结果和未配对结果
+    const allResults = [...pairingResults, ...unpairedResults];
+
+    console.log(`[成对收卡] 员工: ${employeeNo}, 优先级1: ${pairingResults.filter(r => r.priority === 1).length}对, 优先级2: ${pairingResults.filter(r => r.priority === 2).length}对, 优先级3: ${pairingResults.filter(r => r.priority === 3).length}对, 优先级4: ${pairingResults.filter(r => r.priority === 4).length}对, 单卡: ${unpairedResults.length}张`);
+
+    // 创建摆卡记录
+    for (const result of allResults) {
+      const inTime = result.inPunch ? new Date(result.inPunch.punchTime) : null;
+      const outTime = result.outPunch ? new Date(result.outPunch.punchTime) : null;
+
+      // 计算工时
+      let workHours = 0;
+      if (inTime && outTime) {
+        workHours = (outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60);
+        workHours = Math.round(workHours * 100) / 100;
+      }
+
+      // 使用配对结果中的 accountId（优先于传入的 accountId）
+      const finalAccountId = result.accountId ?? accountId;
+
+      const pair = await this.createPunchPair({
+        employeeNo,
+        pairDate,
+        shiftId,
+        shiftName,
+        inPunchId: result.inPunch?.id ?? null,
+        outPunchId: result.outPunch?.id ?? null,
+        inPunchTime: inTime,
+        outPunchTime: outTime,
+        workHours,
+        sourceGroupId,
+        accountId: finalAccountId,
+      });
+
+      // 输出配对信息
+      console.log(`  - 配对: ${result.pairingReason}, 账户: ${finalAccountId}, 进: ${inTime?.toISOString() ?? 'null'}, 出: ${outTime?.toISOString() ?? 'null'}, 工时: ${workHours}小时`);
+
+      pairs.push(pair);
+    }
+
+    // 触发工时计算（异步执行，不阻塞摆卡流程）
+    for (const pair of pairs) {
+      console.log(`触发工时计算 - 摆卡记录ID: ${pair.id}, 员工: ${pair.employeeNo}, 日期: ${pair.pairDate}`);
+      this.attendanceCodeService.calculateFromPunchPair(pair.id)
+        .then((results) => {
+          console.log(`工时计算成功 - 摆卡记录ID: ${pair.id}, 生成 ${results.length} 条结果`);
+        })
+        .catch((error) => {
+          console.error(`工时计算失败 (摆卡记录 ${pair.id}):`, error);
+        });
+    }
+
+    return pairs;
+  }
+
+  /**
+   * 创建摆卡记录
+   */
+  private async createPunchPair(data: any) {
+    return this.prisma.punchPair.create({
+      data,
+      include: {
+        inPunch: {
+          include: {
+            device: true,
+            account: true,
+          },
+        },
+        outPunch: {
+          include: {
+            device: true,
+            account: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * 创建或更新摆卡记录
+   */
+  private async createOrUpdatePunchPair(data: any) {
+    // 先删除该员工、日期、班次、账户的旧摆卡记录
+    await this.prisma.punchPair.deleteMany({
+      where: {
+        employeeNo: data.employeeNo,
+        pairDate: data.pairDate,
+        shiftId: data.shiftId,
+        accountId: data.accountId,
+      },
+    });
+
+    // 创建新的摆卡记录
+    return this.prisma.punchPair.create({
+      data,
+      include: {
+        inPunch: {
+          include: {
+            device: true,
+            account: true,
+          },
+        },
+        outPunch: {
+          include: {
+            device: true,
+            account: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * 获取摆卡结果
+   */
+  async getPunchPairs(query: any) {
+    const {
+      page = 1,
+      pageSize = 10,
+      employeeNo,
+      name,
+      orgId,
+      employeeType,
+      pairDate,
+      shiftId,
+      accountId,
+      startDate,
+      endDate
+    } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {};
+
+    // 员工工号查询
+    if (employeeNo) where.employeeNo = employeeNo;
+
+    // 员工姓名查询
+    if (name) {
+      where.employee = {
+        ...where.employee,
+        name: { contains: name }
+      };
+    }
+
+    // 所属组织查询
+    if (orgId) {
+      where.employee = {
+        ...where.employee,
+        orgId: +orgId
+      };
+    }
+
+    // 员工类型查询
+    if (employeeType) {
+      where.employee = {
+        ...where.employee,
+        employeeType: employeeType
+      };
+    }
+
+    // 支持单日期或日期范围查询
+    if (pairDate) {
+      const date = new Date(pairDate);
+      where.pairDate = {
+        gte: new Date(date.setHours(0, 0, 0, 0)),
+        lte: new Date(date.setHours(23, 59, 59, 999)),
+      };
+    } else if (startDate && endDate) {
+      where.pairDate = {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      };
+    }
+
+    if (shiftId) where.shiftId = +shiftId;
+    if (accountId !== undefined) where.accountId = accountId === 'null' ? null : +accountId;
+
+    const [items, total] = await Promise.all([
+      this.prisma.punchPair.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        include: {
+          employee: true,
+          account: true,
+          inPunch: {
+            include: {
+              device: true,
+              account: true,
+            },
+          },
+          outPunch: {
+            include: {
+              device: true,
+              account: true,
+            },
+          },
+        },
+        orderBy: { pairDate: 'desc' },
+      }),
+      this.prisma.punchPair.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: +page,
+      pageSize: +pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
+  }
+
+  /**
+   * 删除摆卡记录
+   */
+  async deletePunchPair(id: number) {
+    await this.prisma.punchPair.delete({
+      where: { id },
+    });
+
+    return { message: '删除成功' };
+  }
+
+  /**
+   * 处理新打卡记录，触发自动摆卡
+   */
+  async handleNewPunchRecord(punchRecordId: number) {
+    const record = await this.prisma.punchRecord.findUnique({
+      where: { id: punchRecordId },
+      include: {
+        device: true,
+        account: true,
+      },
+    });
+
+    if (!record) {
+      throw new Error('打卡记录不存在');
+    }
+
+    // 获取打卡日期
+    const punchDate = new Date(record.punchTime);
+    punchDate.setHours(0, 0, 0, 0);
+
+    // 重新执行摆卡
+    const result = await this.pairPunches(record.employeeNo, punchDate);
+
+    return {
+      message: '新打卡记录已处理，摆卡已更新',
+      punchRecord: record,
+      pairingResult: result,
+    };
+  }
+
+  /**
+   * 修改摆卡记录时间
+   */
+  async updatePunchPair(id: number, dto: { inPunchTime?: string; outPunchTime?: string }) {
+    const punchPair = await this.prisma.punchPair.findUnique({
+      where: { id },
+      include: {
+        inPunch: true,
+        outPunch: true,
+      },
+    });
+
+    if (!punchPair) {
+      throw new Error('摆卡记录不存在');
+    }
+
+    const updateData: any = {};
+    let needRecalculate = false;
+
+    // 更新签入时间
+    if (dto.inPunchTime && punchPair.inPunch) {
+      await this.prisma.punchRecord.update({
+        where: { id: punchPair.inPunchId! },
+        data: { punchTime: new Date(dto.inPunchTime) },
+      });
+      updateData.inPunchTime = new Date(dto.inPunchTime);
+      needRecalculate = true;
+    }
+
+    // 更新签出时间
+    if (dto.outPunchTime && punchPair.outPunch) {
+      await this.prisma.punchRecord.update({
+        where: { id: punchPair.outPunchId! },
+        data: { punchTime: new Date(dto.outPunchTime) },
+      });
+      updateData.outPunchTime = new Date(dto.outPunchTime);
+      needRecalculate = true;
+    }
+
+    // 重新计算工时
+    if (needRecalculate && updateData.inPunchTime && updateData.outPunchTime) {
+      const workHours =
+        (updateData.outPunchTime.getTime() - updateData.inPunchTime.getTime()) / (1000 * 60 * 60);
+      updateData.workHours = Math.round(workHours * 100) / 100;
+    }
+
+    // 更新摆卡记录
+    await this.prisma.punchPair.update({
+      where: { id },
+      data: updateData,
+    });
+
+    // 重新触发工时计算
+    if (needRecalculate) {
+      this.attendanceCodeService.calculateFromPunchPair(id).catch((error) => {
+        console.error(`工时计算失败 (摆卡记录 ${id}):`, error);
+      });
+    }
+
+    return {
+      message: '修改成功',
+      punchPair: await this.prisma.punchPair.findUnique({
+        where: { id },
+        include: {
+          inPunch: { include: { device: true, account: true } },
+          outPunch: { include: { device: true, account: true } },
+          account: true,
+        },
+      }),
+    };
+  }
+
+  /**
+   * 补卡
+   */
+  async supplementPunchPair(dto: {
+    employeeNo: string;
+    pairDate: string;
+    shiftId: number;
+    inPunchTime: string;
+    outPunchTime?: string;
+    reason: string;
+    accountId?: number;
+  }) {
+    const { employeeNo, pairDate, shiftId, inPunchTime, outPunchTime, reason, accountId } = dto;
+
+    // 获取班次信息
+    const shift = await this.prisma.shift.findUnique({
+      where: { id: shiftId },
+    });
+
+    if (!shift) {
+      throw new Error('班次不存在');
+    }
+
+    // 创建签入打卡记录
+    const inPunch = await this.prisma.punchRecord.create({
+      data: {
+        employeeNo,
+        punchTime: new Date(inPunchTime),
+        deviceId: null, // 补卡没有设备ID
+        punchType: 'IN',
+        source: 'MANUAL_SUPPLEMENT',
+        accountId: accountId || null,
+      },
+    });
+
+    // 如果有签出时间，创建签出记录
+    let outPunch = null;
+    if (outPunchTime) {
+      outPunch = await this.prisma.punchRecord.create({
+        data: {
+          employeeNo,
+          punchTime: new Date(outPunchTime),
+          deviceId: null,
+          punchType: 'OUT',
+          source: 'MANUAL_SUPPLEMENT',
+          accountId: accountId || null,
+        },
+      });
+    }
+
+    // 计算工时
+    let workHours = 0;
+    if (outPunch) {
+      workHours =
+        (new Date(outPunchTime).getTime() - new Date(inPunchTime).getTime()) / (1000 * 60 * 60);
+      workHours = Math.round(workHours * 100) / 100;
+    }
+
+    // 创建摆卡记录
+    const punchPair = await this.prisma.punchPair.create({
+      data: {
+        employeeNo,
+        pairDate: new Date(pairDate),
+        shiftId,
+        shiftName: shift.name,
+        inPunchId: inPunch.id,
+        outPunchId: outPunch?.id,
+        inPunchTime: new Date(inPunchTime),
+        outPunchTime: outPunchTime ? new Date(outPunchTime) : null,
+        workHours,
+        accountId: accountId || null,
+      },
+      include: {
+        inPunch: { include: { device: true, account: true } },
+        outPunch: { include: { device: true, account: true } },
+        account: true,
+      },
+    });
+
+    // 触发工时计算（与摆卡逻辑保持一致）
+    console.log(`触发工时计算 - 补卡摆卡记录ID: ${punchPair.id}, 员工: ${punchPair.employeeNo}, 日期: ${punchPair.pairDate}`);
+    this.attendanceCodeService.calculateFromPunchPair(punchPair.id)
+      .then((results) => {
+        console.log(`工时计算成功 - 补卡摆卡记录ID: ${punchPair.id}, 生成 ${results.length} 条结果`);
+      })
+      .catch((error) => {
+        console.error(`工时计算失败 (补卡摆卡记录 ${punchPair.id}):`, error);
+      });
+
+    return {
+      message: '补卡成功',
+      punchPair,
+    };
+  }
+
+  /**
+   * 处理未排班日期的摆卡
+   * 根据前后排班的收卡范围确定未排班日期的收卡范围
+   */
+  private async handleUnscheduledDay(
+    employeeNo: string,
+    pairDate: Date,
+    punchRule: any,
+    dayStart: Date,
+    dayEnd: Date,
+  ) {
+    // 计算收卡范围
+    const beforeShiftMins = punchRule.beforeShiftMins ?? 120;
+    const afterShiftMins = punchRule.afterShiftMins ?? 120;
+
+    const collectionRange = await this.punchCollectionRangeService.calculateCollectionRange(
+      employeeNo,
+      pairDate,
+      beforeShiftMins,
+      afterShiftMins,
+    );
+
+    console.log(
+      `[收卡范围] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, ` +
+      `范围: ${collectionRange.startTime.toISOString()} - ${collectionRange.endTime.toISOString()}, ` +
+      `类型: ${collectionRange.source}`
+    );
+
+    // 获取收卡范围内的打卡记录
+    const punchRecords = await this.getPunchRecordsInRange(
+      employeeNo,
+      collectionRange.startTime,
+      collectionRange.endTime,
+      punchRule,
+    );
+
+    console.log(`[未排班日期] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 获取到 ${punchRecords.length} 条打卡记录`);
+
+    if (punchRecords.length === 0) {
+      console.log(`[未排班日期] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 无打卡记录，返回`);
+      return {
+        message: '未排班日期无打卡记录',
+        pairs: [],
+        collectionRange,
+      };
+    }
+
+    // 批量合并账户
+    const mergeResults = await this.accountMergeService.batchMergeAccounts(punchRecords);
+
+    // 更新打卡记录的账户ID
+    for (const result of mergeResults) {
+      if (result.mergedAccountId) {
+        await this.prisma.punchRecord.update({
+          where: { id: result.id },
+          data: { accountId: result.mergedAccountId },
+        });
+
+        const record = punchRecords.find(r => r.id === result.id);
+        if (record) {
+          record.accountId = result.mergedAccountId;
+        }
+      }
+    }
+
+    // 获取设备组配置
+    const deviceGroupConfigs = await this.getDeviceGroupConfigs(punchRule.id);
+
+    // 按账户分组进行摆卡
+    const accountGroups = this.groupPunchesByAccount(punchRecords);
+
+    const allPairs = [];
+
+    for (const [accountId, punches] of accountGroups.entries()) {
+      // 删除旧的摆卡记录（未排班日期使用特殊标识）
+      // 注意：未排班日期的shiftId为null，删除时不使用shiftId作为条件
+      await this.prisma.punchPair.deleteMany({
+        where: {
+          employeeNo: employeeNo,
+          pairDate: dayStart,
+          accountId: accountId,
+          // 未排班日期：只删除shiftId为null的记录
+          // 由于Prisma限制，先删除所有符合条件的记录，然后重新创建
+        },
+      });
+
+      // 为每个账户组进行摆卡（无班次模式）
+      const pairs = await this.createPunchPairsForUnscheduledDay(
+        employeeNo,
+        dayStart,
+        punches,
+        punchRule,
+        accountId,
+        deviceGroupConfigs,
+        collectionRange,
+      );
+
+      allPairs.push(...pairs);
+    }
+
+    return {
+      message: '未排班日期摆卡完成',
+      pairs: allPairs,
+      totalPairs: allPairs.length,
+      collectionRange,
+    };
+  }
+
+  /**
+   * 为未排班日期创建打卡对
+   */
+  private async createPunchPairsForUnscheduledDay(
+    employeeNo: string,
+    pairDate: Date,
+    punchRecords: any[],
+    punchRule: any,
+    accountId: number | null,
+    deviceGroupConfigs: Map<number, any>,
+    collectionRange: CollectionRange,
+  ) {
+    const pairs = [];
+
+    // 【智能配置】根据打卡记录的设备组ID获取对应的摆卡间隔
+    let filterInterval = 0;
+    if (punchRecords.length > 0) {
+      const firstDeviceGroupId = punchRecords[0]?.device?.groupId;
+      const allSameGroup = punchRecords.every(
+        (r) => r.device?.groupId === firstDeviceGroupId
+      );
+
+      if (allSameGroup && firstDeviceGroupId) {
+        filterInterval = this.getPairingInterval(punchRule, firstDeviceGroupId);
+      } else {
+        filterInterval = this.getPairingInterval(punchRule);
+      }
+    }
+
+    // 【摆卡间隔过滤】应用摆卡间隔过滤算法
+    const filteredPunches = this.punchIntervalFilterService.applyIntervalFilter(
+      punchRecords,
+      filterInterval,
+    );
+
+    console.log(
+      `[摆卡间隔过滤] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 账户: ${accountId || 'null'}` +
+      `, 过滤前: ${punchRecords.length}张卡, 过滤后: ${filteredPunches.length}张卡` +
+      `, 间隔: ${filterInterval}分钟`
+    );
+
+    // 先处理没有设置punchType的记录，根据时间顺序自动识别
+    const processedPunches = this.autoDeterminePunchType(filteredPunches);
+
+    // 分离签入和签退记录
+    const inPunches = processedPunches.filter((r) => r.punchType === 'IN');
+    const outPunches = processedPunches.filter((r) => r.punchType === 'OUT');
+
+    // 按时间排序
+    inPunches.sort((a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
+    outPunches.sort((a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
+
+    // 获取第一个打卡记录的设备组ID作为sourceGroupId
+    const firstPunch = punchRecords[0];
+    const sourceGroupId = firstPunch?.device?.groupId || null;
+
+    // 【新增】使用基于优先级的成对收卡逻辑
+    console.log(`[成对收卡-未排班] 员工: ${employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 签入: ${inPunches.length}张, 签退: ${outPunches.length}张`);
+
+    // 调用基于优先级的成对收卡服务
+    const pairingResults = this.punchPairingService.pairPunchesByPriority(
+      inPunches,
+      outPunches,
+      filterInterval,
+    );
+
+    // 处理未配对的打卡记录（单卡）
+    const unpairedResults = this.punchPairingService.handleUnpairedPunches(
+      inPunches,
+      outPunches,
+      pairingResults,
+    );
+
+    // 合并配对结果和未配对结果
+    const allResults = [...pairingResults, ...unpairedResults];
+
+    console.log(`[成对收卡-未排班] 员工: ${employeeNo}, 优先级1: ${pairingResults.filter(r => r.priority === 1).length}对, 优先级2: ${pairingResults.filter(r => r.priority === 2).length}对, 优先级3: ${pairingResults.filter(r => r.priority === 3).length}对, 优先级4: ${pairingResults.filter(r => r.priority === 4).length}对, 单卡: ${unpairedResults.length}张`);
+
+    // 创建摆卡记录
+    for (const result of allResults) {
+      const inTime = result.inPunch ? new Date(result.inPunch.punchTime) : null;
+      const outTime = result.outPunch ? new Date(result.outPunch.punchTime) : null;
+
+      // 计算工时
+      let workHours = 0;
+      if (inTime && outTime) {
+        workHours = (outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60);
+        workHours = Math.round(workHours * 100) / 100;
+      }
+
+      // 使用配对结果中的 accountId（优先于传入的 accountId）
+      const finalAccountId = result.accountId ?? accountId;
+
+      const pair = await this.createPunchPair({
+        employeeNo,
+        pairDate,
+        shiftId: null, // 未排班日期，shiftId为null
+        shiftName: '未排班',
+        inPunchId: result.inPunch?.id ?? null,
+        outPunchId: result.outPunch?.id ?? null,
+        inPunchTime: inTime,
+        outPunchTime: outTime,
+        workHours,
+        sourceGroupId,
+        accountId: finalAccountId,
+      });
+
+      // 输出配对信息
+      console.log(`  - 配对: ${result.pairingReason}, 账户: ${finalAccountId}, 进: ${inTime?.toISOString() ?? 'null'}, 出: ${outTime?.toISOString() ?? 'null'}, 工时: ${workHours}小时`);
+
+      pairs.push(pair);
+    }
+
+    // 触发工时计算（异步执行，不阻塞摆卡流程）
+    for (const pair of pairs) {
+      console.log(`触发工时计算 - 摆卡记录ID: ${pair.id}, 员工: ${pair.employeeNo}, 日期: ${pair.pairDate}`);
+      this.attendanceCodeService.calculateFromPunchPair(pair.id)
+        .then((results) => {
+          console.log(`工时计算成功 - 摆卡记录ID: ${pair.id}, 生成 ${results.length} 条结果`);
+        })
+        .catch((error) => {
+          console.error(`工时计算失败 (摆卡记录 ${pair.id}):`, error);
+        });
+    }
+
+    return pairs;
+  }
+
+  /**
+   * 获取指定时间范围内的打卡记录
+   */
+  private async getPunchRecordsInRange(
+    employeeNo: string,
+    startTime: Date,
+    endTime: Date,
+    punchRule: any,
+  ) {
+    const where: any = {
+      employeeNo,
+      punchTime: {
+        gte: startTime,
+        lte: endTime,
+      },
+    };
+
+    // 解析configs，获取所有配置的设备组ID
+    const configs = JSON.parse(punchRule.configs || '[]');
+    const deviceGroupIds = configs
+      .map((config: any) => config.groupId)
+      .filter((id: any) => id != null && id !== undefined && id !== '');
+
+    // 只有当明确配置了有效的设备组ID，并且能找到对应设备时，才进行过滤
+    if (deviceGroupIds.length > 0) {
+      const devices = await this.prisma.punchDevice
+        .findMany({
+          where: {
+            groupId: { in: deviceGroupIds },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+      const deviceIds = devices.map((d) => d.id);
+
+      // 只有找到有效设备时才进行过滤
+      if (deviceIds.length > 0) {
+        where.deviceId = { in: deviceIds };
+      }
+    }
+
+    return this.prisma.punchRecord.findMany({
+      where,
+      include: {
+        device: true,
+        account: true,
+      },
+      orderBy: { punchTime: 'asc' },
+    });
+  }
+}

@@ -4,10 +4,10 @@ import { ValidateIf } from 'class-validator';
 import { IsString, IsNotEmpty, IsOptional, IsInt, IsEmail, IsDateString, IsEnum } from 'class-validator';
 
 export class CreateEmployeeDto {
-  @ApiProperty({ description: '员工号' })
+  @ApiProperty({ description: '员工号', required: false })
+  @ValidateIf((o) => o.employeeNo !== undefined && o.employeeNo !== null && o.employeeNo !== '')
   @IsString()
-  @IsNotEmpty()
-  employeeNo: string;
+  employeeNo?: string;
 
   @ApiProperty({ description: '姓名', required: false })
   @IsOptional()
@@ -141,4 +141,24 @@ export class EmployeeQueryDto {
     message: 'status must be one of the following values: ACTIVE, RESIGNED'
   })
   status?: 'ACTIVE' | 'RESIGNED';
+
+  @ApiProperty({ description: '工号（精确查询）', required: false })
+  @IsOptional()
+  @IsString()
+  employeeNo?: string;
+
+  @ApiProperty({ description: '姓名（模糊查询）', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ description: '员工类型', required: false })
+  @IsOptional()
+  @IsString()
+  employeeType?: string;
+
+  @ApiProperty({ description: '入职日期', required: false })
+  @IsOptional()
+  @IsString()
+  entryDate?: string;
 }

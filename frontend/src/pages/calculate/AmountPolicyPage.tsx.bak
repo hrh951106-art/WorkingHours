@@ -1,0 +1,752 @@
+import { useState } from 'react';
+import {
+  Card,
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  InputNumber,
+  Space,
+  message,
+  Tag,
+  Popconfirm,
+  Tabs,
+  Transfer,
+} from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import request from '@/utils/request';
+import dayjs from 'dayjs';
+import AccountSelect from '@/components/common/AccountSelect';
+
+const { Option } = Select;
+const { TextArea } = Input;
+
+interface AmountPolicy {
+  id: number;
+  code: string;
+  name: string;
+  description?: string;
+  policyType: 'ADD' | 'MULTIPLY' | 'CUSTOM';
+  multiplier?: number;
+  fixedValue?: number;
+  accountPath: string;
+  accountPathMatch: 'EXACT' | 'PREFIX';
+  attendanceCodes: string;
+  priority: number;
+  status: string;
+}
+
+interface AmountPolicyGroup {
+  id: number;
+  code: string;
+  name: string;
+  description?: string;
+  policyIds: number[];
+  priority: number;
+  status: string;
+}
+
+const AmountPolicyPage: React.FC = () => {
+  const queryClient = useQueryClient();
+  const [form] = Form.useForm();
+  const [groupForm] = Form.useForm();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const [policyType, setPolicyType] = useState<'ADD' | 'MULTIPLY' | 'CUSTOM'>('ADD');
+  const [activeTab, setActiveTab] = useState('rules');
+  const [selectedAttendanceCodes, setSelectedAttendanceCodes] = useState<string[]>([]);
+  const [selectedPolicyIds, setSelectedPolicyIds] = useState<number[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+
+  // 获取金额政策列表
+  const { data: policiesData, isLoading } = useQuery({
+    queryKey: ['amountPolicies'],
+    queryFn: async () => {
+      const res = await request.get('/amount/policies');
+      return res.data || res;
+    },
+  });
+
+  const policies = policiesData?.items || [];
+
+  // 获取金额规则组列表
+  const { data: policyGroupsData, isLoading: groupsLoading } = useQuery({
+    queryKey: ['amountPolicyGroups'],
+    queryFn: async () => {
+      const res = await request.get('/amount/policy-groups');
+      return res.data || res;
+    },
+  });
+
+  const policyGroups = policyGroupsData?.items || [];
+
+  // 获取计算出勤代码列表
+  const { data: attendanceCodesData } = useQuery({
+    queryKey: ['calculationAttendanceCodes'],
+    queryFn: async () => {
+      const res = await request.get('/calculate/calculation-attendance-codes');
+      return res.data || res;
+    },
+  });
+
+  const attendanceCodes = attendanceCodesData?.items || attendanceCodesData || [];
+
+  // 获取劳动力账户���
+  const { data: accountTreeData } = useQuery({
+    queryKey: ['accountTree'],
+    queryFn: async () => {
+      const res = await request.get('/account/accounts/tree');
+      return res.data || res;
+    },
+  });
+
+  const accountTree = accountTreeData || [];
+
+  // 获取所有子账户，用于建立accountPath到accountId的映射
+  const { data: allAccounts } = useQuery({
+    queryKey: ['all-sub-accounts'],
+    queryFn: () =>
+      request.get('/account/accounts', {
+        params: {
+          type: 'SUB',
+          pageSize: 1000,
+        },
+      }).then((res: any) => res.items || []),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await request.post('/amount/policies', data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('创建成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicies'] });
+      handleModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '创建失败');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await request.put(`/amount/policies/${id}`, data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('更新成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicies'] });
+      handleModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '更新失败');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await request.delete(`/amount/policies/${id}`);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicies'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '删除失败');
+    },
+  });
+
+  // 规则组的 CRUD 操作
+  const createGroupMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await request.post('/amount/policy-groups', data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('创建成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicyGroups'] });
+      handleGroupModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '创建失败');
+    },
+  });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await request.put(`/amount/policy-groups/${id}`, data);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('更新成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicyGroups'] });
+      handleGroupModalClose();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '更新失败');
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await request.delete(`/amount/policy-groups/${id}`);
+      return res;
+    },
+    onSuccess: () => {
+      message.success('删除成功');
+      queryClient.invalidateQueries({ queryKey: ['amountPolicyGroups'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '删除失败');
+    },
+  });
+
+  const handleModalOpen = (record?: AmountPolicy) => {
+    if (record) {
+      setEditingId(record.id);
+      setPolicyType(record.policyType);
+      const attendanceCodes = JSON.parse(record.attendanceCodes || '[]');
+      setSelectedAttendanceCodes(attendanceCodes);
+
+      // 根据accountPath查找对应的accountId
+      const account = allAccounts?.find((acc: any) => acc.path === record.accountPath || acc.namePath === record.accountPath);
+      setSelectedAccountId(account?.id || null);
+
+      const formValues = {
+        ...record,
+        attendanceCodes,
+        accountId: account?.id || null,
+      };
+      form.setFieldsValue(formValues);
+    } else {
+      setEditingId(null);
+      setPolicyType('ADD');
+      setSelectedAttendanceCodes([]);
+      setSelectedAccountId(null);
+      form.resetFields();
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+    form.resetFields();
+  };
+
+  const handleGroupModalOpen = (record?: AmountPolicyGroup) => {
+    if (record) {
+      setEditingGroupId(record.id);
+      const policyIds = record.policyIds || [];
+      setSelectedPolicyIds(policyIds);
+      const formValues = {
+        ...record,
+        policyIds,
+      };
+      groupForm.setFieldsValue(formValues);
+    } else {
+      setEditingGroupId(null);
+      setSelectedPolicyIds([]);
+      groupForm.resetFields();
+    }
+    setIsGroupModalOpen(true);
+  };
+
+  const handleGroupModalClose = () => {
+    setIsGroupModalOpen(false);
+    setEditingGroupId(null);
+    groupForm.resetFields();
+  };
+
+  const handleGroupSubmit = async () => {
+    try {
+      const values = await groupForm.validateFields();
+      const data = {
+        ...values,
+        policyIds: values.policyIds || [],
+      };
+
+      if (editingGroupId) {
+        updateGroupMutation.mutate({ id: editingGroupId, data });
+      } else {
+        createGroupMutation.mutate(data);
+      }
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+
+      // 根据accountId查找对应的accountPath
+      const account = allAccounts?.find((acc: any) => acc.id === values.accountId);
+      if (!account) {
+        message.error('请选择劳动力账户');
+        return;
+      }
+
+      const data = {
+        ...values,
+        attendanceCodes: values.attendanceCodes || [],
+        accountPath: account.path || account.namePath, // 使用账户路径
+        accountPathMatch: 'EXACT', // 固定使用精确匹配
+      };
+
+      // 移除accountId字段，不提交给后端
+      delete data.accountId;
+
+      if (editingId) {
+        updateMutation.mutate({ id: editingId, data });
+      } else {
+        createMutation.mutate(data);
+      }
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  const columns = [
+    { title: '规则编码', dataIndex: 'code', key: 'code', width: 150 },
+    { title: '规则名称', dataIndex: 'name', key: 'name', width: 200 },
+    {
+      title: '规则类型',
+      dataIndex: 'policyType',
+      key: 'policyType',
+      width: 120,
+      render: (type: string) => {
+        const typeMap: any = {
+          ADD: { text: '增加', color: 'green' },
+          MULTIPLY: { text: '翻倍', color: 'blue' },
+          CUSTOM: { text: '自定义', color: 'purple' },
+        };
+        const config = typeMap[type] || { text: type, color: 'default' };
+        return <Tag color={config.color}>{config.text}</Tag>;
+      },
+    },
+    {
+      title: '参数配置',
+      key: 'params',
+      width: 200,
+      render: (_: any, record: AmountPolicy) => {
+        if (record.policyType === 'ADD') {
+          return `基础系数 + ${record.fixedValue || 0}`;
+        } else if (record.policyType === 'MULTIPLY') {
+          return `× ${record.multiplier || 1}倍`;
+        } else if (record.policyType === 'CUSTOM') {
+          return `固定值: ${record.fixedValue || 0}`;
+        }
+        return '-';
+      },
+    },
+    {
+      title: '账户路径',
+      dataIndex: 'accountPath',
+      key: 'accountPath',
+      width: 200,
+      ellipsis: true,
+      render: (path: string) => <Tag color="cyan">{path}</Tag>,
+    },
+    {
+      title: '出勤代码',
+      dataIndex: 'attendanceCodes',
+      key: 'attendanceCodes',
+      width: 200,
+      render: (codes: string) => {
+        try {
+          const parsed = JSON.parse(codes || '[]');
+          return (
+            <Space size={4} wrap>
+              {parsed.map((code: string) => (
+                <Tag key={code}>{code}</Tag>
+              ))}
+            </Space>
+          );
+        } catch {
+          return '-';
+        }
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      fixed: 'right' as const,
+      render: (_: any, record: AmountPolicy) => (
+        <Space>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleModalOpen(record)}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="删除后不可恢复"
+            onConfirm={() => deleteMutation.mutate(record.id)}
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  // 规则组表格列定义
+  const groupColumns = [
+    { title: '规则组编码', dataIndex: 'code', key: 'code', width: 150 },
+    { title: '规则组名称', dataIndex: 'name', key: 'name', width: 200 },
+    {
+      title: '包含规则',
+      key: 'policies',
+      width: 300,
+      render: (_: any, record: AmountPolicyGroup) => {
+        const policyNames = record.policyIds?.map((id: number) => {
+          const policy = policies.find((p: AmountPolicy) => p.id === id);
+          return policy?.name;
+        }).filter(Boolean);
+        return (
+          <Space size={4} wrap>
+            {policyNames.map((name: string) => (
+              <Tag key={name} color="blue">{name}</Tag>
+            ))}
+          </Space>
+        );
+      },
+    },
+    {
+      title: '规则数量',
+      key: 'count',
+      width: 100,
+      render: (_: any, record: AmountPolicyGroup) => (
+        <Tag color="purple">{record.policyIds?.length || 0}</Tag>
+      ),
+    },
+    {
+      title: '优先级',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 80,
+      render: (priority: number) => <Tag color="orange">{priority}</Tag>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 80,
+      render: (status: string) =>
+        status === 'ACTIVE' ? (
+          <Tag color="success">启用</Tag>
+        ) : (
+          <Tag color="default">停用</Tag>
+        ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      fixed: 'right' as const,
+      render: (_: any, record: AmountPolicyGroup) => (
+        <Space>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleGroupModalOpen(record)}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确认删除"
+            description="删除后不可恢复"
+            onConfirm={() => deleteGroupMutation.mutate(record.id)}
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <Card>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'rules',
+              label: '金额规则',
+              children: (
+                <div>
+                  <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                    <h3 style={{ margin: 0 }}>金额规则管理</h3>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleModalOpen()}
+                    >
+                      新建规则
+                    </Button>
+                  </div>
+                  <Table
+                    columns={columns}
+                    dataSource={policies || []}
+                    rowKey="id"
+                    loading={isLoading}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 1400 }}
+                  />
+                </div>
+              ),
+            },
+            {
+              key: 'groups',
+              label: '金额规则组',
+              children: (
+                <div>
+                  <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                    <h3 style={{ margin: 0 }}>金额规则组管理</h3>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleGroupModalOpen()}
+                    >
+                      新建规则组
+                    </Button>
+                  </div>
+                  <Table
+                    columns={groupColumns}
+                    dataSource={policyGroups || []}
+                    rowKey="id"
+                    loading={groupsLoading}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 1200 }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
+      </Card>
+
+      <Modal
+        title={editingId ? '编辑金额规则' : '新建金额规则'}
+        open={isModalOpen}
+        onOk={handleSubmit}
+        onCancel={handleModalClose}
+        width={700}
+        confirmLoading={createMutation.isPending || updateMutation.isPending}
+      >
+        <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+          <Form.Item
+            label="代码"
+            name="code"
+            rules={[{ required: true, message: '请输入规则代码' }]}
+          >
+            <Input placeholder="例如：RULE001" />
+          </Form.Item>
+
+          <Form.Item
+            label="名称"
+            name="name"
+            rules={[{ required: true, message: '请输入规则名称' }]}
+          >
+            <Input placeholder="例如：普通加班金额规则" />
+          </Form.Item>
+
+          <Form.Item
+            label="金额规则定义"
+            name="policyType"
+            rules={[{ required: true, message: '请选择规则定义方式' }]}
+          >
+            <Select onChange={(value) => setPolicyType(value)}>
+              <Option value="ADD">增加（基础系数 + 固定值）</Option>
+              <Option value="MULTIPLY">翻倍（基础系数 × 倍数）</Option>
+              <Option value="CUSTOM">自定义（固定数值）</Option>
+            </Select>
+          </Form.Item>
+
+          {policyType === 'ADD' && (
+            <Form.Item
+              label="固定增加值"
+              name="fixedValue"
+              rules={[{ required: true, message: '请输入固定增加值' }]}
+              tooltip="最终系数 = 员工基础系数 + 此值"
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：10" />
+            </Form.Item>
+          )}
+
+          {policyType === 'MULTIPLY' && (
+            <Form.Item
+              label="倍数"
+              name="multiplier"
+              rules={[{ required: true, message: '请输入倍数' }]}
+              tooltip="最终系数 = 员工基础系数 × 此倍数"
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：1.5" />
+            </Form.Item>
+          )}
+
+          {policyType === 'CUSTOM' && (
+            <Form.Item
+              label="固定系数值"
+              name="fixedValue"
+              rules={[{ required: true, message: '请输入固定系数值' }]}
+              tooltip="不使用员工基础系数，直接使用此固定值"
+            >
+              <InputNumber min={0} step={0.1} precision={2} style={{ width: '100%' }} placeholder="例如：50" />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            label="劳动力账户"
+            name="accountId"
+            rules={[{ required: true, message: '请选择劳动力账户' }]}
+            tooltip="选择此规则适用的劳动力账户"
+          >
+            <AccountSelect
+              value={selectedAccountId}
+              onChange={(value) => {
+                setSelectedAccountId(value);
+                form.setFieldsValue({ accountId: value });
+              }}
+              placeholder="选择子账户"
+              usageType="SHIFT"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="出勤代码"
+            name="attendanceCodes"
+            rules={[{ required: true, message: '请选择出勤代码' }]}
+            tooltip="选择此规则适用的出勤代码"
+          >
+            <Transfer
+              dataSource={attendanceCodes.map((code: any) => ({
+                key: code.code,
+                title: `${code.name} (${code.code})`,
+                description: code.code,
+              }))}
+              targetKeys={selectedAttendanceCodes}
+              onChange={(keys) => {
+                setSelectedAttendanceCodes(keys);
+                form.setFieldsValue({ attendanceCodes: keys });
+              }}
+              render={(item) => item.title}
+              listStyle={{
+                width: 300,
+                height: 400,
+              }}
+              showSearch
+              filterOption={(inputValue, item) =>
+                item.title?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                item.description?.toLowerCase().includes(inputValue.toLowerCase())
+              }
+              placeholder="请选择出勤代码"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 规则组编辑模��框 */}
+      <Modal
+        title={editingGroupId ? '编辑金额规则组' : '新建金额规则组'}
+        open={isGroupModalOpen}
+        onOk={handleGroupSubmit}
+        onCancel={handleGroupModalClose}
+        width={700}
+        confirmLoading={createGroupMutation.isPending || updateGroupMutation.isPending}
+      >
+        <Form form={groupForm} layout="vertical" style={{ marginTop: 24 }}>
+          <Form.Item
+            label="规则组编码"
+            name="code"
+            rules={[{ required: true, message: '请输入规则组编码' }]}
+          >
+            <Input placeholder="例如：GROUP001" />
+          </Form.Item>
+
+          <Form.Item
+            label="规则组名称"
+            name="name"
+            rules={[{ required: true, message: '请输入规则组名称' }]}
+          >
+            <Input placeholder="例如：普通班次规则组" />
+          </Form.Item>
+
+          <Form.Item
+            label="选择规则"
+            name="policyIds"
+            rules={[{ required: true, message: '请选择要包含的金额规则' }]}
+            tooltip="将多个金额规则打包成一个组"
+          >
+            <Transfer
+              dataSource={policies.map((policy: AmountPolicy) => ({
+                key: policy.id,
+                title: `${policy.name} (${policy.code})`,
+                description: policy.code,
+              }))}
+              targetKeys={selectedPolicyIds}
+              onChange={(keys) => {
+                setSelectedPolicyIds(keys as number[]);
+                groupForm.setFieldsValue({ policyIds: keys });
+              }}
+              render={(item) => item.title}
+              listStyle={{
+                width: 300,
+                height: 400,
+              }}
+              showSearch
+              filterOption={(inputValue, item) =>
+                item.title?.toLowerCase().includes(inputValue.toLowerCase()) ||
+                item.description?.toLowerCase().includes(inputValue.toLowerCase())
+              }
+              placeholder="请选择金额规则"
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="优先级"
+            name="priority"
+            initialValue={0}
+            tooltip="数字越大优先级越高，当匹配多条规则组时使用最高优先级"
+          >
+            <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item label="描述" name="description">
+            <TextArea rows={3} maxLength={500} showCount />
+          </Form.Item>
+
+          <Form.Item
+            label="状态"
+            name="status"
+            initialValue="ACTIVE"
+          >
+            <Select>
+              <Option value="ACTIVE">启用</Option>
+              <Option value="INACTIVE">停用</Option>
+            </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+export default AmountPolicyPage;

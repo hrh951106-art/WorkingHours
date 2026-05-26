@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { StringUtils } from '../../common/utils';
 import { PairingService } from './pairing.service';
 import { DataScopeService } from '../../common/filters/data-scope.filter';
+import { AttendancePunchTriggerService } from './attendance-punch-trigger.service';
 
 @Injectable()
 export class PunchService {
@@ -10,16 +11,23 @@ export class PunchService {
     private prisma: PrismaService,
     private pairingService: PairingService,
     private dataScopeService: DataScopeService,
+    private attendancePunchTriggerService: AttendancePunchTriggerService,
   ) {}
 
   async getDevices() {
     return this.prisma.punchDevice.findMany({
+      where: {
+        status: {
+          not: 'DISABLED',
+        },
+      },
       include: {
         group: true,
         bindings: {
           include: {
             account: true,
           },
+          orderBy: { effectiveDate: 'desc' },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -53,8 +61,19 @@ export class PunchService {
   // 设备组管理
   async getDeviceGroups() {
     return this.prisma.deviceGroup.findMany({
+      where: {
+        status: {
+          not: 'INACTIVE',
+        },
+      },
       include: {
-        devices: true,
+        devices: {
+          where: {
+            status: {
+              not: 'DISABLED',
+            },
+          },
+        },
         _count: {
           select: { devices: true },
         },
@@ -67,15 +86,7 @@ export class PunchService {
     return this.prisma.deviceGroup.findUnique({
       where: { id },
       include: {
-        devices: {
-          include: {
-            bindings: {
-              include: {
-                account: true,
-              },
-            },
-          },
-        },
+        devices: true,
       },
     });
   }
@@ -105,7 +116,6 @@ export class PunchService {
   }
 
   async addDevicesToGroup(groupId: number, deviceIds: number[]) {
-    // 更新设备的groupId
     await this.prisma.punchDevice.updateMany({
       where: {
         id: { in: deviceIds },
@@ -119,7 +129,6 @@ export class PunchService {
   }
 
   async removeDevicesFromGroup(deviceIds: number[]) {
-    // 将设备的groupId设置为null
     await this.prisma.punchDevice.updateMany({
       where: {
         id: { in: deviceIds },
@@ -144,7 +153,6 @@ export class PunchService {
       if (endDate) where.punchTime.lte = new Date(endDate);
     }
 
-    // 应用数据权限过滤
     if (user && user.username !== 'admin') {
       const dataScopeFilter = await this.dataScopeService.getPunchRecordFilter(user, user.orgId);
       Object.assign(where, dataScopeFilter);
@@ -158,6 +166,7 @@ export class PunchService {
         include: {
           device: true,
           employee: true,
+          account: true,
         },
         orderBy: { punchTime: 'desc' },
       }),
@@ -174,64 +183,257 @@ export class PunchService {
   }
 
   async createRecord(dto: any) {
-    // 创建打卡记录
+    // 添加调试日志
+    console.log('[创建打卡记录] 接收到的数据:', JSON.stringify(dto, null, 2));
+    console.log('[创建打卡记录] dto.accountId:', dto.accountId);
+    console.log('[创建打卡记录] dto.accountId 类型:', typeof dto.accountId);
+
+    // 处理 accountId：只有明确选择了账户才保存，否则设为 null
+    const accountId = dto.accountId && dto.accountId !== '' ? dto.accountId : null;
+
+    console.log('[创建打卡记录] 处理后的 accountId:', accountId);
+
     const record = await this.prisma.punchRecord.create({
       data: {
         ...dto,
-        // 将时间字符串转换为 Date 对象
+        accountId, // 明确设置为 null 或用户选择的值
         punchTime: dto.punchTime ? new Date(dto.punchTime) : undefined,
         source: 'MANUAL',
       },
     });
 
-    // 异步触发自动摆卡（不阻塞响应）
-    this.pairingService.handleNewPunchRecord(record.id).catch((error) => {
-      console.error('自动摆卡失败:', error);
-    });
+    // 静默触发自动精益摆卡（不阻塞响应，不返回错误信息）
+    if (accountId) {
+      // 如果设置了账户，触发账户变更事件
+      this.attendancePunchTriggerService.triggerPunchAccountChange({
+        employeeNo: record.employeeNo,
+        punchRecordId: record.id,
+        punchDate: new Date(record.punchTime),
+        triggerSource: 'punch.create',
+      }).catch((error) => {
+        console.error('触发账户变更摆卡失败:', error);
+      });
+    } else {
+      // 没有设置账户，只触发普通的摆卡
+      this.pairingService.handleNewPunchRecord(record.id).catch((error) => {
+        console.error('自动摆卡失败:', error);
+      });
+    }
 
+    // 直接返回打卡记录，不等待摆卡完成，不返回摆卡状态
     return record;
   }
 
   async updateRecord(id: number, dto: any) {
-    // 更新打卡记录
+    // 检查账户是否变更
+    const oldRecord = await this.prisma.punchRecord.findUnique({
+      where: { id },
+      select: { accountId: true, employeeNo: true, punchTime: true },
+    });
+
+    // 处理 accountId：只有明确选择了账户才保存，否则设为 null
+    const accountId = dto.accountId !== undefined
+      ? (dto.accountId && dto.accountId !== '' ? dto.accountId : null)
+      : undefined;
+
     const record = await this.prisma.punchRecord.update({
       where: { id },
       data: {
         ...dto,
-        // 如果传入了 punchTime，确保正确更新
+        accountId, // 明确设置为 null 或用户选择的值
         punchTime: dto.punchTime ? new Date(dto.punchTime) : undefined,
       },
     });
 
-    // 异步触发重新摆卡（不阻塞响应）
-    this.pairingService.handleNewPunchRecord(record.id).catch((error) => {
-      console.error('重新摆卡失败:', error);
-    });
+    // 如果账户发生了变更（包括从有值变为null），触发账户变更事件
+    const hasAccountChanged = accountId !== undefined && accountId !== oldRecord?.accountId;
 
+    // 静默触发自动精益摆卡（不阻塞响应，不返回错误信息）
+    if (oldRecord && hasAccountChanged) {
+      this.attendancePunchTriggerService.triggerPunchAccountChange({
+        employeeNo: record.employeeNo,
+        punchRecordId: record.id,
+        punchDate: new Date(record.punchTime),
+        triggerSource: 'punch.update',
+      }).catch((error) => {
+        console.error('触发账户变更摆卡失败:', error);
+      });
+    } else {
+      // 账户未变更，只触发普通的摆卡
+      this.pairingService.handleNewPunchRecord(record.id).catch((error) => {
+        console.error('重新摆卡失败:', error);
+      });
+    }
+
+    // 直接返回打卡记录，不等待摆卡完成，不返回摆卡状态
     return record;
   }
 
   async deleteRecord(id: number) {
-    // 先获取打卡记录，以便后续触发摆卡
-    const record = await this.prisma.punchRecord.findUnique({
-      where: { id },
-    });
+    try {
+      // 查询打卡记录
+      const record = await this.prisma.punchRecord.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          employeeNo: true,
+          punchTime: true,
+        },
+      });
 
-    // 删除打卡记录
-    await this.prisma.punchRecord.delete({
-      where: { id },
-    });
+      if (!record) {
+        throw new Error('打卡记录不存在');
+      }
 
-    // 异步触发重新摆卡（不阻塞响应）
-    if (record) {
+      // 保存必要信息，用于删除后触发重新摆卡
+      const employeeNo = record.employeeNo;
       const punchDate = new Date(record.punchTime);
       punchDate.setHours(0, 0, 0, 0);
-      this.pairingService.pairPunches(record.employeeNo, punchDate).catch((error) => {
-        console.error('删除后重新摆卡失败:', error);
+
+      console.log(`[删除打卡记录] ID: ${id}, 员工: ${employeeNo}, 日期: ${punchDate.toISOString()}`);
+
+      // 使用事务处理：先删除相关的摆卡记录，再删除打卡记录
+      await this.prisma.$transaction(async (tx) => {
+        try {
+          // 先删除引用该打卡记录的摆卡记录
+          // 包括 inPunchId、outPunchId、workStartPunchId、workEndPunchId
+          await tx.punchPair.deleteMany({
+            where: {
+              OR: [
+                { inPunchId: id },
+                { outPunchId: id },
+                { workStartPunchId: id },
+                { workEndPunchId: id },
+              ],
+            },
+          });
+
+          console.log(`[删除打卡记录] 删除相关摆卡记录成功`);
+
+          // 再删除打卡记录
+          await tx.punchRecord.delete({
+            where: { id },
+          });
+
+          console.log(`[删除打卡记录] 删除打卡记录 ${id} 成功`);
+        } catch (error: any) {
+          console.error(`[删除打卡记录] 事务内错误:`, error);
+          throw error;
+        }
       });
+
+      // 删除后触发自动精益摆卡（异步执行，不阻塞响应）
+      // 逻辑：删除当天所有旧摆卡数据 → 重新摆��
+      setImmediate(() => {
+        console.log(`[删除打卡记录] 触发自动精益摆卡: 员工 ${employeeNo}, 日期 ${punchDate.toISOString()}`);
+
+        // 直接调用 pairPunches，它会先删除当天所有旧数据再重新摆卡
+        this.pairingService.pairPunches(employeeNo, punchDate).catch((error) => {
+          console.error('[删除打卡记录] 自动精益摆卡失败:', error);
+        });
+      });
+
+      return { message: '删除成功' };
+    } catch (error: any) {
+      console.error('[删除打卡记录] 删除失败:', error);
+      throw error;
+    }
+  }
+
+  async bindAccounts(deviceId: number, bindings: any[]) {
+    // 验证设备是否存在
+    const device = await this.prisma.punchDevice.findUnique({
+      where: { id: deviceId },
+    });
+
+    if (!device) {
+      throw new Error('设备不存在');
     }
 
-    return { message: '删除成功' };
+    // 使用事务处理：删除旧绑定，创建新绑定
+    await this.prisma.$transaction(async (tx) => {
+      // 删除设备的所有现有绑定
+      await tx.deviceAccount.deleteMany({
+        where: { deviceId },
+      });
+
+      // 创建新的绑定关系
+      for (const binding of bindings) {
+        // 查询账户信息，获取层级路径
+        const account = await tx.laborAccount.findUnique({
+          where: { id: binding.accountId },
+          select: {
+            namePath: true,
+            hierarchyValues: true,
+          },
+        });
+
+        if (!account) {
+          throw new Error(`账户ID ${binding.accountId} 不存在`);
+        }
+
+        // 从 hierarchyValues 生成层级编码，确保空层级也有占位符
+        let path: string | null = null;
+        if (account.hierarchyValues) {
+          try {
+            const hierarchyValues = typeof account.hierarchyValues === 'string'
+              ? JSON.parse(account.hierarchyValues)
+              : account.hierarchyValues;
+
+            console.log('解析后的 hierarchyValues:', JSON.stringify(hierarchyValues, null, 2));
+
+            // 按层级排序，提取每层的 code（包括空层级）
+            const codes: string[] = [];
+            if (Array.isArray(hierarchyValues)) {
+              const sortedValues = hierarchyValues.sort((a, b) => a.level - b.level);
+              console.log('排序后的层级:', sortedValues.map((v: any) => `L${v.level}:${v.name}`));
+
+              sortedValues.forEach((hierarchy: any, index: number) => {
+                // 即使未选择层级，也要保留空字符串占位符，保持完整链路
+                const code = hierarchy.selectedValue?.code ?? '';
+                console.log(`层级 ${index + 1}: ${hierarchy.name}, selectedValue:`, JSON.stringify(hierarchy.selectedValue), `code: "${code}"`);
+                codes.push(code); // 无论是空字符串还是非空字符串都要push
+              });
+            }
+            // 使用 / 连接，空字符串会自动形成 // 占位符
+            path = codes.join('/');
+            console.log('最终生成的层级编码:', path);
+          } catch (error) {
+            console.error('解析 hierarchyValues 失败:', error);
+          }
+        }
+
+        // 创建绑定记录
+        await tx.deviceAccount.create({
+          data: {
+            deviceId,
+            accountId: binding.accountId,
+            effectiveDate: new Date(binding.effectiveDate),
+            expiryDate: binding.expiryDate ? new Date(binding.expiryDate) : null,
+            namePath: account.namePath || null,
+            path: path,
+          },
+        });
+
+        // 触发设备账户变更事件（异步执行，不阻塞事务）
+        // 注意：这里使用原始的 prisma 实例而不是事务的 tx，因为事件应该是异步的
+        setImmediate(() => {
+          this.attendancePunchTriggerService.triggerDeviceAccountChange({
+            deviceId,
+            effectiveDate: new Date(binding.effectiveDate),
+            triggerSource: 'device-account.bind',
+          }).catch((error) => {
+            console.error('触发设备账户变更摆卡失败:', error);
+          });
+        });
+      }
+    });
+
+    return { message: '绑定成功' };
+  }
+
+  async getExceptions(query: any) {
+    return { items: [], total: 0, page: 1, pageSize: 10, totalPages: 0 };
   }
 
   /**
@@ -380,169 +582,5 @@ export class PunchService {
           reject(error);
         });
     });
-  }
-
-  async bindAccounts(deviceId: number, bindings: any[]) {
-    // bindings格式: [{ accountId, effectiveDate, expiryDate }]
-
-    // 验证提交的绑定之间没有时间冲突
-    for (let i = 0; i < bindings.length; i++) {
-      for (let j = i + 1; j < bindings.length; j++) {
-        const binding1 = bindings[i];
-        const binding2 = bindings[j];
-
-        const effective1 = new Date(binding1.effectiveDate);
-        const expiry1 = binding1.expiryDate ? new Date(binding1.expiryDate) : null;
-        const effective2 = new Date(binding2.effectiveDate);
-        const expiry2 = binding2.expiryDate ? new Date(binding2.expiryDate) : null;
-
-        // 检查两个时间段是否有重叠
-        const hasOverlap = this.checkTimeOverlap(effective1, expiry1, effective2, expiry2);
-
-        if (hasOverlap) {
-          throw new Error(`第 ${i + 1} 行和第 ${j + 1} 行的时间段存在冲突，同一时间段只能绑定一个账户`);
-        }
-      }
-    }
-
-    // 使用事务确保数据一致性
-    const result = await this.prisma.$transaction(async (tx) => {
-      // 先删除该设备的所有现有绑定
-      await tx.deviceAccount.deleteMany({
-        where: { deviceId },
-      });
-
-      // 创建新的绑定关系
-      for (const binding of bindings) {
-        const { accountId, effectiveDate, expiryDate } = binding;
-
-        // 转换日期格式
-        const effective = new Date(effectiveDate);
-        const expiry = expiryDate ? new Date(expiryDate) : null;
-
-        // 验证生效时间必须小于失效时间
-        if (expiry && effective >= expiry) {
-          throw new Error(`账户 ${accountId} 的生效时间必须早于失效时间`);
-        }
-
-        // 创建绑定关系
-        await tx.deviceAccount.create({
-          data: {
-            deviceId,
-            accountId,
-            effectiveDate: effective,
-            expiryDate: expiry,
-          },
-        });
-      }
-
-      // 返回更新后的设备信息
-      return this.getDeviceByIdWithTx(tx, deviceId);
-    });
-
-    // 异步触发重新摆卡（不阻塞响应）
-    // 获取该设备关联的所有员工和日期，然后触发摆卡
-    this.triggerPairingForDevice(deviceId).catch((error) => {
-      console.error('设备绑定账户变更后重新摆卡失败:', error);
-    });
-
-    return result;
-  }
-
-  /**
-   * 为设备触发重新摆卡
-   * 查找使用该设备的所有打卡记录，并触发对应日期的摆卡
-   */
-  private async triggerPairingForDevice(deviceId: number) {
-    // 获取该设备的打卡记录
-    const punchRecords = await this.prisma.punchRecord.findMany({
-      where: { deviceId },
-      select: {
-        employeeNo: true,
-        punchTime: true,
-      },
-      distinct: ['employeeNo', 'punchTime'],
-    });
-
-    // 按员工和日期分组，触发摆卡
-    const dateSet = new Set<string>();
-
-    for (const record of punchRecords) {
-      const punchDate = new Date(record.punchTime);
-      punchDate.setHours(0, 0, 0, 0);
-      const dateKey = `${record.employeeNo}_${punchDate.toISOString()}`;
-
-      if (!dateSet.has(dateKey)) {
-        dateSet.add(dateKey);
-        this.pairingService.pairPunches(record.employeeNo, punchDate).catch((error) => {
-          console.error(`员工 ${record.employeeNo} 日期 ${punchDate.toISOString()} 摆卡失败:`, error);
-        });
-      }
-    }
-  }
-
-  /**
-   * 检查两个时间段是否有重叠
-   * @param effective1 时间段1的开始时间
-   * @param expiry1 时间段1的结束时间（null表示永久有效）
-   * @param effective2 时间段2的开始时间
-   * @param expiry2 时间段2的结束时间（null表示永久有效）
-   * @returns 是否有重叠
-   */
-  private checkTimeOverlap(
-    effective1: Date,
-    expiry1: Date | null,
-    effective2: Date,
-    expiry2: Date | null
-  ): boolean {
-    // 时间段1: [effective1, expiry1 || +∞]
-    // 时间段2: [effective2, expiry2 || +∞]
-
-    // 计算两个时间段的结束时间，如果没有结束时间则使用一个很大的日期
-    const end1 = expiry1 ? expiry1.getTime() : Number.MAX_SAFE_INTEGER;
-    const end2 = expiry2 ? expiry2.getTime() : Number.MAX_SAFE_INTEGER;
-
-    const start1 = effective1.getTime();
-    const start2 = effective2.getTime();
-
-    // 两个时间段有重叠的条件：max(start1, start2) < min(end1, end2)
-    return Math.max(start1, start2) < Math.min(end1, end2);
-  }
-
-  private async getDeviceByIdWithTx(tx: any, id: number) {
-    return tx.punchDevice.findUnique({
-      where: { id },
-      include: {
-        bindings: {
-          include: {
-            account: true,
-          },
-          orderBy: {
-            effectiveDate: 'desc',
-          },
-        },
-      },
-    });
-  }
-
-  private async getDeviceById(id: number) {
-    return this.prisma.punchDevice.findUnique({
-      where: { id },
-      include: {
-        bindings: {
-          include: {
-            account: true,
-          },
-          orderBy: {
-            effectiveDate: 'desc',
-          },
-        },
-      },
-    });
-  }
-
-  async getExceptions(query: any) {
-    // 简化实现，返回空异常列表
-    return { items: [], total: 0, page: 1, pageSize: 10, totalPages: 0 };
   }
 }

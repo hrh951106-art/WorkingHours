@@ -139,6 +139,40 @@ async function seedDataSources() {
 
   console.log('创建工作状态数据源完成');
 
+  // 创建产品数据源（内置）
+  const productDataSource = await prisma.dataSource.upsert({
+    where: { code: 'PRODUCT' },
+    update: {},
+    create: {
+      code: 'PRODUCT',
+      name: '产品',
+      type: 'BUILTIN',
+      description: '产品选项（来自产品配置）',
+      isSystem: true,
+      sort: 4,
+      status: 'ACTIVE',
+    },
+  });
+
+  console.log('创建产品数据源:', productDataSource.name);
+
+  // 创建工序数据源（内置）
+  const processDataSource = await prisma.dataSource.upsert({
+    where: { code: 'PROCESS' },
+    update: {},
+    create: {
+      code: 'PROCESS',
+      name: '工序',
+      type: 'BUILTIN',
+      description: '工序选项（来自班次配置）',
+      isSystem: true,
+      sort: 5,
+      status: 'ACTIVE',
+    },
+  });
+
+  console.log('创建工序数据源:', processDataSource.name);
+
   console.log('数据源初始化完成！');
 }
 

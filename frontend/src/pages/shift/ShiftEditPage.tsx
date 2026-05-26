@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import {
   Card,
@@ -36,6 +36,7 @@ interface ShiftSegment {
 const ShiftEditPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const [segments, setSegments] = useState<ShiftSegment[]>([]);
@@ -43,11 +44,17 @@ const ShiftEditPage: React.FC = () => {
 
   const isEdit = id !== 'new';
 
+  // 判断是否在 iframe 环境（/embed 路径）
+  const isEmbed = location.pathname.startsWith('/embed');
+
   // 获取班次详情（仅编辑模式）
   const { data: shiftData, isLoading } = useQuery({
     queryKey: ['shift', id],
     queryFn: () => request.get(`/shift/shifts/${id}`).then((res: any) => res),
     enabled: isEdit,
+    staleTime: 0, // 始终使用最新数据
+    refetchOnMount: 'always', // 组件挂载时总是重新查询
+    gcTime: 0, // 不保留缓存
   });
 
   // 获取班次属性定义列表
@@ -61,8 +68,14 @@ const ShiftEditPage: React.FC = () => {
   const { data: shiftProperties = [], refetch: refetchProperties } = useQuery({
     queryKey: ['shiftProperties', id],
     queryFn: () =>
-      request.get(`/shift/shifts/${id}/properties`).then((res: any) => res || []),
+      request.get(`/shift/shifts/${id}/properties`).then((res: any) => {
+        console.log('[ShiftEdit] 查询班次属性返回:', res);
+        return res || [];
+      }),
     enabled: isEdit,
+    staleTime: 0, // 始终使用最新数据，不使用缓存
+    refetchOnMount: 'always', // 组件挂载时总是重新查询
+    gcTime: 0, // 不保留缓存（React Query v5中，之前是cacheTime）
   });
 
   // 收集当前班次所有segments中的accountId，用于AccountSelect组件
@@ -75,6 +88,9 @@ const ShiftEditPage: React.FC = () => {
     mutationFn: async (data: any) => {
       // 从数据中提取 propertyKeys，只保留 Shift 表的字段
       const { propertyKeys, ...shiftData } = data;
+
+      console.log('[ShiftEdit] 🎯 mutationFn收到的data:', data);
+      console.log('[ShiftEdit] 🔑 提取的propertyKeys:', propertyKeys);
 
       let shiftId = id;
 
@@ -95,21 +111,30 @@ const ShiftEditPage: React.FC = () => {
 
       return shiftId;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       message.success(isEdit ? '更新成功' : '创建成功');
-      // 清除列表缓存
-      queryClient.invalidateQueries({ queryKey: ['shifts'] });
-      // 清除所有班次相关的缓存
-      queryClient.invalidateQueries({ queryKey: ['shiftProperties'] });
-      // 只在编辑模式下清除详情缓存
+
+      // 使用refetchQueries强制立即重新查询并等待完成
+      await queryClient.refetchQueries({ queryKey: ['shifts'] });
+      await queryClient.refetchQueries({ queryKey: ['shiftProperties'] });
+
+      // 只在编辑模式下重新查询详情
       if (isEdit) {
-        queryClient.invalidateQueries({ queryKey: ['shift', id] });
-        queryClient.invalidateQueries({ queryKey: ['shiftProperties', id] });
+        await queryClient.refetchQueries({ queryKey: ['shift', id] });
+        await queryClient.refetchQueries({ queryKey: ['shiftProperties', id] });
       }
-      navigate('/shift/shifts');
+
+      console.log('[ShiftEdit] 保存成功，已刷新所有缓存');
+
+      // 根据当前路径判断返回路径
+      const basePath = isEmbed ? '/embed/shift/shifts' : '/shift/shifts';
+      navigate(basePath);
     },
     onError: (error: any) => {
-      message.error(error?.response?.data?.message || '操作失败');
+      // request.ts 已经将错误消息提取到 error.message 中
+      const errorMessage = error?.message || '操作失败';
+
+      message.error(errorMessage);
     },
   });
 
@@ -119,7 +144,9 @@ const ShiftEditPage: React.FC = () => {
     onSuccess: () => {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
-      navigate('/shift/shifts');
+      // 根据当前路径判断返回路径
+      const basePath = isEmbed ? '/embed/shift/shifts' : '/shift/shifts';
+      navigate(basePath);
     },
     onError: (error: any) => {
       message.error(error?.response?.data?.message || '删除失败');
@@ -129,9 +156,16 @@ const ShiftEditPage: React.FC = () => {
   // 初始化表单数据
   useEffect(() => {
     if (shiftData) {
+      console.log('[ShiftEdit] 初始化表单数据:', {
+        shiftId: shiftData.id,
+        shiftProperties,
+        propertyKeys: shiftProperties?.map((p: any) => p.propertyKey) || [],
+      });
+
       form.setFieldsValue({
         code: shiftData.code,
         name: shiftData.name,
+        type: shiftData.type || 'NORMAL',
         color: shiftData.color,
         propertyKeys: shiftProperties?.map((p: any) => p.propertyKey) || [],
       });
@@ -249,7 +283,11 @@ const ShiftEditPage: React.FC = () => {
       }
 
       const submitData = {
-        ...values,
+        code: values.code,
+        name: values.name,
+        type: shiftType, // 使用状态中的类型
+        color: values.color,
+        propertyKeys: values.propertyKeys, // ✅ 添加属性字段
         segments: segments.map(seg => ({
           type: seg.type,
           startDate: seg.startDate,
@@ -260,6 +298,8 @@ const ShiftEditPage: React.FC = () => {
           accountId: seg.accountId,
         })),
       };
+
+      console.log('[ShiftEdit] 准备提交的数据:', submitData);
 
       saveMutation.mutate(submitData);
     } catch (error) {
@@ -367,7 +407,7 @@ const ShiftEditPage: React.FC = () => {
       title: '转移子账户',
       dataIndex: 'accountId',
       key: 'accountId',
-      width: 300,
+      width: 600,
       render: (accountId: number | null, record: ShiftSegment) => {
         return (
           <AccountSelect
@@ -377,6 +417,7 @@ const ShiftEditPage: React.FC = () => {
             segmentAccountIds={segmentAccountIds}
             isEdit={isEdit}
             placeholder="选择子账户"
+            style={{ width: '100%' }}
           />
         );
       },
@@ -415,12 +456,12 @@ const ShiftEditPage: React.FC = () => {
     <div>
       <Card>
         <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={12}>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/shift/shifts')}>
+          <Col>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(isEmbed ? '/embed/shift/shifts' : '/shift/shifts')}>
               返回列表
             </Button>
           </Col>
-          <Col span={12} style={{ textAlign: 'right' }}>
+          <Col flex="auto" style={{ textAlign: 'right' }}>
             <Space>
               {isEdit && (
                 <Popconfirm
@@ -449,7 +490,7 @@ const ShiftEditPage: React.FC = () => {
 
         <Form form={form} layout="vertical">
           <Row gutter={16}>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item
                 name="code"
                 label="班次编码"
@@ -458,13 +499,38 @@ const ShiftEditPage: React.FC = () => {
                 <Input placeholder="请输入班次编码" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item
                 name="name"
                 label="班次名称"
                 rules={[{ required: true, message: '请输入班次名称' }]}
               >
                 <Input placeholder="请输入班次名称" />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item
+                label="班次类型"
+                rules={[{ required: true, message: '请选择班次类型' }]}
+              >
+                <Select
+                  value={shiftType}
+                  onChange={(value) => setShiftType(value)}
+                  placeholder="请选择班次类型"
+                >
+                  <Select.Option value="NORMAL">正常班</Select.Option>
+                  <Select.Option value="REST">休息班</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item
+                name="color"
+                label="显示颜色"
+                initialValue="#00B365"
+                rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: '请输入有效的颜色值，如 #00B365' }]}
+              >
+                <Input type="color" style={{ width: '100%', height: 32 }} />
               </Form.Item>
             </Col>
           </Row>
@@ -500,16 +566,6 @@ const ShiftEditPage: React.FC = () => {
                       </Select.Option>
                     ))}
                 </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="color"
-                label="显示颜色"
-                initialValue="#22B970"
-                rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: '请输入有效的颜色值，如 #22B970' }]}
-              >
-                <Input type="color" style={{ width: '100%', height: 32 }} />
               </Form.Item>
             </Col>
             <Col span={12}>

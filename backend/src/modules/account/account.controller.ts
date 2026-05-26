@@ -19,6 +19,27 @@ export class AccountController {
     return this.accountService.getHierarchyLevels();
   }
 
+  @Get('hierarchy-config/levels/with-details')
+  @RequirePermissions('account:hierarchy:view')
+  @ApiOperation({ summary: '获取层级配置列表（包含明细）' })
+  async getHierarchyLevelsWithDetails() {
+    return this.accountService.getHierarchyLevelsWithDetails();
+  }
+
+  @Post('hierarchy-config/levels/:id/refresh-details')
+  @RequirePermissions('account:hierarchy:edit')
+  @ApiOperation({ summary: '刷新指定层级的明细数据' })
+  async refreshHierarchyLevelDetails(@Param('id') id: string) {
+    return this.accountService.refreshHierarchyLevelDetails(+id);
+  }
+
+  @Post('hierarchy-config/refresh-all-details')
+  @RequirePermissions('account:hierarchy:edit')
+  @ApiOperation({ summary: '刷新所有层级的明细数据' })
+  async refreshAllHierarchyLevelDetails() {
+    return this.accountService.refreshAllHierarchyLevelDetails();
+  }
+
   @Post('hierarchy-config/levels')
   @RequirePermissions('account:hierarchy:edit')
   @ApiOperation({ summary: '创建层级配置' })

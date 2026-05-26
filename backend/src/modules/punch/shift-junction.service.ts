@@ -1,0 +1,496 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
+
+/**
+ * 班次连接点信息接口
+ */
+export interface ShiftJunction {
+  junctionTime: Date;
+  previousShiftId: number;
+  nextShiftId: number;
+  previousShiftEnd: Date;
+  nextShiftStart: Date;
+}
+
+/**
+ * 拆分的打卡记录接口
+ */
+export interface SplitPunchRecord {
+  originalRecord: any;
+  junction: ShiftJunction;
+}
+
+/**
+ * 跨班次连接点配对接口
+ */
+export interface CrossJunctionPair {
+  junction: ShiftJunction;
+  inPunch: any;
+  outPunch: any;
+}
+
+/**
+ * 班次连接点跨越打卡处理服务
+ *
+ * 业务场景：
+ * 当两个班次连在一起时，如果有打卡记录跨越连接点，
+ * 需要在连接点自动插入虚拟打卡记录（时间点出、时间点进），
+ * 将原打卡记录拆分成两部分：
+ * - 开始时间 ~ 连接点 → 归属前一个班次
+ * - 连接点 ~ 结束时间 → 归属后一个班次
+ */
+@Injectable()
+export class ShiftJunctionService {
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * 检测并处理班次连接点跨越打卡（新的逻辑）
+   * @param employeeNo 员工工号
+   * @param targetDate 目标日期
+   * @returns 处理后的打卡记录和插入的虚拟打卡记录
+   */
+  async processJunctionPunches(employeeNo: string, targetDate: Date) {
+    // 1. 获取员工当天的所有排班
+    const dayStart = new Date(targetDate);
+    dayStart.setHours(0, 0, 0, 0);
+
+    const dayEnd = new Date(targetDate);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        employee: { employeeNo },
+        scheduleDate: { gte: dayStart, lte: dayEnd },
+      },
+      include: {
+        shift: {
+          include: {
+            segments: {
+              orderBy: { startTime: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: [{ scheduleDate: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    if (schedules.length < 2) {
+      // 少于2个班次，不存在连接点
+      return {
+        hasJunction: false,
+        junctions: [],
+        virtualPunches: [],
+        allPunchRecords: [],
+      };
+    }
+
+    // 2. 检测班次连接点
+    const junctions = this.detectShiftJunctions(schedules);
+
+    if (junctions.length === 0) {
+      return {
+        hasJunction: false,
+        junctions: [],
+        virtualPunches: [],
+        allPunchRecords: [],
+      };
+    }
+
+    console.log(`[班次连接点] 员工: ${employeeNo}, 日期: ${targetDate.toISOString().split('T')[0]}, 检测到 ${junctions.length} 个连接点`);
+
+    // 3. 获取员工当天的所有打卡记录
+    const punchRecords = await this.prisma.punchRecord.findMany({
+      where: {
+        employeeNo,
+        punchTime: { gte: dayStart, lte: dayEnd },
+      },
+      include: {
+        device: true,
+        // account: true,
+      },
+      orderBy: { punchTime: 'asc' },
+    });
+
+    // 4. 先将打卡记录分配到各个班次（初步分配）
+    const shiftPunchesMap = this.assignPunchesToShifts(punchRecords, schedules, junctions);
+
+    // 5. 检测跨班次连接点的配对
+    const crossJunctionPairs = this.detectCrossJunctionPairs(shiftPunchesMap, junctions);
+
+    if (crossJunctionPairs.length === 0) {
+      return {
+        hasJunction: true,
+        junctions,
+        virtualPunches: [],
+        allPunchRecords: punchRecords,
+      };
+    }
+
+    console.log(`[班次连接点] 员工: ${employeeNo}, 检测到 ${crossJunctionPairs.length} 个跨班次连接点配对`);
+
+    // 6. 为每个跨班次配对创建虚拟打卡记录
+    const virtualPunches = [];
+    const finalPunchRecords = [...punchRecords];
+
+    for (const pair of crossJunctionPairs) {
+      const { junction, inPunch, outPunch } = pair;
+
+      // 创建虚拟打卡记录：时间点出（前一个班次）
+      const virtualOutPunch = await this.createVirtualPunch(
+        employeeNo,
+        junction.junctionTime,
+        'OUT',
+        inPunch.deviceId,
+        null,
+        `VIRTUAL_JUNCTION_OUT_${junction.previousShiftId}_${junction.nextShiftId}`,
+      );
+
+      // 创建虚拟打卡记录：时间点进（后一个班次）
+      const virtualInPunch = await this.createVirtualPunch(
+        employeeNo,
+        junction.junctionTime,
+        'IN',
+        outPunch.deviceId,
+        null,
+        `VIRTUAL_JUNCTION_IN_${junction.previousShiftId}_${junction.nextShiftId}`,
+      );
+
+      virtualPunches.push(virtualOutPunch, virtualInPunch);
+      finalPunchRecords.push(virtualOutPunch, virtualInPunch);
+
+      console.log(
+        `[班次连接点] 员工: ${employeeNo}, 时间点: ${junction.junctionTime.toISOString()}` +
+        `, 进卡: ${inPunch.punchTime.toISOString()}` +
+        `, 出卡: ${outPunch.punchTime.toISOString()}` +
+        `, 插入虚拟打卡: ${junction.junctionTime.toISOString()}`
+      );
+    }
+
+    // 7. 按时间排序所有打卡记录（包括虚拟打卡）
+    finalPunchRecords.sort(
+      (a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime()
+    );
+
+    console.log(
+      `[班次连接点] 员工: ${employeeNo}, 日期: ${targetDate.toISOString().split('T')[0]}` +
+      `, 原始打卡: ${punchRecords.length}张` +
+      `, 插入虚拟打卡: ${virtualPunches.length}张` +
+      `, 总计: ${finalPunchRecords.length}张`
+    );
+
+    return {
+      hasJunction: true,
+      junctions,
+      crossJunctionPairs,
+      virtualPunches,
+      allPunchRecords: finalPunchRecords,
+    };
+  }
+
+  /**
+   * 检测班次连接点
+   * @param schedules 排班列表（已排序）
+   * @returns 连接点列表
+   */
+  private detectShiftJunctions(schedules: any[]): ShiftJunction[] {
+    const junctions: ShiftJunction[] = [];
+
+    for (let i = 0; i < schedules.length - 1; i++) {
+      const currentSchedule = schedules[i];
+      const nextSchedule = schedules[i + 1];
+
+      if (!currentSchedule.shift || !currentSchedule.shift.segments ||
+          !nextSchedule.shift || !nextSchedule.shift.segments) {
+        continue;
+      }
+
+      // 计算当前班次的结束时间
+      const currentShiftEnd = this.calculateShiftEndTime(
+        currentSchedule.scheduleDate,
+        currentSchedule.shift
+      );
+
+      // 计算下一个班次的开始时间
+      const nextShiftStart = this.calculateShiftStartTime(
+        nextSchedule.scheduleDate,
+        nextSchedule.shift
+      );
+
+      // 检查是否存在连接点（班次相连或重叠）
+      // 判断条件：下一个班次开始时间 <= 当前班次结束时间 + 1分钟
+      const junctionThreshold = new Date(currentShiftEnd.getTime() + 60 * 1000); // +1分钟
+
+      if (nextShiftStart <= junctionThreshold) {
+        // 存在连接点，使用中间时间点作为连接点
+        const junctionTime = new Date(
+          (currentShiftEnd.getTime() + nextShiftStart.getTime()) / 2
+        );
+
+        junctions.push({
+          junctionTime,
+          previousShiftId: currentSchedule.shiftId,
+          nextShiftId: nextSchedule.shiftId,
+          previousShiftEnd: currentShiftEnd,
+          nextShiftStart: nextShiftStart,
+        });
+      }
+    }
+
+    return junctions;
+  }
+
+  /**
+   * 检测跨越连接点的打卡记录
+   * @param punchRecords 打卡记录列表
+   * @param junctions 连接点列表
+   * @returns 需要拆分的打卡记录列表
+   */
+  private detectJunctionPunches(
+    punchRecords: any[],
+    junctions: ShiftJunction[]
+  ): Array<{ originalRecord: any; junction: ShiftJunction }> {
+    const splitRecords = [];
+
+    for (const record of punchRecords) {
+      const punchTime = new Date(record.punchTime);
+
+      for (const junction of junctions) {
+        // 检查打卡记录是否跨越连接点
+        // 判断条件：打卡时间在连接点前后各1分钟内
+        const beforeJunction = new Date(junction.junctionTime.getTime() - 60 * 1000);
+        const afterJunction = new Date(junction.junctionTime.getTime() + 60 * 1000);
+
+        if (punchTime >= beforeJunction && punchTime <= afterJunction) {
+          splitRecords.push({
+            originalRecord: record,
+            junction,
+          });
+          break; // 一条打卡记录只跨越一个连接点
+        }
+      }
+    }
+
+    return splitRecords;
+  }
+
+  /**
+   * 检测跨班次连接点的配对（新的逻辑）
+   * @param shiftPunches Map<shiftId, punchRecords[]>
+   * @param junctions 连接点列表
+   * @returns 需要插入虚拟打卡的连接点列表
+   */
+  detectCrossJunctionPairs(
+    shiftPunches: Map<number, any[]>,
+    junctions: ShiftJunction[],
+  ): Array<{ junction: ShiftJunction; inPunch: any; outPunch: any }> {
+    const crossJunctionPairs = [];
+
+    for (const junction of junctions) {
+      // 获取前一个班次和后一个班次的打卡记录
+      const previousShiftPunches = shiftPunches.get(junction.previousShiftId) || [];
+      const nextShiftPunches = shiftPunches.get(junction.nextShiftId) || [];
+
+      // 找出前一个班次的进卡（在连接点之前的）
+      const previousInPunches = previousShiftPunches.filter(
+        p => p.punchType === 'IN' && new Date(p.punchTime) < junction.junctionTime
+      );
+
+      // 找出后一个班次的出卡（在连接点之后的）
+      const nextOutPunches = nextShiftPunches.filter(
+        p => p.punchType === 'OUT' && new Date(p.punchTime) > junction.junctionTime
+      );
+
+      // 如果前一个班次有进卡，后一个班次有出卡，且它们可以配对
+      if (previousInPunches.length > 0 && nextOutPunches.length > 0) {
+        // 取最后一个进卡和第一个出卡进行配对
+        const lastInPunch = previousInPunches[previousInPunches.length - 1];
+        const firstOutPunch = nextOutPunches[0];
+
+        crossJunctionPairs.push({
+          junction,
+          inPunch: lastInPunch,
+          outPunch: firstOutPunch,
+        });
+      }
+    }
+
+    return crossJunctionPairs;
+  }
+
+  /**
+   * 计算班次开始时间
+   */
+  private calculateShiftStartTime(scheduleDate: Date, shift: any): Date {
+    if (!shift.segments || shift.segments.length === 0) {
+      return new Date(scheduleDate);
+    }
+
+    const firstSegment = shift.segments[0];
+    const shiftStart = new Date(scheduleDate);
+
+    if (firstSegment.startDate === '+0') {
+      const [hours, minutes] = firstSegment.startTime.split(':').map(Number);
+      shiftStart.setHours(hours, minutes, 0, 0);
+    } else {
+      shiftStart.setDate(shiftStart.getDate() + 1);
+      const [hours, minutes] = firstSegment.startTime.split(':').map(Number);
+      shiftStart.setHours(hours, minutes, 0, 0);
+    }
+
+    return shiftStart;
+  }
+
+  /**
+   * 计算班次结束时间
+   */
+  private calculateShiftEndTime(scheduleDate: Date, shift: any): Date {
+    if (!shift.segments || shift.segments.length === 0) {
+      return new Date(scheduleDate);
+    }
+
+    const lastSegment = shift.segments[shift.segments.length - 1];
+    const shiftEnd = new Date(scheduleDate);
+
+    if (lastSegment.endDate === '+0') {
+      const [hours, minutes] = lastSegment.endTime.split(':').map(Number);
+      shiftEnd.setHours(hours, minutes, 0, 0);
+    } else {
+      shiftEnd.setDate(shiftEnd.getDate() + 1);
+      const [hours, minutes] = lastSegment.endTime.split(':').map(Number);
+      shiftEnd.setHours(hours, minutes, 0, 0);
+    }
+
+    return shiftEnd;
+  }
+
+  /**
+   * 创建虚拟打卡记录
+   */
+  private async createVirtualPunch(
+    employeeNo: string,
+    punchTime: Date,
+    punchType: 'IN' | 'OUT',
+    deviceId: number | null,
+    accountId: number | null,
+    source: string,
+  ) {
+    return this.prisma.punchRecord.create({
+      data: {
+        employeeNo,
+        punchTime,
+        punchType,
+        deviceId,
+        // accountId,
+        source, // 标记为虚拟打卡
+      },
+      include: {
+        device: true,
+        // account: true,
+      },
+    });
+  }
+
+  /**
+   * 为班次分配打卡记录（考虑连接点拆分）
+   * @param punchRecords 所有打卡记录（包括虚拟打卡）
+   * @param schedules 排班列表
+   * @param junctions 连接点列表
+   * @returns 按班次分组的打卡记录 Map<shiftId, punchRecords[]>
+   */
+  assignPunchesToShifts(
+    punchRecords: any[],
+    schedules: any[],
+    junctions: ShiftJunction[],
+  ): Map<number, any[]> {
+    const shiftPunches = new Map<number, any[]>();
+
+    // 初始化所有班次的打卡记录列表
+    for (const schedule of schedules) {
+      shiftPunches.set(schedule.shiftId, []);
+    }
+
+    // 为每个打卡记录分配班次
+    for (const record of punchRecords) {
+      const punchTime = new Date(record.punchTime);
+
+      // 检查是否是虚拟打卡记录
+      if (record.source?.startsWith('VIRTUAL_JUNCTION_OUT_')) {
+        // 虚拟打卡出，归属前一个班次
+        const parts = record.source.split('_');
+        const previousShiftId = parseInt(parts[3]);
+        if (shiftPunches.has(previousShiftId)) {
+          shiftPunches.get(previousShiftId)!.push(record);
+        }
+        continue;
+      }
+
+      if (record.source?.startsWith('VIRTUAL_JUNCTION_IN_')) {
+        // 虚拟打卡进，归属后一个班次
+        const parts = record.source.split('_');
+        const nextShiftId = parseInt(parts[3]);
+        if (shiftPunches.has(nextShiftId)) {
+          shiftPunches.get(nextShiftId)!.push(record);
+        }
+        continue;
+      }
+
+      // 普通打卡记录，根据时间分配班次
+      let assigned = false;
+
+      for (let i = 0; i < schedules.length; i++) {
+        const schedule = schedules[i];
+        const shift = schedule.shift;
+
+        if (!shift || !shift.segments || shift.segments.length === 0) {
+          continue;
+        }
+
+        // 计算班次时间范围
+        const shiftStart = this.calculateShiftStartTime(schedule.scheduleDate, shift);
+        const shiftEnd = this.calculateShiftEndTime(schedule.scheduleDate, shift);
+
+        // 检查是否有下一个班次
+        if (i < schedules.length - 1) {
+          const nextSchedule = schedules[i + 1];
+          const nextShiftStart = this.calculateShiftStartTime(
+            nextSchedule.scheduleDate,
+            nextSchedule.shift
+          );
+
+          // 如果下一个班次开始时间早于当前班次结束时间（班次相连）
+          // 且打卡时间在连接点附近，则根据连接点分配
+          if (nextShiftStart <= shiftEnd) {
+            const junctionTime = new Date((shiftEnd.getTime() + nextShiftStart.getTime()) / 2);
+
+            if (punchTime < junctionTime) {
+              // 在连接点之前，归属当前班次
+              shiftPunches.get(schedule.shiftId)!.push(record);
+              assigned = true;
+              break;
+            } else {
+              // 在连接点之后，跳过当前班次，继续检查下一个班次
+              continue;
+            }
+          }
+        }
+
+        // 正常情况：打卡时间在班次时间范围内
+        if (punchTime >= shiftStart && punchTime <= shiftEnd) {
+          shiftPunches.get(schedule.shiftId)!.push(record);
+          assigned = true;
+          break;
+        }
+      }
+
+      // 如果没有分配到任何班次，记录到日志
+      if (!assigned) {
+        console.log(
+          `[班次连接点] 警告: 打卡记录未分配到任何班次` +
+          `, 员工: ${record.employeeNo}, 时间: ${punchTime.toISOString()}`
+        );
+      }
+    }
+
+    return shiftPunches;
+  }
+}

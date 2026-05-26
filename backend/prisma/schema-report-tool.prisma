@@ -1,0 +1,189 @@
+// ==========================================
+// 报表工具 - 数据库模型设计
+// ==========================================
+
+// ============================================
+// 1. 数据源管理
+// ============================================
+
+model DataSource {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  code        String   @unique
+  type        String   // 'database', 'api', 'file'
+  config      Json     // 连接配置信息
+  description String?
+  status      String   @default("ACTIVE") // 'ACTIVE', 'INACTIVE'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  dataModels  DataModel[]
+
+  @@map("report_data_sources")
+}
+
+// ============================================
+// 2. 数据模型
+// ============================================
+
+model DataModel {
+  id          Int      @id @default(autoincrement())
+  name        String
+  code        String   @unique
+  dataSourceId Int?
+  type        String   @default("table") // 'table', 'sql', 'api'
+  sourceTable String?  // 原始表名
+  sourceSql   String?  // 自定义SQL
+  description String?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  dataSource  DataSource?  @relation(fields: [dataSourceId], references: [id])
+  fields      ModelField[]
+  relations   ModelRelation[]
+  reports     Report[]
+
+  @@map("report_data_models")
+}
+
+// 模型字段
+model ModelField {
+  id          Int      @id @default(autoincrement())
+  modelId     Int
+  name        String   // 字段名称
+  code        String   // 字段代码
+  type        String   // 'dimension', 'measure' // 维度或度量
+  dataType    String   // 'string', 'number', 'date', 'boolean'
+  sourceType  String   // 'column', 'custom_sql', 'calculated'
+  sourceExpr  String?  // 源表达式（字段名或计算公式）
+  aggregation String?  // 'sum', 'avg', 'count', 'max', 'min' 等
+  format      String?  // 格式化配置
+  description String?
+  sortNo      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  model       DataModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([modelId, code])
+  @@map("report_model_fields")
+}
+
+// 模型关联关系
+model ModelRelation {
+  id          Int      @id @default(autoincrement())
+  modelId     Int
+  name        String
+  type        String   // 'one_to_one', 'one_to_many', 'many_to_many'
+  leftField   String   // 左表字段
+  rightModel  String   // 右表模型代码
+  rightField  String   // 右表字段
+  joinType   String   @default("left") // 'inner', 'left', 'right'
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  model       DataModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@map("report_model_relations")
+}
+
+// ============================================
+// 3. 报表配置
+// ============================================
+
+model Report {
+  id          Int      @id @default(autoincrement())
+  name        String
+  code        String   @unique
+  modelId     Int
+  type        String   // 'table', 'chart', 'dashboard'
+  category    String?  // 报表分类
+  description String?
+  config      Json     // 报表配置（布局、字段、样式等）
+  queryConfig Json?    // 查询配置（过滤条件、参数等）
+  style       Json?    // 样式配置
+  status      String   @default("DRAFT") // 'DRAFT', 'PUBLISHED', 'ARCHIVED'
+  createdBy   Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  model       DataModel @relation(fields: [modelId], references: [id])
+  widgets     ReportWidget[]
+
+  @@map("report_reports")
+}
+
+// 报表组件（用于仪表板）
+model ReportWidget {
+  id          Int      @id @default(autoincrement())
+  reportId    Int?
+  name        String
+  type        String   // 'table', 'line', 'bar', 'pie', 'card', etc
+  title       String?
+  dataSource  Json     // 数据源配置（模型、字段、过滤条件）
+  config      Json     // 组件配置（图表类型、轴配置、样式等）
+  position    Json?    // 位置信息（x, y, w, h）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  report      Report?  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("report_widgets")
+}
+
+// ============================================
+// 4. 报表参数
+// ============================================
+
+model ReportParameter {
+  id          Int      @id @default(autoincrement())
+  reportId    Int
+  name        String
+  code        String
+  type        String   // 'text', 'number', 'date', 'select', 'multiselect'
+  config      Json?    // 参数配置（选项、默认值等）
+  required    Boolean  @default(false)
+  defaultValue String?
+  description String?
+  sortNo      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([reportId, code])
+  @@map("report_parameters")
+}
+
+// ============================================
+// 5. 报表缓存
+// ============================================
+
+model ReportCache {
+  id          Int      @id @default(autoincrement())
+  reportId    Int
+  params      Json     // 查询参数
+  data        Json     // 缓存数据
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([reportId, expiresAt])
+  @@map("report_cache")
+}
+
+// ============================================
+// 6. 报表访问记录
+// ============================================
+
+model ReportAccessLog {
+  id          Int      @id @default(autoincrement())
+  reportId    Int
+  userId      Int
+  userName    String?
+  action      String   // 'view', 'export', 'config'
+  duration    Int?     // 访问时长（毫秒）
+  createdAt   DateTime @default(now())
+
+  @@index([reportId, createdAt])
+  @@map("report_access_logs")
+}

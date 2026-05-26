@@ -1,0 +1,598 @@
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
+import { StringUtils } from '../../common/utils';
+
+@Injectable()
+export class AttendanceCodeService {
+  constructor(private prisma: PrismaService) {}
+
+  async getAttendanceCodes() {
+    return this.prisma.attendanceCode.findMany({
+      where: { category: 'CALCULATION' },
+      orderBy: { priority: 'asc' },
+    });
+  }
+
+  async getAttendanceCode(id: number) {
+    const code = await this.prisma.attendanceCode.findFirst({
+      where: { id, category: 'CALCULATION' },
+    });
+
+    if (!code) {
+      throw new NotFoundException('出勤代码不存在');
+    }
+
+    return code;
+  }
+
+  async createAttendanceCode(dto: any) {
+    const { accountLevels, ...rest } = dto;
+
+    // 验证参数
+    if (rest.includeOutside && rest.onlyOutside) {
+      throw new BadRequestException('包含班外时数和仅计算班外时数不能同时开启');
+    }
+
+    // 处理accountLevels：如果是字符串则直接使用，如果是数组则序列化
+    let accountLevelsStr = '[]';
+    if (accountLevels) {
+      if (typeof accountLevels === 'string') {
+        accountLevelsStr = accountLevels;
+      } else {
+        accountLevelsStr = JSON.stringify(accountLevels);
+      }
+    }
+
+    // 如果没有提供code，自动生成序号编码
+    let code = rest.code;
+    if (!code) {
+      const existingCodes = await this.prisma.attendanceCode.findMany({
+        select: { code: true },
+        where: { category: 'CALCULATION' },
+      });
+      const codes = existingCodes.map(c => c.code);
+      code = StringUtils.generateSequentialCode('AC', codes);
+    }
+
+    return this.prisma.attendanceCode.create({
+      data: {
+        ...rest,
+        code: code,
+        category: 'CALCULATION',
+        accountLevels: accountLevelsStr,
+      },
+    });
+  }
+
+  async updateAttendanceCode(id: number, dto: any) {
+    const existing = await this.prisma.attendanceCode.findFirst({
+      where: { id, category: 'CALCULATION' },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('出勤代码不存在');
+    }
+
+    const { accountLevels, ...rest } = dto;
+
+    // 验证参数
+    if (rest.includeOutside && rest.onlyOutside) {
+      throw new BadRequestException('包含班外时数和仅计算班外时数不能同时开启');
+    }
+
+    // 处理accountLevels：如果是字符串则直接使用，如果是数组则序列化
+    let accountLevelsData = undefined;
+    if (accountLevels !== undefined) {
+      if (typeof accountLevels === 'string') {
+        accountLevelsData = accountLevels;
+      } else {
+        accountLevelsData = JSON.stringify(accountLevels);
+      }
+    }
+
+    return this.prisma.attendanceCode.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...(accountLevelsData !== undefined && { accountLevels: accountLevelsData }),
+      },
+    });
+  }
+
+  async deleteAttendanceCode(id: number) {
+    await this.prisma.attendanceCode.updateMany({
+      where: { id, category: 'CALCULATION' },
+      data: { status: 'INACTIVE' },
+    });
+
+    return { message: '删除成功' };
+  }
+
+  /**
+   * 根据摆卡结果计算工时并保存到数据库
+   */
+  async calculateFromPunchPair(punchPairId: number) {
+    // 获取摆卡结果
+    const punchPair = await this.prisma.punchPair.findUnique({
+      where: { id: punchPairId },
+      include: {
+        inPunch: {
+          include: {
+            device: true,
+          },
+        },
+        outPunch: {
+          include: {
+            device: true,
+          },
+        },
+        account: true,
+        employee: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!punchPair) {
+      throw new NotFoundException('摆卡结果不存在');
+    }
+
+    // 获取员工在打卡���期的考勤规则组
+    const pairDate = new Date(punchPair.pairDate);
+    pairDate.setHours(0, 0, 0, 0);
+
+    // ✅ PunchPair表（精益摆卡）的数据全部计算 LEAN_HOURS 类型的工时
+    // 不管有没有排班（shiftId是否为null），只要是PunchPair的数据就计算精益工时
+    const isLeanPunching = true;  // PunchPair表就是精益摆卡表
+    const punchType = 'LEAN_HOURS';  // 固定为LEAN_HOURS类型
+
+    console.log(`[精益工时计算] 员工: ${punchPair.employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, shiftId: ${punchPair.shiftId}, shiftName: ${punchPair.shiftName}`);
+
+    // 获取班次信息
+    let shift = null;
+    if (punchPair.shiftId !== null) {
+      // 有排班：获取班次信息
+      shift = await this.prisma.shift.findUnique({
+        where: { id: punchPair.shiftId },
+        include: {
+          segments: {
+            orderBy: { startTime: 'asc' },
+          },
+        },
+      });
+      console.log(`[精益工时计算] 员工: ${punchPair.employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 使用班次: ${shift?.name}`);
+    } else {
+      // 无排班：使用默认班次信息（全天 00:00 - 23:59）
+      shift = {
+        id: null,
+        code: 'DEFAULT',
+        name: '默认班次',
+        segments: [],
+        standardHours: 24,
+        breakHours: 0,
+      };
+      console.log(`[精益工时计算] 员工: ${punchPair.employeeNo}, 日期: ${pairDate.toISOString().split('T')[0]}, 使用默认班次时间（未排班）`);
+    }
+
+    const employeeRuleGroup = await this.prisma.employeeAttendanceRuleGroup.findFirst({
+      where: {
+        employeeId: punchPair.employee.id,
+        effectiveDate: { lte: pairDate },
+        OR: [
+          { expiryDate: null },
+          { expiryDate: { gte: pairDate } },
+        ],
+      },
+      include: {
+        ruleGroup: {
+          include: {
+            details: true,
+          },
+        },
+      },
+      orderBy: {
+        effectiveDate: 'desc',
+      },
+    });
+
+    // 获取需要计算的出勤代码ID列表
+    let attendanceCodeIds: number[] = [];
+    if (employeeRuleGroup?.ruleGroup?.details?.[0]) {
+      try {
+        const parsed = JSON.parse(employeeRuleGroup.ruleGroup.details[0].attendanceCodeIds || '[]');
+        attendanceCodeIds = Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        console.error('解析考勤规则组的出勤代码失败:', e);
+      }
+    }
+
+    // 如果考勤规则组中没有配置出勤代码，则不计算工时
+    if (attendanceCodeIds.length === 0) {
+      const reason = employeeRuleGroup
+        ? `考勤规则组 ${employeeRuleGroup.ruleGroupName} 未配置考勤工时出勤代码`
+        : '未配置考勤规则组';
+      console.log(`员工 ${punchPair.employeeNo} 在 ${pairDate.toISOString()} 不计算工时: ${reason}`);
+      // 返回空结果，不抛出错误
+      return [];
+    }
+
+    // 使���考勤规则组中配置的出勤代码，并根据摆卡类型过滤
+    const calculationAttendanceCodes = await this.prisma.calculationAttendanceCode.findMany({
+      where: {
+        id: { in: attendanceCodeIds },
+        type: punchType, // ✅ 只计算对应类型的出勤代码
+        status: 'ACTIVE',
+        calculateHours: true,
+      },
+      orderBy: [
+        { priority: 'asc' },
+        { id: 'asc' }
+      ],
+    });
+
+    if (calculationAttendanceCodes.length === 0) {
+      console.log(`员工 ${punchPair.employeeNo} 在 ${pairDate.toISOString()} 没有有效的计算出勤代码（配置的出勤代码可能未启用或不允许计算工时）`);
+      return [];
+    }
+
+    // 计算每个出勤代码的工时并保存
+    const results = [];
+    for (const code of calculationAttendanceCodes) {
+      const hours = await this.calculateHoursForCode(punchPair, shift, code, isLeanPunching);
+
+      // 只保存有工时的结果（actualHours > 0）
+      if (hours.actualHours > 0) {
+        // 获取账户信息
+        let accountId = null;
+        let accountName = null;
+        if (punchPair.accountId) {
+          accountId = punchPair.accountId;
+          const account = await this.prisma.laborAccount.findUnique({
+            where: { id: punchPair.accountId },
+            select: { namePath: true },
+          });
+          accountName = account?.namePath || null;
+        }
+
+        // 检查是否已存在相同的计算结果（使用打卡时间来区分不同的摆卡）
+        const whereCondition: any = {
+          employeeNo: punchPair.employeeNo,
+          calcDate: punchPair.pairDate,
+          calculationAttendanceCodeId: code.id, // ✅ 使用新的计算出勤代码ID
+          accountId: accountId,
+          punchInTime: hours.adjustedInTime || punchPair.inPunchTime,
+          punchOutTime: hours.adjustedOutTime || punchPair.outPunchTime,
+        };
+
+        // 只有在shiftId不为null时才添加shiftId条件
+        if (punchPair.shiftId !== null) {
+          whereCondition.shiftId = punchPair.shiftId;
+        }
+
+        const existing = await this.prisma.calcResult.findFirst({
+          where: whereCondition,
+        });
+
+        if (existing) {
+          // 已存在，更新
+          await this.prisma.calcResult.update({
+            where: { id: existing.id },
+            data: {
+              actualHours: hours.actualHours,
+              standardHours: hours.standardHours,
+            },
+          });
+          results.push({
+            id: existing.id,
+            calculationAttendanceCodeId: code.id, // ✅ 使用新的计算出勤代码ID
+            calculationAttendanceCodeName: code.name,
+            accountId: accountId,
+            accountName: accountName,
+            ...hours,
+          });
+        } else {
+          // 不存在，创建新的
+          const result = await this.prisma.calcResult.create({
+            data: {
+              employeeNo: punchPair.employeeNo,
+              calcDate: punchPair.pairDate,
+              shiftId: punchPair.shiftId,
+              shiftName: punchPair.shiftName,
+              calculationAttendanceCodeId: code.id, // ✅ 使用新的计算出勤代码ID
+              punchInTime: hours.adjustedInTime || punchPair.inPunchTime,
+              punchOutTime: hours.adjustedOutTime || punchPair.outPunchTime,
+              standardHours: hours.standardHours,
+              actualHours: hours.actualHours,
+              overtimeHours: 0,
+              leaveHours: 0,
+              absenceHours: 0,
+              accountId: accountId,
+              accountName: accountName,
+              status: 'COMPLETED',
+            },
+          });
+
+          results.push({
+            id: result.id,
+            calculationAttendanceCodeId: code.id, // ✅ 使用新的计算出勤代码ID
+            calculationAttendanceCodeName: code.name,
+            accountId: accountId,
+            accountName: accountName,
+            ...hours,
+          });
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 为特定的出勤代码计算工时
+   */
+  private async calculateHoursForCode(punchPair: any, shift: any, code: any, isLeanPunching: boolean = false) {
+    const inTime = punchPair.inPunchTime ? new Date(punchPair.inPunchTime) : null;
+    const outTime = punchPair.outPunchTime ? new Date(punchPair.outPunchTime) : null;
+
+    if (!inTime || !outTime) {
+      // 单卡摆卡，不计算工时
+      return {
+        actualHours: 0,
+        standardHours: 0,
+      };
+    }
+
+    // 解析账户层级
+    const accountLevels = JSON.parse(code.accountLevels || '[]');
+
+    // 检查账户是否匹配（无论是否有排班，都进行账户匹配检查）
+    if (accountLevels.length > 0 && punchPair.accountId) {
+      const account = await this.prisma.laborAccount.findUnique({
+        where: { id: punchPair.accountId },
+        select: {
+          id: true,
+          level: true,
+          path: true,
+          hierarchyValues: true,
+          namePath: true,
+        },
+      });
+
+      if (account && !this.isAccountMatch(account, accountLevels)) {
+        // 账户不匹配，不计算工时
+        console.log(`账户不匹配: punchPairId=${punchPair.id}, accountId=${account.id}, accountName=${account.namePath}, code=${code.name}, accountLevels=${accountLevels.join(',')}`);
+        return {
+          actualHours: 0,
+          standardHours: 0,
+        };
+      }
+    }
+
+    // ✅ 精益工时计算：未排班日期（shiftId为null）直接计算打卡时间差
+    if (punchPair.shiftId === null) {
+      // 未排班：直接计算打卡时间差
+      const actualHours = (outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60);
+      const actualHoursRounded = Math.round(actualHours * 100) / 100;
+
+      console.log(`[精益工时计算-未排班] 员工: ${punchPair.employeeNo}, 日期: ${punchPair.pairDate}, 出勤代码: ${code.name}, 工时: ${actualHoursRounded}小时`);
+
+      return {
+        actualHours: actualHoursRounded,
+        standardHours: 0, // 未排班日期没有标准工时
+        adjustedInTime: inTime,
+        adjustedOutTime: outTime,
+      };
+    }
+
+    // 计算班次时间（传入排班日期作为基准）
+    const shiftTime = this.calculateShiftTime(shift, punchPair.pairDate);
+
+    // 计算工时
+    let actualHours = 0;
+    let standardHours = 0;
+
+    // 修正后的时间（用于显示）
+    let adjustedInTime = inTime;
+    let adjustedOutTime = outTime;
+
+    if (code.onlyOutside) {
+      // 仅计算班外时数，需要修正时间为班外时间段
+      actualHours = this.calculateOutsideHours(inTime, outTime, shiftTime.start, shiftTime.end);
+
+      // 修正显示时间为班外时间段
+      // 判断有哪些班外时间段
+      const hasBeforeShift = inTime < shiftTime.start;
+      const hasAfterShift = outTime > shiftTime.end;
+
+      if (hasBeforeShift && hasAfterShift) {
+        // 同时有班前和班后时间
+        // 计算班前工时和班后工时
+        const beforeHours = (shiftTime.start.getTime() - inTime.getTime()) / (1000 * 60 * 60);
+        const afterHours = (outTime.getTime() - shiftTime.end.getTime()) / (1000 * 60 * 60);
+
+        if (beforeHours >= afterHours) {
+          // 优先显示班前时间
+          adjustedInTime = inTime;
+          adjustedOutTime = shiftTime.start;
+        } else {
+          // 优先显示班后时间
+          adjustedInTime = shiftTime.end;
+          adjustedOutTime = outTime;
+        }
+      } else if (hasBeforeShift) {
+        // 只有班前时间：打卡开始 ~ 班次开始
+        adjustedInTime = inTime;
+        adjustedOutTime = shiftTime.start;
+      } else if (hasAfterShift) {
+        // 只有班后时间：班次结束 ~ 打卡结束
+        adjustedInTime = shiftTime.end;
+        adjustedOutTime = outTime;
+      } else {
+        // 没有班外时间，不应该计算到这里（actualHours应该是0）
+        adjustedInTime = inTime;
+        adjustedOutTime = outTime;
+      }
+    } else if (code.includeOutside) {
+      // 包含班外时数，直接计算打卡时间差，不修正时间
+      actualHours = (outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60);
+      // adjustedInTime 和 adjustedOutTime 保持原始打卡时间
+    } else {
+      // 不包含班外时数，取与班次时间的交集，并修正时间
+      actualHours = this.calculateIntersectionHours(
+        inTime,
+        outTime,
+        shiftTime.start,
+        shiftTime.end
+      );
+
+      // 修正显示时间：
+      // 如果打卡开始时间在班次开始前，开始时间应该取班次开始
+      if (inTime < shiftTime.start) {
+        adjustedInTime = shiftTime.start;
+      }
+      // 如果打卡结束时间在班次结束后，结束时间应该取班次结束
+      if (outTime > shiftTime.end) {
+        adjustedOutTime = shiftTime.end;
+      }
+      // 如果打卡时间完全在班次内，保持原始时间
+    }
+
+    // 扣用餐时间
+    if (code.deductMeal && shift.breakHours > 0) {
+      // 如果实际工时大于班次标准工时，扣除用餐时间
+      if (actualHours > shift.standardHours) {
+        actualHours -= shift.breakHours;
+      }
+    }
+
+    // 保留2位小数
+    actualHours = Math.round(actualHours * 100) / 100;
+    standardHours = shift.standardHours;
+
+    // 转换单位
+    if (code.unit === 'MINUTES') {
+      actualHours = Math.round(actualHours * 60);
+      standardHours = Math.round(standardHours * 60);
+    }
+
+    return {
+      actualHours,
+      standardHours,
+      adjustedInTime,
+      adjustedOutTime,
+    };
+  }
+
+  /**
+   * 计算班次时间（开始和结束时间）
+   */
+  private calculateShiftTime(shift: any, baseDate?: Date) {
+    if (!shift.segments || shift.segments.length === 0) {
+      return { start: null, end: null };
+    }
+
+    const firstSegment = shift.segments[0];
+    const lastSegment = shift.segments[shift.segments.length - 1];
+
+    // 使用传入的基准日期，如果没有则使用当前日期
+    const today = baseDate ? new Date(baseDate) : new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const start = new Date(today);
+    const [startHours, startMinutes] = firstSegment.startTime.split(':').map(Number);
+    start.setHours(startHours, startMinutes, 0, 0);
+
+    const end = new Date(today);
+    const [endHours, endMinutes] = lastSegment.endTime.split(':').map(Number);
+    end.setHours(endHours, endMinutes, 0, 0);
+
+    return { start, end };
+  }
+
+  /**
+   * 计算班外时数
+   */
+  private calculateOutsideHours(inTime: Date, outTime: Date, shiftStart: Date, shiftEnd: Date) {
+    let outsideHours = 0;
+
+    // 班前时间
+    if (inTime < shiftStart) {
+      const endBeforeShift = outTime < shiftStart ? outTime : shiftStart;
+      outsideHours += (endBeforeShift.getTime() - inTime.getTime()) / (1000 * 60 * 60);
+    }
+
+    // 班后时间
+    if (outTime > shiftEnd) {
+      const startAfterShift = inTime > shiftEnd ? inTime : shiftEnd;
+      outsideHours += (outTime.getTime() - startAfterShift.getTime()) / (1000 * 60 * 60);
+    }
+
+    return outsideHours;
+  }
+
+  /**
+   * 计算与班次时间的交集
+   */
+  private calculateIntersectionHours(inTime: Date, outTime: Date, shiftStart: Date, shiftEnd: Date) {
+    // 取时间范围的交集
+    const effectiveStart = inTime > shiftStart ? inTime : shiftStart;
+    const effectiveEnd = outTime < shiftEnd ? outTime : shiftEnd;
+
+    if (effectiveStart >= effectiveEnd) {
+      // 没有交集
+      return 0;
+    }
+
+    return (effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60);
+  }
+
+  /**
+   * 检查账户是否匹配
+   * accountLevels 存储的是层级配置的 sort 值，需要转换为 level 值进行比较
+   * sort 值与 level 的对应关系：sort + 1 = level
+   * 例如：sort=0(工厂) → level=1, sort=1(车间) → level=2
+   *
+   * 匹配规则：
+   * 1. 配置了哪些层级，这些层级都必须有值
+   * 2. 账户的组织层级应该等于配置中的最大组织层级
+   *    - 工厂工时[0,6]：只匹配组织层级=1的账户（只到工厂）
+   *    - 车间工时[0,1,6]：只匹配组织层级=2的账户（只到车间）
+   *    - 线体工时[0,1,2,6]：只匹配组织层级=3的账户（只到线体）
+   */
+  private isAccountMatch(account: any, accountLevels: any[]): boolean {
+    // 解析 hierarchyValues，这是一个 JSON 数组，包含所有层级的配置
+    const hierarchyValues = account.hierarchyValues ? JSON.parse(account.hierarchyValues) : [];
+
+    // 如果未配置账户层级，则所有账户都匹配
+    if (accountLevels.length === 0) {
+      return true;
+    }
+
+    // 找出账户中有值的所有层级（组织层级：mappingType为ORG或ORG_TYPE）
+
+    // 找出配置的层级（sortValue转换为level）
+    const configLevels = accountLevels.map((sortValue: number) => sortValue + 1);
+
+    // ✅ 检查1：配置的每个层级是否都有值
+    for (const level of configLevels) {
+      const levelConfig = hierarchyValues.find((hv: any) => hv.level === level);
+      if (!levelConfig || !levelConfig.selectedValue) {
+        console.log(`账户不匹配: accountId=${account.id}, 配置的层级level${level}没有值`);
+        return false;
+      }
+    }
+
+    // ✅ 检查2：账户中不能有配置之外的层级有值（有且仅有）
+    // 找出所有有值的组织层级
+    for (const filledLevel of filledOrgLevels) {
+      if (!configLevels.includes(filledLevel)) {
+        console.log(`账户不匹配: accountId=${account.id}, 账户有配置之外的层级level${filledLevel}, 配置=${configLevels.join(',')}, 账户=${filledOrgLevels.join(',')}`);
+        return false;
+      }
+    }
+
+    return true;
+  }
+}

@@ -188,10 +188,10 @@ const ShiftPropertyConfigPage: React.FC = () => {
   return (
     <div>
       <Card
-        title="班次属性配置"
+        title="属性管理"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新增属性
+            新建
           </Button>
         }
       >

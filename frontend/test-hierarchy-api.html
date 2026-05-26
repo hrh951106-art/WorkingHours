@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>测试层级明细API</title>
+</head>
+<body>
+    <h1>层级明细API测试</h1>
+    <button onclick="testAPI()">测试API</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testAPI() {
+            const resultEl = document.getElementById('result');
+            resultEl.textContent = '正在测试...';
+
+            try {
+                // 尝试不带token的请求（可能会被权限拦截）
+                const response = await fetch('http://localhost:3001/api/account/hierarchy-config/levels/with-details');
+                const data = await response.json();
+
+                resultEl.textContent = 'API返回数据:\n' + JSON.stringify(data, null, 2);
+
+                if (Array.isArray(data) && data.length > 0) {
+                    const firstLevel = data[0];
+                    resultEl.textContent += '\n\n第一个层级:\n' + JSON.stringify(firstLevel, null, 2);
+
+                    if (firstLevel.levelDetails) {
+                        resultEl.textContent += '\n\n第一个层级的明细数量: ' + firstLevel.levelDetails.length;
+                        resultEl.textContent += '\n第一个层级的明细:\n' + JSON.stringify(firstLevel.levelDetails, null, 2);
+                    } else {
+                        resultEl.textContent += '\n\n警告: 第一个层级没有 levelDetails 字段!';
+                    }
+                }
+            } catch (error) {
+                resultEl.textContent = '错误: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

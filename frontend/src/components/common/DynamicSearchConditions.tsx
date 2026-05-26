@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Form, Input, Select, DatePicker, Space, Row, Col, Button } from 'antd';
+import { useEffect, useState, useMemo } from 'react';
+import { Form, Input, Select, TreeSelect, DatePicker, Space, Row, Col, Button } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import request from '@/utils/request';
 import dayjs from 'dayjs';
-import OrganizationTreeSelect from './OrganizationTreeSelect';
 
 interface SearchConditionConfig {
   id?: number;
@@ -44,53 +43,89 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
   const [internalForm] = Form.useForm();
   const activeForm = form || internalForm;
 
-  const { data: searchConfigs = [], isLoading: configsLoading } = useQuery({
+  // 获取统一查询条件配置
+  const { data: unifiedConfigs = [], isLoading: configsLoading } = useQuery({
+    queryKey: ['unifiedSearchConditionConfigs', pageCode],
+    queryFn: async () => {
+      try {
+        const res = await request.get('/hr/unified-search-condition-configs');
+        console.log('=== DynamicSearchConditions 获取配置 ===');
+        console.log('页面代码:', pageCode);
+        console.log('API返回的配置数量:', res?.length || 0);
+
+        // 过滤出适用于当前页面的配置
+        const filtered = (res || []).filter((config: any) => {
+          const applicablePages = config.applicablePages || [];
+          // applicablePages 可能是字符串（需要解析）或数组
+          const pages = typeof applicablePages === 'string'
+            ? JSON.parse(applicablePages)
+            : applicablePages;
+          const matches = pages.includes(pageCode) && config.isEnabled;
+          console.log(`配置 ${config.configCode}: applicablePages=`, pages, 'isEnabled=', config.isEnabled, 'matches=', matches);
+          return matches;
+        });
+
+        console.log('过滤后的配置数量:', filtered.length);
+        console.log('过滤后的配置:', filtered);
+
+        return filtered;
+      } catch (error) {
+        console.error('获取统一查询条件配置失败:', error);
+        return [];
+      }
+    },
+    staleTime: 0, // 立即过期，每次都重新获取
+  });
+
+  // 获取旧的搜索条件配置（作为备用）
+  const { data: legacyConfigs = [] } = useQuery({
     queryKey: ['searchConditionConfigs', pageCode],
     queryFn: async () => {
-      const res = await request.get('/hr/search-condition-configs', {
-        params: { pageCode },
-      });
-
-      // 标准化字段类型
-      const normalizedConfigs = (res || []).map((config: any) => {
-        const fieldType = (config.fieldType || '').toLowerCase().trim();
-        let standardType: 'text' | 'select' | 'date' | 'dateRange' | 'organization' = 'text';
-
-        if (fieldType.includes('select') ||
-            fieldType.includes('lookup') ||
-            fieldType === 'select_single' ||
-            fieldType === 'select_multi') {
-          standardType = 'select';
-        } else if (fieldType.includes('date') && fieldType.includes('range')) {
-          standardType = 'dateRange';
-        } else if (fieldType.includes('date')) {
-          standardType = 'date';
-        } else if (fieldType.includes('organization')) {
-          standardType = 'organization';
-        } else if (['text', 'select', 'date', 'dateRange', 'organization'].includes(fieldType)) {
-          standardType = fieldType as any;
-        }
-
-        return {
-          ...config,
-          fieldType: standardType,
-        };
-      });
-
-      const enabled = normalizedConfigs.filter((c: any) => c.isEnabled);
-      console.log('=== Search Conditions Debug ===');
-      console.log('PageCode:', pageCode);
-      console.log('Raw response:', res);
-      console.log('Normalized configs:', normalizedConfigs);
-      console.log('Enabled configs:', enabled);
-      console.log('Field types:', enabled.map((c: any) => ({
-        fieldCode: c.fieldCode,
-        fieldName: c.fieldName,
-        fieldType: c.fieldType,
-      })));
-      return normalizedConfigs;
+      try {
+        const res = await request.get('/hr/search-condition-configs', {
+          params: { pageCode },
+        });
+        return res || [];
+      } catch (error) {
+        console.error('获取搜索条件配置失败:', error);
+        return [];
+      }
     },
   });
+
+  // 优先使用统一配置，如果没有则使用旧配置
+  // 确保结果是数组
+  const searchConfigs = Array.isArray(unifiedConfigs) && unifiedConfigs.length > 0
+    ? unifiedConfigs
+    : (Array.isArray(legacyConfigs) ? legacyConfigs : []);
+
+  // 获取组织架构数据（用于organization字段）
+  const { data: orgTree = [] } = useQuery({
+    queryKey: ['organizations-tree'],
+    queryFn: async () => {
+      try {
+        const res = await request.get('/hr/organizations/tree');
+        return res || [];
+      } catch (error) {
+        console.error('获取组织架构失败:', error);
+        return [];
+      }
+    },
+    enabled: searchConfigs.some((config: SearchConditionConfig) => config.fieldType === 'organization'),
+  });
+
+  // 将组织架构树转换为 TreeSelect 需要的数据格式
+  const organizationTreeData = useMemo(() => {
+    const convertToTreeData = (nodes: any[]): any[] => {
+      return nodes.map((node) => ({
+        title: node.name,
+        value: node.id,
+        key: node.id,
+        children: node.children && node.children.length > 0 ? convertToTreeData(node.children) : undefined,
+      }));
+    };
+    return convertToTreeData(orgTree);
+  }, [orgTree]);
 
   const { data: dataSources = [] } = useQuery({
     queryKey: ['dataSources'],
@@ -163,52 +198,49 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
       style={{ width: '100%' }}
     >
       <Row gutter={[12, 12]} align="middle" style={{ width: '100%' }}>
-        {/* 固定查询条件（如月份选择器、日期范围选择器） */}
-        {pageCode === 'schedules' && fixedFilters?.dateRange && (
+        {/* 固定查询条件（日期周期选择器） */}
+        {(pageCode === 'schedules' ||
+          pageCode === 'schedule-management' ||
+          pageCode === 'punch-records' ||
+          pageCode === 'punch-results' ||
+          pageCode === 'work-hour-results' ||
+          pageCode === 'workhour-details' ||
+          pageCode === 'work-hour-details') && fixedFilters?.dateRange && (
           <Col style={{ marginBottom: 0 }}>
             <Form.Item
               label="日期范围"
               style={{ marginBottom: 0, marginRight: 0 }}
               labelCol={{ style: { width: 'auto', marginRight: 8 } }}
             >
-              <DatePicker.RangePicker
-                value={fixedFilters.dateRange}
-                onChange={(dates) => onFixedFilterChange?.('dateRange', dates)}
-                style={{ width: 240 }}
-                size="middle"
-                format="YYYY-MM-DD"
-                allowClear={false}
-              />
-            </Form.Item>
-          </Col>
-        )}
-
-        {(pageCode === 'punch-records' || pageCode === 'pair-results' || pageCode === 'work-hour-results' || pageCode === 'workhour-details') && fixedFilters?.dateRange && (
-          <Col style={{ marginBottom: 0 }}>
-            <Form.Item
-              label="日期范围"
-              style={{ marginBottom: 0, marginRight: 0 }}
-              labelCol={{ style: { width: 'auto', marginRight: 8 } }}
-            >
-              <DatePicker.RangePicker
-                value={[fixedFilters.dateRange.start, fixedFilters.dateRange.end]}
-                onChange={(dates) => onFixedFilterChange?.('dateRange', dates)}
-                style={{ width: 240 }}
-                size="middle"
-                format="YYYY-MM-DD"
-                allowClear={false}
-              />
+              <Space>
+                <DatePicker.RangePicker
+                  value={
+                    Array.isArray(fixedFilters.dateRange)
+                      ? fixedFilters.dateRange
+                      : [fixedFilters.dateRange.start, fixedFilters.dateRange.end]
+                  }
+                  onChange={(dates) => {
+                    if (dates && dates[0] && dates[1]) {
+                      onFixedFilterChange?.('dateRange', dates);
+                    }
+                  }}
+                  format="YYYY-MM-DD"
+                  style={{ width: 260 }}
+                  allowClear={false}
+                />
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={() => onSearch?.(activeForm.getFieldsValue())}
+                  loading={loading}
+                >
+                  刷新
+                </Button>
+              </Space>
             </Form.Item>
           </Col>
         )}
 
         {enabledConfigs.map((config: SearchConditionConfig) => {
-          console.log('Rendering field:', {
-            fieldCode: config.fieldCode,
-            fieldName: config.fieldName,
-            fieldType: config.fieldType,
-          });
-
           return (
             <Col key={config.fieldCode} style={{ marginBottom: 0 }}>
               <Form.Item
@@ -251,12 +283,16 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
                   />
                 )}
                 {config.fieldType === 'organization' && (
-                  <OrganizationTreeSelect
+                  <TreeSelect
                     placeholder={`请选择${config.fieldName}`}
                     allowClear
                     size="middle"
-                    multiple
-                    style={{ width: 300 }}
+                    style={{ width: 200 }}
+                    treeData={organizationTreeData}
+                    showSearch
+                    treeNodeFilterProp="title"
+                    treeDefaultExpandAll
+                    treeCheckable={false}
                   />
                 )}
               </Form.Item>

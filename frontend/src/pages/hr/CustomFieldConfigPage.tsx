@@ -182,9 +182,9 @@ const CustomFieldConfigPage: React.FC = () => {
 
   return (
     <div>
-      <Card title="自定义字段配置">
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-          <span>管理所有自定义字段</span>
+      <Card
+        title="自定义字段配置"
+        extra={
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -192,7 +192,8 @@ const CustomFieldConfigPage: React.FC = () => {
           >
             新建自定义字段
           </Button>
-        </div>
+        }
+      >
         <Table
           columns={customFieldColumns}
           dataSource={userCustomFields}

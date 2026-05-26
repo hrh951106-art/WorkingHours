@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>测试 AccountMultiSelect 数据</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        pre { background: #f5f5f5; padding: 10px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <h1>AccountMultiSelect 数据流测试</h1>
+    
+    <div class="section">
+        <h2>1. 测试层级明细 API</h2>
+        <button onclick="testHierarchyAPI()">测试 /account/hierarchy-config/levels/with-details</button>
+        <pre id="hierarchyResult"></pre>
+    </div>
+
+    <div class="section">
+        <h2>2. 测试账户列表 API</h2>
+        <button onclick="testAccountAPI()">测试 /account/accounts</button>
+        <pre id="accountResult"></pre>
+    </div>
+
+    <script>
+        async function testHierarchyAPI() {
+            const resultEl = document.getElementById('hierarchyResult');
+            resultEl.textContent = '正在测试...';
+            
+            try {
+                const response = await fetch('/api/account/hierarchy-config/levels/with-details');
+                const text = await response.text();
+                
+                if (response.ok) {
+                    const data = JSON.parse(text);
+                    resultEl.textContent = '状态: ' + response.status + '\n\n' + 
+                        '返回数据:\n' + JSON.stringify(data, null, 2);
+                        
+                    if (Array.isArray(data)) {
+                        resultEl.textContent += '\n\n层级数量: ' + data.length;
+                        
+                        let totalDetails = 0;
+                        data.forEach((level, index) => {
+                            if (level.levelDetails) {
+                                totalDetails += level.levelDetails.length;
+                                resultEl.textContent += `\n层级 ${index + 1} [${level.name}]: ${level.levelDetails.length} 条明细`;
+                            } else {
+                                resultEl.textContent += `\n层级 ${index + 1} [${level.name}]: 无 levelDetails 字段`;
+                            }
+                        });
+                        
+                        resultEl.textContent += '\n\n总明细数: ' + totalDetails;
+                    }
+                } else {
+                    resultEl.textContent = '错误: ' + response.status + '\n' + text;
+                }
+            } catch (error) {
+                resultEl.textContent = '异常: ' + error.message;
+            }
+        }
+
+        async function testAccountAPI() {
+            const resultEl = document.getElementById('accountResult');
+            resultEl.textContent = '正在测试...';
+            
+            try {
+                const response = await fetch('/api/account/accounts?type=SUB&pageSize=1000');
+                const text = await response.text();
+                
+                if (response.ok) {
+                    const data = JSON.parse(text);
+                    const items = data.items || data;
+                    resultEl.textContent = '状态: ' + response.status + '\n\n' + 
+                        '账户数量: ' + items.length + '\n\n' +
+                        '前5条数据:\n' + JSON.stringify(items.slice(0, 5), null, 2);
+                } else {
+                    resultEl.textContent = '错误: ' + response.status + '\n' + text;
+                }
+            } catch (error) {
+                resultEl.textContent = '异常: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

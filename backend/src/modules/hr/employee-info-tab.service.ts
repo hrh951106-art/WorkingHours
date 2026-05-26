@@ -170,12 +170,12 @@ export class EmployeeInfoTabService {
   }
 
   private enrichFieldWithType(field: any, customFields: any[]) {
-    // 系统内置字段：如果有数据源，使用 SELECT_SINGLE 类型，否则使用 TEXT
+    // 系统内置字段：保留 fieldType，同时设置 type 为 fieldType 的值
+    // 这样前端可以根据 fieldType 来渲染不同类型的字段
     if (field.isSystem) {
-      const hasDataSource = field.dataSource && field.dataSource.options && field.dataSource.options.length > 0;
       const enriched = {
         ...field,
-        type: hasDataSource ? 'SELECT_SINGLE' : 'TEXT',
+        type: field.fieldType, // 使用原始的 fieldType
         dataSource: field.dataSource || null,
       };
 
@@ -185,7 +185,7 @@ export class EmployeeInfoTabService {
         console.log('fieldCode:', enriched.fieldCode);
         console.log('fieldName:', enriched.fieldName);
         console.log('isSystem:', enriched.isSystem);
-        console.log('hasDataSource:', hasDataSource);
+        console.log('fieldType:', enriched.fieldType);
         console.log('type:', enriched.type);
         console.log('dataSource:', enriched.dataSource);
       }
@@ -203,8 +203,11 @@ export class EmployeeInfoTabService {
       };
     }
 
-    // 其他类型字段：直接返回
-    return field;
+    // 其他类型字段：直接返回，并设置 type 为 fieldType
+    return {
+      ...field,
+      type: field.fieldType,
+    };
   }
 
   async getTab(id: number) {

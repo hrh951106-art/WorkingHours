@@ -1,0 +1,1173 @@
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Card, Button, Select, DatePicker, message, Popover, Tag, Modal, Table, Form, TimePicker, Space, Popconfirm } from 'antd';
+import { DownloadOutlined, ImportOutlined, EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { ModernPageLayout } from '@/components/common/ModernPageLayout';
+import request from '@/utils/request';
+import dayjs from 'dayjs';
+import './AttendanceCardPage.css';
+
+const { RangePicker } = DatePicker;
+
+interface AttendanceCardPageProps {}
+
+interface PunchRecord {
+  id: number;
+  punchDate: string;
+  workStartPunchTime: string | null;
+  workEndPunchTime: string | null;
+  status: string;
+  accountId: number;
+  accountName: string;
+  ruleName: string;
+  workStartShiftName?: string;
+  workEndShiftName?: string;
+  scheduleId?: number;
+  schedule?: ScheduleInfo;
+  workStartPunches?: Array<{
+    id: number;
+    punchTime: string;
+    shiftId?: number;
+    shiftName?: string;
+  }>;
+  workEndPunches?: Array<{
+    id: number;
+    punchTime: string;
+    shiftId?: number;
+    shiftName?: string;
+  }>;
+}
+
+interface ScheduleInfo {
+  id: number;
+  shiftId: number;
+  shiftName: string;
+  scheduleDate: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  segments?: ScheduleSegment[];
+}
+
+interface ScheduleSegment {
+  id: number;
+  type: string;  // 后端字段名是type，不是segmentType
+  startTime: string;
+  endTime: string;
+  accountId?: number;
+  account?: {
+    id: number;
+    name: string;
+    namePath?: string;
+  };
+}
+
+interface DatePunchRecord {
+  date: string;
+  weekDay: string;
+  records: PunchRecord[];
+}
+
+interface WorkHourRecord {
+  accountName: string;
+  attendanceCodeName: string;
+  totalHours: number;
+}
+
+interface WorkHourDetail {
+  date: string;
+  calcDate: string;
+  accountName: string;
+  attendanceCodeName: string;
+  startTime?: string;
+  endTime?: string;
+  workHours: number;
+  shiftName?: string;
+}
+
+interface PunchRecord {
+  id: number;
+  punchTime: string;
+  shiftId?: number;
+  shiftName?: string;
+}
+
+interface PunchEditModalProps {
+  visible: boolean;
+  punch: PunchRecord | null;
+  employeeNo: string;
+  punchDate: string;
+  type: 'in' | 'out' | 'supplement';
+  onCancel: () => void;
+  onOk: (data: any) => void;
+}
+
+// 工具函数 - 移到组件外部，避免初始化顺序问题
+const getWeekDay = (date: string) => {
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  return weekdays[dayjs(date).day()];
+};
+
+const getAttendanceStatus = (record: any, schedule?: ScheduleInfo) => {
+  // 检查是否有打卡记录
+  const hasInPunch = !!record.workStartPunchTime;
+  const hasOutPunch = !!record.workEndPunchTime;
+  const hasAnyPunch = hasInPunch || hasOutPunch;
+
+  // 检查是否有排班
+  const hasSchedule = !!schedule;
+
+  // 逻辑：
+  // 1. 有排班 + 无打卡 → 缺卡
+  // 2. 无排班 + 无打卡 → 不显示状态（返回空字符串）
+  // 3. 有排班 + 有打卡 → 正常
+  // 4. 无排班 + 有打卡 → 未排班打卡
+
+  if (hasSchedule && !hasAnyPunch) {
+    return '缺卡';
+  }
+
+  if (!hasSchedule && !hasAnyPunch) {
+    return ''; // 无排班无打卡，不显示状态
+  }
+
+  if (hasSchedule && hasAnyPunch) {
+    // 有排班有打卡，进一步检查是否完整
+    if (!hasInPunch) return '缺上班卡';
+    if (!hasOutPunch) return '缺下班卡';
+    return '正常';
+  }
+
+  if (!hasSchedule && hasAnyPunch) {
+    return '未排班打卡';
+  }
+
+  return '';
+};
+
+// 计算排班的最早和最晚时间
+const getScheduleTimeRange = (schedule: ScheduleInfo) => {
+  if (!schedule.segments || schedule.segments.length === 0) {
+    return {
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+      totalMinutes: 0,
+    };
+  }
+
+  // 获取所有segments的开始和结束时间
+  const times = schedule.segments.map(seg => ({
+    start: seg.startTime,
+    end: seg.endTime,
+  }));
+
+  // 找最早开始时间和最晚结束时间
+  const startTime = times.reduce((min, t) => t.start < min ? t.start : min, times[0].start);
+  const endTime = times.reduce((max, t) => t.end > max ? t.end : max, times[0].end);
+
+  // 计算总时长（分钟）
+  const totalMinutes = schedule.segments.reduce((sum, seg) => {
+    const start = dayjs(`2000-01-01 ${seg.startTime}`);
+    const end = dayjs(`2000-01-01 ${seg.endTime}`);
+    return sum + end.diff(start, 'minute');
+  }, 0);
+
+  return {
+    startTime,
+    endTime,
+    totalMinutes,
+  };
+};
+
+const AttendanceCardPage: React.FC<AttendanceCardPageProps> = () => {
+  // 状态管理
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('');
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+    dayjs().startOf('week'),
+    dayjs().endOf('week'),
+  ]);
+  const [defaultEmployeeSet, setDefaultEmployeeSet] = useState(false);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<WorkHourRecord | null>(null);
+  const [punchEditModalVisible, setPunchEditModalVisible] = useState(false);
+  const [editingPunch, setEditingPunch] = useState<{
+    date: string;
+    type: 'in' | 'out';
+    punchTime?: string;
+  } | null>(null);
+  const [punchForm] = Form.useForm();
+  const queryClient = useQueryClient();
+
+  // 排班详情弹出框内容组件
+  const ScheduleDetailPopover = ({ schedule }: { schedule: ScheduleInfo }) => {
+    const scheduleTimeRange = getScheduleTimeRange(schedule);
+    const totalHours = (scheduleTimeRange.totalMinutes / 60).toFixed(1);
+
+    // 格式化时长显示
+    const formatDuration = (minutes: number) => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      if (hours > 0 && mins > 0) return `${hours}小时${mins}分钟`;
+      if (hours > 0) return `${hours}小时`;
+      return `${mins}分钟`;
+    };
+
+    // 班段类型映射
+    const segmentTypeMap: Record<string, string> = {
+      'NORMAL': '正常',
+      'REST': '休息',
+      'OVERTIME': '加班',
+      'BREAK': '小休',
+    };
+
+    // 获取班段类型显示文本
+    const getSegmentTypeLabel = (type: string) => {
+      return segmentTypeMap[type] || type || '正常';
+    };
+
+    return (
+      <div style={{ minWidth: '320px', maxWidth: '400px' }}>
+        {/* 标题区域 */}
+        <div style={{
+          padding: '12px 12px 8px 12px',
+          borderBottom: '1px solid #e5e7eb',
+          marginBottom: '8px'
+        }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#1f2f4d' }}>
+            {schedule.shiftName}
+          </div>
+          <div style={{ fontSize: '12px', color: '#8c96a8', marginTop: '2px' }}>
+            总时长：{totalHours}小时
+          </div>
+        </div>
+
+        {/* 分段详情 */}
+        <div style={{ padding: '0 12px 12px 12px' }}>
+          {schedule.segments && schedule.segments.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {schedule.segments.map((segment, index) => {
+                const start = dayjs(`2000-01-01 ${segment.startTime}`);
+                const end = dayjs(`2000-01-01 ${segment.endTime}`);
+                const duration = end.diff(start, 'minute');
+                const typeLabel = getSegmentTypeLabel(segment.type || '');
+
+                console.log('Rendering segment:', segment);
+
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* 班段主要信息 */}
+                    <div style={{
+                      padding: '10px 12px',
+                      background: '#f9fafb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                    }}>
+                      {/* 左侧：班段类型标签 */}
+                      <div style={{ minWidth: '80px' }}>
+                        <Tag style={{
+                          fontSize: '12px',
+                          margin: 0,
+                          padding: '2px 8px',
+                          height: 'auto',
+                          lineHeight: '20px',
+                          borderRadius: '3px',
+                          background: segment.type === 'REST' ? 'rgba(250, 173, 20, 0.1)' : 'rgba(24, 144, 255, 0.1)',
+                          color: segment.type === 'REST' ? '#d48806' : '#1890ff',
+                          border: 'none',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {typeLabel}
+                        </Tag>
+                      </div>
+
+                      {/* 中间：开始结束时间 */}
+                      <div style={{ flex: 1, fontSize: '13px', color: '#1f2f4d' }}>
+                        {segment.startTime} - {segment.endTime}
+                      </div>
+
+                      {/* 右侧：时长 */}
+                      <div style={{ minWidth: '70px', textAlign: 'right' }}>
+                        <span style={{ fontSize: '12px', color: '#5a6a87', fontWeight: 500 }}>
+                          {formatDuration(duration)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 如果有转移账户，显示转移信息 */}
+                    {segment.account && (
+                      <div style={{
+                        padding: '8px 12px',
+                        borderTop: '1px solid #e5e7eb',
+                        background: '#fff',
+                        fontSize: '12px',
+                        color: '#5a6a87',
+                      }}>
+                        <div style={{ marginBottom: '4px', fontSize: '11px', color: '#8c96a8' }}>
+                          转移账户：
+                        </div>
+                        <div style={{
+                          padding: '4px 8px',
+                          background: 'rgba(0, 179, 101, 0.05)',
+                          borderRadius: '4px',
+                          color: '#00b365',
+                        }}>
+                          {segment.account.namePath || segment.account.name || '-'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{
+              padding: '12px',
+              textAlign: 'center',
+              color: '#8c96a8',
+              fontSize: '12px'
+            }}>
+              {scheduleTimeRange.startTime} - {scheduleTimeRange.endTime}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // 获取员工列表
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees'],
+    queryFn: () =>
+      request.get('/hr/employees').then((res: any) => res.items || []),
+  });
+
+  // 当员工列表加载后，默认选择第一个员工
+  useEffect(() => {
+    if (employees.length > 0 && !defaultEmployeeSet) {
+      const firstEmployee = employees[0].employeeNo;
+      setSelectedEmployee(firstEmployee);
+      setDefaultEmployeeSet(true);
+      console.log('默认选择第一个员工:', firstEmployee);
+    }
+  }, [employees, defaultEmployeeSet]);
+
+  // 获取考勤打卡收卡结果
+  const { data: punchRecords = [], isLoading: punchLoading } = useQuery({
+    queryKey: ['attendancePunchResults', selectedEmployee, dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')],
+    queryFn: () =>
+      request.get('/punch/attendance-punch/results', {
+        params: {
+          employeeNo: selectedEmployee,
+          startDate: dateRange[0].format('YYYY-MM-DD'),
+          endDate: dateRange[1].format('YYYY-MM-DD'),
+          pageSize: 1000,
+        },
+      }).then((res: any) => {
+        const records = res.items || [];
+        return records.map((record: any) => ({
+          id: record.id,
+          punchDate: dayjs(record.punchDate).format('YYYY-MM-DD'),
+          workStartPunchTime: record.workStartPunchTime ? dayjs(record.workStartPunchTime).format('HH:mm') : null,
+          workEndPunchTime: record.workEndPunchTime ? dayjs(record.workEndPunchTime).format('HH:mm') : null,
+          status: getAttendanceStatus(record),
+          accountId: record.accountId,
+          accountName: record.account?.namePath || record.account?.name || '-',
+          ruleName: record.ruleName || '-',
+          workStartShiftName: record.workStartShiftName,
+          workEndShiftName: record.workEndShiftName,
+          scheduleId: record.workStartShiftId,
+        }));
+      }),
+    enabled: !!selectedEmployee && dateRange.length === 2,
+  });
+
+  // 获取员工排班信息
+  const { data: schedules = [] } = useQuery({
+    queryKey: ['schedules', selectedEmployee, dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')],
+    queryFn: async () => {
+      try {
+        // 先获取员工信息 - 返回格式是 {items: []}
+        const employeeRes: any = await request.get('/hr/employees', {
+          params: { employeeNo: selectedEmployee }
+        });
+        const employeeList = employeeRes.items || [];
+        const employee = employeeList.find((e: any) => e.employeeNo === selectedEmployee);
+
+        console.log('获取到的员工信息:', employee);
+
+        if (!employee || !employee.id) {
+          console.log('员工信息或ID为空, employeeNo:', selectedEmployee);
+          return [];
+        }
+
+        console.log('查询排班, employeeId:', employee.id, '日期范围:', dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD'));
+
+        // 再查询排班
+        const scheduleRes = await request.get('/shift/schedules/calendar', {
+          params: {
+            employeeId: employee.id,
+            startDate: dateRange[0].format('YYYY-MM-DD'),
+            endDate: dateRange[1].format('YYYY-MM-DD'),
+          },
+        });
+
+        console.log('排班查询结果:', scheduleRes);
+
+        // 打印第一个排班的segments信息，用于调试
+        if (scheduleRes && scheduleRes.length > 0) {
+          const firstSchedule = scheduleRes[0];
+          console.log('第一个排班完整数据:', firstSchedule);
+          console.log('第一个排班的shift:', firstSchedule.shift);
+          console.log('第一个排班的segments:', firstSchedule.shift?.segments);
+          if (firstSchedule.segments && firstSchedule.segments.length > 0) {
+            console.log('第一个segment的详细信息:', firstSchedule.segments[0]);
+          }
+        }
+
+        return scheduleRes || [];
+      } catch (error) {
+        console.error('获取排班信息失败:', error);
+        return [];
+      }
+    },
+    enabled: !!selectedEmployee && dateRange.length === 2,
+  });
+
+  // 生成日期范围内的所有日期
+  const generateDateRange = (start: dayjs.Dayjs, end: dayjs.Dayjs): DatePunchRecord[] => {
+    const dates: DatePunchRecord[] = [];
+    let current = start.clone();
+
+    console.log('生成日期范围:', {
+      start: start.format('YYYY-MM-DD'),
+      end: end.format('YYYY-MM-DD'),
+      schedulesCount: schedules.length,
+      punchRecordsCount: punchRecords.length
+    });
+
+    while (current.isBefore(end) || current.isSame(end, 'day')) {
+      const dateStr = current.format('YYYY-MM-DD');
+      // 查找该日期的考勤打卡记录
+      const dayRecords = punchRecords.filter((r) => r.punchDate === dateStr);
+
+      // 查找该日期的排班信息
+      const daySchedule = schedules.find((s: any) => {
+        const scheduleDate = dayjs(s.scheduleDate).format('YYYY-MM-DD');
+        return scheduleDate === dateStr && s.status === 'ACTIVE';
+      });
+
+      console.log(`日期 ${dateStr} 排班信息:`, daySchedule ? '找到' : '未找到', daySchedule);
+      if (daySchedule && daySchedule.segments) {
+        console.log(`日期 ${dateStr} 的segments:`, daySchedule.segments);
+        if (daySchedule.segments.length > 0) {
+          console.log('第一个segment:', daySchedule.segments[0]);
+        }
+      }
+
+      // 将排班信息附加到记录上，并格式化数据
+      const recordsWithSchedule = dayRecords.map(record => {
+        let scheduleInfo = null;
+
+        if (daySchedule && daySchedule.shift) {
+          scheduleInfo = {
+            id: daySchedule.id,
+            shiftId: daySchedule.shift.id,
+            shiftName: daySchedule.shift.name,
+            scheduleDate: daySchedule.scheduleDate,
+            startTime: daySchedule.shift.startTime || '',
+            endTime: daySchedule.shift.endTime || '',
+            status: daySchedule.status,
+            segments: daySchedule.segments || [],
+          };
+        }
+
+        // 根据打卡和排班情况计算状态
+        const status = getAttendanceStatus(record, scheduleInfo);
+
+        return {
+          ...record,
+          schedule: scheduleInfo,
+          status,
+        };
+      });
+
+      // 如果没有打卡记录但有排班信息，创建一个空记录包含排班信息
+      if (dayRecords.length === 0 && daySchedule && daySchedule.shift) {
+        const scheduleInfo = {
+          id: daySchedule.id,
+          shiftId: daySchedule.shift.id,
+          shiftName: daySchedule.shift.name,
+          scheduleDate: daySchedule.scheduleDate,
+          startTime: daySchedule.shift.startTime || '',
+          endTime: daySchedule.shift.endTime || '',
+          status: daySchedule.status,
+          segments: daySchedule.segments || [],
+        };
+
+        // 有排班无打卡，状态为"缺卡"
+        dates.push({
+          date: dateStr,
+          weekDay: getWeekDay(dateStr),
+          records: [{
+            id: 0,
+            punchDate: dateStr,
+            workStartPunchTime: null,
+            workEndPunchTime: null,
+            status: getAttendanceStatus({ workStartPunchTime: null, workEndPunchTime: null }, scheduleInfo),
+            accountId: 0,
+            accountName: '-',
+            ruleName: '-',
+            schedule: scheduleInfo,
+          }],
+        });
+      } else {
+        dates.push({
+          date: dateStr,
+          weekDay: getWeekDay(dateStr),
+          records: recordsWithSchedule,
+        });
+      }
+
+      current = current.add(1, 'day');
+    }
+
+    return dates;
+  };
+
+  const datePunchRecords = generateDateRange(dateRange[0], dateRange[1]);
+
+  // 获取工时结果 - 直接从 WorkHourResult 表获取并汇总
+  const { data: workHourRecords = [], isLoading: workHourLoading } = useQuery({
+    queryKey: ['workHourRecords', selectedEmployee, dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')],
+    queryFn: () =>
+      request.get('/attendance-dashboard/work-hour-results', {
+        params: {
+          employeeNo: selectedEmployee,
+          startDate: dateRange[0].format('YYYY-MM-DD'),
+          endDate: dateRange[1].format('YYYY-MM-DD'),
+        },
+      }).then((res: any) => {
+        const records = res.data || [];
+        return records.map((record: any) => ({
+          accountName: record.accountName || '未分配',
+          attendanceCodeName: record.attendanceCodeName || '未分类',
+          totalHours: record.totalHours || 0,
+        }));
+      }),
+    enabled: !!selectedEmployee && dateRange.length === 2,
+  });
+
+  // 获取工时明细
+  const { data: workHourDetails = [], isLoading: detailsLoading } = useQuery({
+    queryKey: ['workHourDetails', selectedEmployee, dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD'), selectedRecord],
+    queryFn: () =>
+      request.get('/attendance-dashboard/work-hour-details', {
+        params: {
+          employeeNo: selectedEmployee,
+          startDate: dateRange[0].format('YYYY-MM-DD'),
+          endDate: dateRange[1].format('YYYY-MM-DD'),
+          accountName: selectedRecord?.accountName,
+          attendanceCodeName: selectedRecord?.attendanceCodeName,
+        },
+      }).then((res: any) => {
+        const details = res.data || [];
+        return details.map((detail: any) => ({
+          date: detail.date,
+          calcDate: detail.calcDate,
+          accountName: detail.accountName,
+          attendanceCodeName: detail.attendanceCodeName,
+          startTime: detail.startTime,
+          endTime: detail.endTime,
+          workHours: detail.workHours,
+          shiftName: detail.shiftName,
+        }));
+      }),
+    enabled: !!selectedRecord && detailModalVisible,
+  });
+
+  // 获取样式类名
+  const getStatusTagClass = (status: string) => {
+    const statusMap: Record<string, string> = {
+      '正常': 'tag-success',
+      '迟到': 'tag-warning',
+      '早退': 'tag-warning',
+      '缺上班卡': 'tag-error',
+      '缺下班卡': 'tag-error',
+      '缺卡': 'tag-error',
+      '未排班打卡': 'tag-warning',
+      '无打卡': 'tag-default',
+      '异常': 'tag-warning',
+      '休息': 'tag-default',
+    };
+    return statusMap[status] || 'tag-default';
+  };
+
+  const getTimeClass = (time: string | null) => {
+    if (!time) return 'time-disabled';
+    return 'time-success';
+  };
+
+  // 事件处理
+  const handleSearch = () => {
+    console.log('查询:', { selectedEmployee, dateRange });
+    message.success('查询成功');
+  };
+
+  const handleReset = () => {
+    if (employees.length > 0) {
+      setSelectedEmployee(employees[0].employeeNo);
+    }
+    setDateRange([dayjs().startOf('week'), dayjs().endOf('week')]);
+  };
+
+  const handleExport = () => {
+    message.info('导出功能开发中...');
+  };
+
+  const handleImport = () => {
+    message.info('导入功能开发中...');
+  };
+
+  // 查看工时详情
+  const handleViewDetails = (record: WorkHourRecord) => {
+    setSelectedRecord(record);
+    setDetailModalVisible(true);
+  };
+
+  // 关闭详情弹窗
+  const handleCloseDetailModal = () => {
+    setDetailModalVisible(false);
+    setSelectedRecord(null);
+  };
+
+  // 打开打卡编辑弹窗
+  const handleOpenPunchEdit = (date: string, type: 'in' | 'out', punchTime?: string) => {
+    setEditingPunch({ date, type, punchTime });
+    punchForm.setFieldsValue({
+      punchTime: punchTime ? dayjs(punchTime) : dayjs(date + ' 09:00', 'YYYY-MM-DD HH:mm'),
+    });
+    setPunchEditModalVisible(true);
+  };
+
+  // 关闭打卡编辑弹窗
+  const handleClosePunchEditModal = () => {
+    setPunchEditModalVisible(false);
+    setEditingPunch(null);
+    punchForm.resetFields();
+  };
+
+  // 保存打卡记录
+  const handleSavePunch = async (values: any) => {
+    const punchTime = values.punchTime.format('YYYY-MM-DD HH:mm:ss');
+
+    try {
+      if (editingPunch?.punchTime) {
+        // 编辑已有打卡 - 需要找到对应的打卡记录ID
+        const response: any = await request.get('/punch/records', {
+          params: {
+            employeeNo: selectedEmployee,
+            startDate: editingPunch.date,
+            endDate: editingPunch.date,
+            pageSize: 100,
+          },
+        });
+
+        const records = response.items || response.data || [];
+        const existingRecord = records.find((r: any) => {
+          const recordTime = dayjs(r.punchTime).format('YYYY-MM-DD HH:mm');
+          const editTime = dayjs(edittingPunch.punchTime).format('YYYY-MM-DD HH:mm');
+          return recordTime === editTime;
+        });
+
+        if (existingRecord) {
+          await request.put(`/punch/records/${existingRecord.id}`, {
+            punchTime,
+            source: 'MANUAL',
+          });
+          message.success('修改成功，正在重新计算考勤数据...');
+        }
+      } else {
+        // 新增打卡
+        await request.post('/punch/records', {
+          employeeNo: selectedEmployee,
+          punchTime,
+          source: 'MANUAL',
+        });
+        message.success('补卡成功，正在重新计算考勤数据...');
+      }
+
+      handleClosePunchEditModal();
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '操作失败');
+    }
+  };
+
+  const isLoading = punchLoading || workHourLoading;
+
+  return (
+    <ModernPageLayout
+      title="考勤卡"
+      description="查看员工考勤记录与工时结果，支持按员工、日期周期查询"
+      breadcrumb={[
+        { label: '首页', path: '/' },
+        { label: '考勤管理', path: '/attendance' },
+        { label: '考勤卡', path: '/attendance/attendance-card' },
+      ]}
+      stats={[]}
+    >
+      {isLoading && (
+        <div className="loading-container">加载中...</div>
+      )}
+
+      {!isLoading && (
+        <>
+          {/* 打卡记录卡片 */}
+          <div className="attendance-card-container">
+            {/* 筛选区 */}
+            <div className="filter-bar">
+              <div>
+                <span className="filter-label">员工：</span>
+                <Select
+                  showSearch
+                  className="filter-select-antd"
+                  value={selectedEmployee}
+                  onChange={setSelectedEmployee}
+                  placeholder="请选择员工"
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={employees.map((emp: any) => ({
+                    value: emp.employeeNo,
+                    label: `${emp.employeeNo} - ${emp.name}`,
+                  }))}
+                  style={{ minWidth: '200px' }}
+                />
+              </div>
+              <div>
+                <span className="filter-label">日期范围：</span>
+                <RangePicker
+                  value={dateRange}
+                  onChange={(dates) => {
+                    if (dates && dates[0] && dates[1]) {
+                      setDateRange([dates[0], dates[1]]);
+                    }
+                  }}
+                  format="YYYY-MM-DD"
+                  style={{ minWidth: '280px' }}
+                />
+              </div>
+              <button className="btn btn-primary" onClick={handleSearch}>
+                查询
+              </button>
+              <button className="btn btn-text" onClick={handleReset}>
+                重置
+              </button>
+            </div>
+
+            {/* 表格 */}
+            <div className="table-wrapper">
+              <table className="attendance-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '50px' }}>
+                      <input type="checkbox" className="checkbox" />
+                    </th>
+                    <th style={{ width: '15%' }}>考勤日期</th>
+                    <th style={{ width: '20%' }}>排班信息</th>
+                    <th style={{ width: '20%' }} className="align-center">上班打卡</th>
+                    <th style={{ width: '20%' }} className="align-center">下班打卡</th>
+                    <th style={{ width: '15%' }} className="align-center">考勤状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datePunchRecords.map((dateRecord) => {
+                    if (dateRecord.records.length === 0) {
+                      // 没有打卡记录且没有排班的日期，显示一行空数据，状态不显示
+                      return (
+                        <tr key={dateRecord.date}>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <input type="checkbox" className="checkbox" />
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <div className="date-with-weekday-inline">
+                              <span className="date">{dateRecord.date}</span>
+                              <span className="weekday">{dateRecord.weekDay}</span>
+                            </div>
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <span style={{ color: 'var(--color-text-tertiary)' }}>未排班</span>
+                          </td>
+                          <td
+                            className="align-center"
+                            style={{
+                              verticalAlign: 'middle',
+                              cursor: 'pointer',
+                              padding: '8px',
+                              transition: 'background-color 0.2s',
+                            }}
+                            onClick={() => handleOpenPunchEdit(dateRecord.date, 'in')}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <span className="time-disabled">点击补卡</span>
+                          </td>
+                          <td
+                            className="align-center"
+                            style={{
+                              verticalAlign: 'middle',
+                              cursor: 'pointer',
+                              padding: '8px',
+                              transition: 'background-color 0.2s',
+                            }}
+                            onClick={() => handleOpenPunchEdit(dateRecord.date, 'out')}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <span className="time-disabled">点击补卡</span>
+                          </td>
+                          <td className="align-center" style={{ verticalAlign: 'middle' }}>
+                            {/* 无排班无打卡，不显示状态标签 */}
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    // 有打卡记录的日期，显示多行
+                    return dateRecord.records.map((record, index) => {
+                      const schedule = record.schedule;
+                      const scheduleTimeRange = schedule ? getScheduleTimeRange(schedule) : null;
+
+                      return (
+                        <tr key={`${dateRecord.date}-${record.id}`}>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <input type="checkbox" className="checkbox" />
+                          </td>
+                          {index === 0 && (
+                            <>
+                              <td rowSpan={dateRecord.records.length} style={{ verticalAlign: 'middle' }}>
+                                <div className="date-with-weekday-inline">
+                                  <span className="date">{dateRecord.date}</span>
+                                  <span className="weekday">{dateRecord.weekDay}</span>
+                                </div>
+                              </td>
+                              <td rowSpan={dateRecord.records.length} style={{ verticalAlign: 'middle' }}>
+                                {schedule ? (
+                                  <Popover
+                                    content={<ScheduleDetailPopover schedule={schedule} />}
+                                    trigger="hover"
+                                    placement="left"
+                                    overlayStyle={{ padding: 0 }}
+                                  >
+                                    <div style={{ cursor: 'pointer' }}>
+                                      <div style={{ fontWeight: 500 }}>
+                                        {schedule.shiftName}
+                                      </div>
+                                      <div style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>
+                                        {scheduleTimeRange?.startTime} - {scheduleTimeRange?.endTime}
+                                      </div>
+                                    </div>
+                                  </Popover>
+                                ) : (
+                                  <span style={{ color: 'var(--color-text-tertiary)' }}>未排班</span>
+                                )}
+                              </td>
+                            </>
+                          )}
+                          <td
+                            className="align-center"
+                            style={{
+                              verticalAlign: 'middle',
+                              cursor: 'pointer',
+                              padding: '8px',
+                              transition: 'background-color 0.2s',
+                            }}
+                            onClick={() => handleOpenPunchEdit(dateRecord.date, 'in', record.workStartPunchTime || undefined)}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <span className={getTimeClass(record.workStartPunchTime)}>
+                              {record.workStartPunchTime || '-'}
+                            </span>
+                          </td>
+                          <td
+                            className="align-center"
+                            style={{
+                              verticalAlign: 'middle',
+                              cursor: 'pointer',
+                              padding: '8px',
+                              transition: 'background-color 0.2s',
+                            }}
+                            onClick={() => handleOpenPunchEdit(dateRecord.date, 'out', record.workEndPunchTime || undefined)}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <span className={getTimeClass(record.workEndPunchTime)}>
+                              {record.workEndPunchTime || '-'}
+                            </span>
+                          </td>
+                          <td className="align-center" style={{ verticalAlign: 'middle' }}>
+                            {record.status && (
+                              <span className={`tag ${getStatusTagClass(record.status)}`}>
+                                {record.status}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 工时结果卡片 */}
+          <div className="attendance-card-container">
+            {/* 表格 */}
+            <div className="table-wrapper table-wrapper-workhour">
+              <table className="attendance-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '35%' }}>劳动力账户</th>
+                    <th style={{ width: '35%' }}>出勤代码</th>
+                    <th className="align-right" style={{ width: '20%' }}>工时（小时）</th>
+                    <th style={{ width: '10%' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workHourRecords.map((record, index) => (
+                    <tr key={index}>
+                      <td>{record.accountName}</td>
+                      <td>{record.attendanceCodeName}</td>
+                      <td className="align-right">
+                        {record.totalHours > 0 ? record.totalHours.toFixed(2) : '-'}
+                      </td>
+                      <td>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EyeOutlined />}
+                          onClick={() => handleViewDetails(record)}
+                        >
+                          详情
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {workHourRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="align-center">
+                        暂无数据
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 工时详情弹窗 */}
+          <Modal
+            title={`工时明细 - ${selectedRecord?.accountName} / ${selectedRecord?.attendanceCodeName}`}
+            open={detailModalVisible}
+            onCancel={handleCloseDetailModal}
+            footer={null}
+            width={800}
+          >
+            <Table
+              columns={[
+                {
+                  title: '日期',
+                  dataIndex: 'date',
+                  key: 'date',
+                  width: 150,
+                },
+                {
+                  title: '工作时段',
+                  key: 'workTime',
+                  width: 300,
+                  render: (_, record) => {
+                    if (record.startTime && record.endTime) {
+                      // 格式化时间：将 UTC 时间转换为东8区时间，然后提取 HH:mm
+                      const formatTime = (timeStr: string) => {
+                        // 创建 Date 对象（UTC 时间）
+                        const date = new Date(timeStr);
+                        // 转换为东8区时间（UTC+8）
+                        const offsetDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+                        // 提取 HH:mm
+                        const hours = String(offsetDate.getUTCHours()).padStart(2, '0');
+                        const minutes = String(offsetDate.getUTCMinutes()).padStart(2, '0');
+                        return `${hours}:${minutes}`;
+                      };
+                      return `${formatTime(record.startTime)} - ${formatTime(record.endTime)}`;
+                    }
+                    return '-';
+                  },
+                },
+                {
+                  title: '工时（小时）',
+                  dataIndex: 'workHours',
+                  key: 'workHours',
+                  width: 150,
+                  align: 'right' as const,
+                  render: (hours) => hours > 0 ? hours.toFixed(2) : '-',
+                },
+              ]}
+              dataSource={workHourDetails}
+              loading={detailsLoading}
+              rowKey="date"
+              pagination={false}
+              scroll={{ y: 400 }}
+            />
+          </Modal>
+
+          {/* 打卡管理弹窗 */}
+          <Modal
+            title={`打卡记录管理 - ${selectedPunchDate}`}
+            open={punchManageModalVisible}
+            onCancel={handleClosePunchManageModal}
+            footer={null}
+            width={900}
+          >
+            <div style={{ marginBottom: 16 }}>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  punchForm.setFieldsValue({
+                    punchTime: dayjs(selectedPunchDate + ' 09:00', 'YYYY-MM-DD HH:mm'),
+                  });
+                }}
+                style={{ marginBottom: 16 }}
+              >
+                新增打卡
+              </Button>
+            </div>
+
+            {/* 新增/编辑表单 */}
+            <Form
+              form={punchForm}
+              layout="inline"
+              onFinish={(values) => {
+                createPunchMutation.mutate({
+                  punchTime: values.punchTime.format('YYYY-MM-DD HH:mm:ss'),
+                });
+              }}
+              style={{ marginBottom: 16, padding: '16px', background: '#f5f5f5', borderRadius: '8px' }}
+            >
+              <Form.Item
+                name="punchTime"
+                rules={[{ required: true, message: '请选择打卡时间' }]}
+                style={{ flex: 1, marginRight: 8 }}
+              >
+                <DatePicker
+                  showTime
+                  format="YYYY-MM-DD HH:mm"
+                  style={{ width: '100%' }}
+                  placeholder="请选择打卡时间"
+                />
+              </Form.Item>
+              <Form.Item>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={createPunchMutation.isPending}
+                >
+                  保存
+                </Button>
+              </Form.Item>
+            </Form>
+
+            {/* 打卡记录列表 */}
+            <Table
+              columns={[
+                {
+                  title: '序号',
+                  key: 'index',
+                  width: 60,
+                  render: (_, __, index) => index + 1,
+                },
+                {
+                  title: '打卡时间',
+                  dataIndex: 'punchTime',
+                  key: 'punchTime',
+                  render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
+                },
+                {
+                  title: '来源',
+                  dataIndex: 'source',
+                  key: 'source',
+                  width: 100,
+                  render: (source: string) => {
+                    const sourceMap: Record<string, string> = {
+                      'MACHINE': '设备',
+                      'MANUAL': '手动',
+                      'IMPORT': '导入',
+                    };
+                    return sourceMap[source] || source || '-';
+                  },
+                },
+                {
+                  title: '操作',
+                  key: 'action',
+                  width: 150,
+                  render: (_, record: any) => (
+                    <Space>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          punchForm.setFieldsValue({
+                            punchTime: dayjs(record.punchTime),
+                          });
+                        }}
+                      >
+                        编辑
+                      </Button>
+                      <Popconfirm
+                        title="确认删除"
+                        description="确定要删除这条打卡记录吗？"
+                        onConfirm={() => deletePunchMutation.mutate(record.id)}
+                        okText="确定"
+                        cancelText="取消"
+                      >
+                        <Button
+                          type="link"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                        >
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </Space>
+                  ),
+                },
+              ]}
+              dataSource={dayPunchRecords}
+              loading={dayPunchesLoading}
+              rowKey="id"
+              pagination={false}
+              scroll={{ y: 400 }}
+            />
+          </Modal>
+
+        </>
+      )}
+    </ModernPageLayout>
+  );
+};
+
+export default AttendanceCardPage;

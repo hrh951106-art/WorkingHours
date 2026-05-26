@@ -78,8 +78,8 @@ const DashboardPage: React.FC = () => {
       ],
     },
     {
-      title: '打卡管理',
-      icon: <FileTextOutlined />,
+      title: '考勤管理',
+      icon: <ClockCircleOutlined />,
       color: '#fa8c16',
       items: [
         {
@@ -96,13 +96,6 @@ const DashboardPage: React.FC = () => {
           path: '/attendance/attendance-card',
           description: '查看员工排班与打卡记录',
         },
-      ],
-    },
-    {
-      title: '排班管理',
-      icon: <CalendarOutlined />,
-      color: '#13c2c2',
-      items: [
         {
           title: '排班管理',
           icon: <CalendarOutlined />,
@@ -113,9 +106,9 @@ const DashboardPage: React.FC = () => {
       ],
     },
     {
-      title: '考勤管理',
-      icon: <ClockCircleOutlined />,
-      color: '#722ed1',
+      title: '工时管理',
+      icon: <AccountBookOutlined />,
+      color: '#00B365',
       items: [
         {
           title: '工时明细管理',
@@ -124,13 +117,6 @@ const DashboardPage: React.FC = () => {
           path: '/attendance/workhour-details',
           description: '查看工时明细',
         },
-      ],
-    },
-    {
-      title: '分摊管理',
-      icon: <AccountBookOutlined />,
-      color: '#00B365',
-      items: [
         {
           title: '产量记录',
           icon: <TeamOutlined />,
@@ -169,59 +155,24 @@ const DashboardPage: React.FC = () => {
       ],
     },
     {
-      title: '账户管理',
-      icon: <AccountBookOutlined />,
-      color: '#1890ff',
-      items: [
-        {
-          title: '账户管理',
-          icon: <AccountBookOutlined />,
-          color: '#1890ff',
-          path: '/account/accounts',
-          description: '管理劳动力账户',
-        },
-        {
-          title: '层级配置',
-          icon: <BranchesOutlined />,
-          color: '#13c2c2',
-          path: '/account/hierarchy-levels',
-          description: '配置账户层级',
-        },
-      ],
-    },
-    {
-      title: '系统设置',
-      icon: <SettingOutlined />,
-      color: '#595959',
-      items: [
-        {
-          title: '系统设置',
-          icon: <SettingOutlined />,
-          color: '#595959',
-          path: '/system/settings',
-          description: '系统参数配置',
-        },
-        {
-          title: '菜单管理',
-          icon: <FundProjectionScreenOutlined />,
-          color: '#1890ff',
-          path: '/system/menus',
-          description: '管理菜单配置',
-        },
-        {
-          title: '角色权限',
-          icon: <AuditOutlined />,
-          color: '#722ed1',
-          path: '/system/roles',
-          description: '管理角色和权限',
-        },
-      ],
-    },
-    {
-      title: '流程审批',
+      title: '申请与审批',
       icon: <CheckSquareOutlined />,
       color: '#52c41a',
       items: [
+        {
+          title: '支援申请',
+          icon: <CustomerServiceOutlined />,
+          color: '#eb2f96',
+          path: '/support/create',
+          description: '提交支援申请',
+        },
+        {
+          title: '工时报工',
+          icon: <FileSearchOutlined />,
+          color: '#faad14',
+          path: '/labor-hour-report/create',
+          description: '提交工时报工',
+        },
         {
           title: '审批流程',
           icon: <CheckSquareOutlined />,
@@ -235,34 +186,6 @@ const DashboardPage: React.FC = () => {
           color: '#1890ff',
           path: '/approval/my-requests',
           description: '查看我的申请',
-        },
-      ],
-    },
-    {
-      title: '工作流管理',
-      icon: <BranchesOutlined />,
-      color: '#fa8c16',
-      items: [
-        {
-          title: '工作流管理',
-          icon: <BranchesOutlined />,
-          color: '#fa8c16',
-          path: '/workflow/definitions',
-          description: '管理工作流定义',
-        },
-      ],
-    },
-    {
-      title: '服务台',
-      icon: <CustomerServiceOutlined />,
-      color: '#eb2f96',
-      items: [
-        {
-          title: '服务台',
-          icon: <CustomerServiceOutlined />,
-          color: '#eb2f96',
-          path: '/support/requests',
-          description: '提交和查看服务请求',
         },
       ],
     },
@@ -291,62 +214,6 @@ const DashboardPage: React.FC = () => {
           color: '#1890ff',
           path: '/bi-report/reports',
           description: '创建BI报表',
-        },
-      ],
-    },
-    {
-      title: '工时报表',
-      icon: <BarChartOutlined />,
-      color: '#faad14',
-      items: [
-        {
-          title: '工时报表',
-          icon: <FileSearchOutlined />,
-          color: '#faad14',
-          path: '/labor-hour-report/reports',
-          description: '查看工时统计报表',
-        },
-      ],
-    },
-    {
-      title: '表单申请',
-      icon: <FileAddOutlined />,
-      color: '#f5222d',
-      items: [
-        {
-          title: '员工创建',
-          icon: <UserOutlined />,
-          color: '#52c41a',
-          path: '/hr/employee-create',
-          description: '创建新员工',
-        },
-        {
-          title: '请假申请',
-          icon: <FileAddOutlined />,
-          color: '#1890ff',
-          path: '/approval/leave-request',
-          description: '提交请假申请',
-        },
-        {
-          title: '加班申请',
-          icon: <ClockCircleOutlined />,
-          color: '#fa8c16',
-          path: '/approval/overtime-request',
-          description: '提交加班申请',
-        },
-        {
-          title: '补卡申请',
-          icon: <FileTextOutlined />,
-          color: '#722ed1',
-          path: '/approval/punch-supplement',
-          description: '提交补卡申请',
-        },
-        {
-          title: '服务请求',
-          icon: <CustomerServiceOutlined />,
-          color: '#eb2f96',
-          path: '/support/create',
-          description: '提交服务请求',
         },
       ],
     },

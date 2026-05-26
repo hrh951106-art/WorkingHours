@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Table,
@@ -7,10 +7,7 @@ import {
   DatePicker,
   Button,
   Space,
-  Row,
-  Col,
   Card as AntCard,
-  Statistic,
   Input,
   Tag,
 } from 'antd';
@@ -63,6 +60,24 @@ interface AllocationResult {
     configCode: string;
     configName: string;
   };
+  rule?: {
+    ruleName: string;
+  };
+}
+
+// 汇总数据结构
+interface SummaryItem {
+  batchNo: string;
+  recordDate: string;
+  sourceEmployeeNo: string;
+  sourceEmployeeName: string;
+  sourceAccountId: number | null;
+  sourceAccountName: string | null;
+  sourceHours: number;
+  allocationBasis: string;
+  configName: string;
+  ruleName: string;
+  details: AllocationResult[];
 }
 
 const AllocationResultPage: React.FC = () => {
@@ -106,23 +121,68 @@ const AllocationResultPage: React.FC = () => {
     }
   }, [location.state, form, autoSearched]);
 
+  // 判断是否为挣得工时结果
+  const isEarnedHours = location.state?.allocationType === 'earned';
+
   // 获取结果列表
   const { data: resultsData, isLoading, refetch } = useQuery({
     queryKey: ['allocationResults', page, pageSize, searchParams],
-    queryFn: () =>
-      request.get('/allocation/results', {
+    queryFn: () => {
+      const endpoint = isEarnedHours
+        ? '/earned-hours-allocation/results'
+        : '/allocation/results';
+
+      return request.get(endpoint, {
         params: { page, pageSize, ...searchParams },
-      }).then((res: any) => res),
+      }).then((res: any) => res);
+    },
   });
 
   // 获取结果汇总
   const { data: summaryData } = useQuery({
     queryKey: ['allocationResultsSummary', searchParams],
-    queryFn: () =>
-      request.get('/allocation/results/summary', {
+    queryFn: () => {
+      const endpoint = isEarnedHours
+        ? '/earned-hours-allocation/results/summary'
+        : '/allocation/results/summary';
+
+      return request.get(endpoint, {
         params: searchParams,
-      }).then((res: any) => res),
+      }).then((res: any) => res);
+    },
   });
+
+  // 对结果进行汇总（按批次+日期+员工）
+  const summaryList = useMemo(() => {
+    if (!resultsData?.items || resultsData.items.length === 0) return [];
+
+    const map = new Map<string, SummaryItem>();
+
+    resultsData.items.forEach((item: AllocationResult) => {
+      const key = `${item.batchNo}_${item.recordDate}_${item.sourceEmployeeNo}_${item.sourceAccountId}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          batchNo: item.batchNo,
+          recordDate: item.recordDate,
+          sourceEmployeeNo: item.sourceEmployeeNo || '-',
+          sourceEmployeeName: item.sourceEmployeeName || '-',
+          sourceAccountId: item.sourceAccountId,
+          sourceAccountName: item.sourceAccountName,
+          sourceHours: item.sourceHours,
+          allocationBasis: item.allocationBasis,
+          configName: item.config?.configName || '-',
+          ruleName: item.rule?.ruleName || '-',
+          details: [item],
+        });
+      } else {
+        const existing = map.get(key)!;
+        existing.details.push(item);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [resultsData?.items]);
 
   const handleSearch = async () => {
     try {
@@ -157,15 +217,6 @@ const AllocationResultPage: React.FC = () => {
     console.log('导出功能待实现');
   };
 
-  const dimensionTypeMap: Record<string, string> = {
-    LINE: '产线',
-    WORKSHOP: '车间',
-    TEAM: '班组',
-    WORK_CENTER: '工作中心',
-    ACCOUNT: '账户',
-    COST_CENTER: '成本中心',
-  };
-
   const allocationBasisMap: Record<string, string> = {
     ACTUAL_HOURS: '实际工时',
     STD_HOURS: '标准工时',
@@ -176,12 +227,136 @@ const AllocationResultPage: React.FC = () => {
     FIXED_VALUE: '固定值',
   };
 
-  const columns = [
+  // 汇总列表列定义
+  const summaryColumns = [
     {
       title: '批次号',
       dataIndex: 'batchNo',
       key: 'batchNo',
-      width: 160,
+      width: 180,
+      fixed: 'left' as const,
+      render: (batchNo: string) => (
+        <Tag color="blue" style={{ fontFamily: 'monospace' }}>
+          {batchNo}
+        </Tag>
+      ),
+    },
+    {
+      title: '分摊规则',
+      dataIndex: 'ruleName',
+      key: 'ruleName',
+      width: 150,
+      ellipsis: true,
+    },
+    {
+      title: '分摊日期',
+      dataIndex: 'recordDate',
+      key: 'recordDate',
+      width: 120,
+      render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
+    },
+    {
+      title: '工号',
+      dataIndex: 'sourceEmployeeNo',
+      key: 'sourceEmployeeNo',
+      width: 100,
+      render: (no: string) => no || '-',
+    },
+    {
+      title: '姓名',
+      dataIndex: 'sourceEmployeeName',
+      key: 'sourceEmployeeName',
+      width: 100,
+      render: (name: string) => (
+        <Space>
+          <UserOutlined />
+          {name || '-'}
+        </Space>
+      ),
+    },
+    {
+      title: '待分摊工时',
+      dataIndex: 'sourceHours',
+      key: 'sourceHours',
+      width: 120,
+      align: 'right' as const,
+      render: (hours: number) => <strong>{hours.toFixed(2)}</strong>,
+    },
+    {
+      title: '劳动力账户',
+      dataIndex: 'sourceAccountName',
+      key: 'sourceAccountName',
+      width: 200,
+      ellipsis: true,
+      render: (name: string) => (
+        <Space>
+          <BankOutlined />
+          {name || '-'}
+        </Space>
+      ),
+    },
+    {
+      title: '分摊方式',
+      dataIndex: 'allocationBasis',
+      key: 'allocationBasis',
+      width: 120,
+      render: (basis: string) => allocationBasisMap[basis] || basis,
+    },
+  ];
+
+  // 明细列表列定义
+  const detailColumns = [
+    {
+      title: '分摊目标',
+      dataIndex: 'targetName',
+      key: 'targetName',
+      width: 150,
+    },
+    {
+      title: '目标账户',
+      dataIndex: 'targetAccountName',
+      key: 'targetAccountName',
+      width: 200,
+      ellipsis: true,
+      render: (name: string, record: AllocationResult) => {
+        if (!name && !record.targetAccountId) return '-';
+        if (!name) return <Tag color="green">账户ID: {record.targetAccountId}</Tag>;
+        return <Tag color="green">{name}</Tag>;
+      },
+    },
+    {
+      title: '分摊依据值',
+      dataIndex: 'basisValue',
+      key: 'basisValue',
+      width: 100,
+      align: 'right' as const,
+      render: (value: number) => value.toFixed(2),
+    },
+    {
+      title: '分摊比例',
+      dataIndex: 'allocationRatio',
+      key: 'allocationRatio',
+      width: 100,
+      align: 'right' as const,
+      render: (ratio: number) => `${(ratio * 100).toFixed(2)}%`,
+    },
+    {
+      title: '分摊工时',
+      dataIndex: 'allocatedHours',
+      key: 'allocatedHours',
+      width: 100,
+      align: 'right' as const,
+      render: (hours: number) => <strong style={{ color: '#1890ff' }}>{hours.toFixed(2)}</strong>,
+    },
+  ];
+
+  // 挣得工时分摊结果列定义（保持原有结构）
+  const earnedHoursColumns = [
+    {
+      title: '批次号',
+      dataIndex: 'batchNo',
+      key: 'batchNo',
+      width: 180,
       fixed: 'left' as const,
       render: (batchNo: string) => (
         <Tag color="blue" style={{ fontFamily: 'monospace' }}>
@@ -197,169 +372,85 @@ const AllocationResultPage: React.FC = () => {
       render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
     },
     {
-      title: '源员工信息',
+      title: '产品信息',
       children: [
         {
-          title: '工号',
-          dataIndex: 'sourceEmployeeNo',
-          key: 'sourceEmployeeNo',
-          width: 100,
-          render: (no: string | null) => no || '-',
+          title: '产品名称',
+          dataIndex: 'sourceProductName',
+          key: 'sourceProductName',
+          width: 120,
         },
         {
-          title: '姓名',
-          dataIndex: 'sourceEmployeeName',
-          key: 'sourceEmployeeName',
-          width: 100,
-          render: (name: string | null) => (
-            <Space>
-              <UserOutlined />
-              {name || '-'}
-            </Space>
-          ),
-        },
-      ],
-    },
-    {
-      title: '源工时详情',
-      children: [
-        {
-          title: '日期',
-          dataIndex: 'sourceCalcResult',
-          key: 'sourceDate',
-          width: 110,
-          render: (calcResult: any) => {
-            if (!calcResult || !calcResult.calcDate) return '-';
-            return dayjs(calcResult.calcDate).format('YYYY-MM-DD');
-          },
-        },
-        {
-          title: '班次',
-          dataIndex: 'sourceCalcResult',
-          key: 'sourceShift',
-          width: 100,
-          render: (calcResult: any) => {
-            if (!calcResult) return '-';
-            return calcResult.shiftName || `班次${calcResult.shiftId}`;
-          },
-        },
-      ],
-    },
-    {
-      title: '源工时信息',
-      children: [
-        {
-          title: '出勤代码',
-          dataIndex: 'attendanceCode',
-          key: 'attendanceCode',
-          width: 100,
-          render: (code: string | null) => code || '-',
-        },
-        {
-          title: '源账户',
-          dataIndex: 'sourceAccountName',
-          key: 'sourceAccountName',
-          width: 150,
-          ellipsis: true,
-          render: (name: string | null) => (
-            <Space>
-              <BankOutlined />
-              {name || '-'}
-            </Space>
-          ),
-        },
-        {
-          title: '源工时',
-          dataIndex: 'sourceHours',
-          key: 'sourceHours',
+          title: '产量',
+          dataIndex: 'actualQty',
+          key: 'actualQty',
           width: 90,
           align: 'right' as const,
-          render: (hours: number) => hours.toFixed(2),
+          render: (qty: number) => qty?.toFixed(0) || '-',
         },
       ],
     },
     {
-      title: '分摊目标',
-      children: [
-        {
-          title: '类型',
-          dataIndex: 'targetType',
-          key: 'targetType',
-          width: 90,
-          render: (type: string) => dimensionTypeMap[type] || type,
-        },
-        {
-          title: '对象名称',
-          dataIndex: 'targetName',
-          key: 'targetName',
-          width: 120,
-          ellipsis: true,
-        },
-        {
-          title: '目标账户',
-          dataIndex: 'targetAccountName',
-          key: 'targetAccountName',
-          width: 200,
-          ellipsis: true,
-          render: (accountName: string | null, record: AllocationResult) => {
-            if (!accountName && !record.targetAccountId) return '-';
-            if (!accountName) return <Tag color="green">账户ID: {record.targetAccountId}</Tag>;
-            return <Tag color="green">{accountName}</Tag>;
-          },
-        },
-      ],
+      title: '分摊对象',
+      dataIndex: 'targetName',
+      key: 'targetName',
+      width: 120,
+      render: (name: string) => (
+        <Space>
+          <UserOutlined />
+          {name}
+        </Space>
+      ),
     },
     {
       title: '分摊依据',
       children: [
         {
-          title: '依据类型',
+          title: '类型',
           dataIndex: 'allocationBasis',
           key: 'allocationBasis',
-          width: 120,
-          render: (basis: string) => allocationBasisMap[basis] || basis,
+          width: 100,
+          render: (basis: string) => {
+            const map: Record<string, string> = {
+              ACTUAL_HOURS: '实际工时',
+              AVERAGE: '平均分摊',
+            };
+            return map[basis] || basis;
+          },
         },
         {
-          title: '依据值',
+          title: '工时',
           dataIndex: 'basisValue',
           key: 'basisValue',
           width: 90,
           align: 'right' as const,
-          render: (value: number) => value.toFixed(2),
+          render: (value: number, record: any) => record.workHours?.toFixed(2) || value?.toFixed(2) || '-',
         },
         {
-          title: '权重值',
-          dataIndex: 'weightValue',
-          key: 'weightValue',
-          width: 90,
-          align: 'right' as const,
-          render: (value: number) => value.toFixed(2),
-        },
-        {
-          title: '分摊比例',
+          title: '比例',
           dataIndex: 'allocationRatio',
           key: 'allocationRatio',
-          width: 100,
+          width: 90,
           align: 'right' as const,
-          render: (ratio: number) => `${(ratio * 100).toFixed(2)}%`,
+          render: (ratio: number) => ratio ? `${(ratio * 100).toFixed(2)}%` : '-',
         },
       ],
     },
     {
-      title: '分摊工时',
+      title: '分得工时',
       dataIndex: 'allocatedHours',
       key: 'allocatedHours',
       width: 100,
       fixed: 'right' as const,
       align: 'right' as const,
-      render: (hours: number) => <strong style={{ color: '#1890ff' }}>{hours.toFixed(2)}</strong>,
+      render: (hours: number) => <strong style={{ color: '#52c41a' }}>{hours?.toFixed(2) || '-'}</strong>,
     },
     {
       title: '计算时间',
       dataIndex: 'calcTime',
       key: 'calcTime',
       width: 160,
-      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
+      render: (time: string) => time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-',
     },
   ];
 
@@ -402,58 +493,42 @@ const AllocationResultPage: React.FC = () => {
           </Form.Item>
         </Form>
 
-        {summaryData && (
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={6}>
-              <Statistic
-                title="源工时总计"
-                value={summaryData.total?.sourceHours || 0}
-                precision={2}
-                suffix="小时"
-              />
-            </Col>
-            <Col span={6}>
-              <Statistic
-                title="分摊工时总计"
-                value={summaryData.total?.allocatedHours || 0}
-                precision={2}
-                suffix="小时"
-              />
-            </Col>
-            <Col span={6}>
-              <Statistic
-                title="分摊记录数"
-                value={summaryData.total?.recordCount || 0}
-                suffix="条"
-              />
-            </Col>
-            <Col span={6}>
-              <Statistic
-                title="涉及对象数"
-                value={summaryData.byTarget?.length || 0}
-                suffix="个"
-              />
-            </Col>
-          </Row>
-        )}
-
         <Table
-          columns={columns}
-          dataSource={resultsData?.items || []}
+          columns={isEarnedHours ? earnedHoursColumns : summaryColumns}
+          dataSource={isEarnedHours ? resultsData?.items || [] : summaryList}
           loading={isLoading}
-          rowKey="id"
-          scroll={{ x: 2400 }}
+          rowKey={isEarnedHours ? 'id' : (record) => `${record.batchNo}_${record.recordDate}_${record.sourceEmployeeNo}_${record.sourceAccountId}`}
+          scroll={{ x: isEarnedHours ? 1500 : 1200 }}
           pagination={{
             current: page,
             pageSize,
-            total: resultsData?.total || 0,
+            total: isEarnedHours ? (resultsData?.total || 0) : (summaryList.length || 0),
             showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条`,
+            showTotal: (total) => `共 ${total} 条记录`,
             onChange: (newPage, newPageSize) => {
               setPage(newPage);
               setPageSize(newPageSize || 10);
             },
           }}
+          expandable={
+            !isEarnedHours
+              ? {
+                  expandedRowRender: (record: SummaryItem) => (
+                    <div style={{ margin: -16, padding: 16, backgroundColor: '#fafafa' }}>
+                      <Table
+                        columns={detailColumns}
+                        dataSource={record.details}
+                        pagination={false}
+                        rowKey="id"
+                        size="small"
+                        title={() => <strong>分摊明细 ({record.details.length} 条)</strong>}
+                      />
+                    </div>
+                  ),
+                  expandRowByClick: true,
+                }
+              : undefined
+          }
         />
       </AntCard>
     </div>

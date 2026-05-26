@@ -13,7 +13,10 @@ import {
   Spin,
   Empty,
   Checkbox,
+  DatePicker,
 } from 'antd';
+
+const { RangePicker } = DatePicker;
 import { PlusOutlined, MinusCircleOutlined, LoadingOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import request from '@/utils/request';
@@ -21,9 +24,9 @@ import request from '@/utils/request';
 interface FieldCondition {
   fieldCode: string;
   fieldName: string;
-  fieldType: 'organization' | 'select' | 'text' | 'number';
-  operator: 'eq' | 'ne' | 'contains' | 'notContains' | 'gt' | 'lt' | 'in' | 'notIn';
-  value: string | number | Array<string | number>;  // 支持字符串和数字类型
+  fieldType: 'organization' | 'select' | 'text' | 'number' | 'date' | 'dateRange';
+  operator: 'eq' | 'ne' | 'contains' | 'notContains' | 'gt' | 'lt' | 'in' | 'notIn' | 'between';
+  value: string | number | Array<string | number> | any;  // 支持多种类型
 }
 
 interface FieldGroup {
@@ -46,6 +49,7 @@ const operatorOptions = [
   { label: '小于', value: 'lt' },
   { label: '属于', value: 'in' },
   { label: '不属于', value: 'notIn' },
+  { label: '日期区间', value: 'between' },
 ];
 
 // 内置字段定义
@@ -75,11 +79,6 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
   onChange,
   disabled = false,
 }) => {
-  console.log('EmployeeFieldFilter - 组件渲染，接收到的value:', JSON.stringify(value, null, 2));
-  console.log('EmployeeFieldFilter - value类型:', typeof value);
-  console.log('EmployeeFieldFilter - value是否为数组:', Array.isArray(value));
-  console.log('EmployeeFieldFilter - value长度:', value.length);
-
   // 简化为只处理单个条件组的情况
   const [conditions, setConditions] = useState<FieldCondition[]>(
     value.length > 0 && value[0]?.conditions ? value[0].conditions : []
@@ -87,20 +86,11 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
 
   // 监听外部value的变化，更新内部状态
   useEffect(() => {
-    console.log('EmployeeFieldFilter - useEffect触发，value:', JSON.stringify(value, null, 2));
-
     const newConditions = value.length > 0 && value[0]?.conditions ? value[0].conditions : [];
-    console.log('EmployeeFieldFilter - 外部value变化:', value);
-    console.log('EmployeeFieldFilter - 新的conditions:', JSON.stringify(newConditions, null, 2));
-    console.log('EmployeeFieldFilter - value[0]:', value[0]);
-    console.log('EmployeeFieldFilter - value[0]?.conditions:', value[0]?.conditions);
 
     // 只在值确实不同时才更新，避免无限循环
     if (JSON.stringify(newConditions) !== JSON.stringify(conditions)) {
-      console.log('EmployeeFieldFilter - 更新conditions状态');
       setConditions(newConditions);
-    } else {
-      console.log('EmployeeFieldFilter - conditions未变化，不更新');
     }
   }, [value]);
 
@@ -111,19 +101,25 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
       request.get('/hr/organizations/tree').then((res: any) => res),
   });
 
-  // 获取自定义字段列表
-  const { data: customFields } = useQuery({
-    queryKey: ['hrCustomFields'],
+  // 获取所有人事信息模版字段（包括页签字段和自定义字段）
+  const { data: employeeInfoFields = [], isLoading: fieldsLoading } = useQuery({
+    queryKey: ['employeeInfoAllFields'],
     queryFn: () =>
-      request.get('/hr/custom-fields').then((res: any) => res),
+      request.get('/hr/employee-info-all-fields').then((res: any) => {
+        console.log('=== API 返回的人事信息字段数据 ===');
+        console.log('字段总数:', res?.length || 0);
+        console.log('原始数据:', JSON.stringify(res, null, 2));
+        return res || [];
+      }),
+    staleTime: 0, // 禁用缓存，确保每次都获取最新数据
   });
 
-  // 获取人事信息配置（查找项的数据源）
-  const { data: employeeInfoConfigs } = useQuery({
-    queryKey: ['employeeInfoConfigs'],
-    queryFn: () =>
-      request.get('/hr/employee-info-configs').then((res: any) => res || []),
-  });
+  // 移除旧的数据源查询，现在从字段数据中直接获取
+  // const { data: dataSources } = useQuery({
+  //   queryKey: ['dataSources'],
+  //   queryFn: () =>
+  //     request.get('/hr/data-sources').then((res: any) => res || []),
+  // });
 
   // 获取数据源列表（用于 LOOKUP 类型字段）
   const { data: dataSources } = useQuery({
@@ -138,87 +134,145 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
   const [selectedOrgKeys, setSelectedOrgKeys] = useState<React.Key[]>([]);
   const [includeChildOrgs, setIncludeChildOrgs] = useState(true);
 
-  // 合并内置字段和自定义字段
+  // 合并内置字段和人事信息模版字段（去重）
   const allFields = useMemo(() => {
-    const fields = [...builtInFields];
+    console.log('=== 开始构建 allFields ===');
+    console.log('employeeInfoFields 长度:', employeeInfoFields?.length || 0);
 
-    if (customFields && customFields.length > 0) {
-      customFields.forEach((field: any) => {
-        // 判断字段类型
-        let fieldType: 'organization' | 'select' | 'text' | 'number' = 'text';
+    const fieldMap = new Map<string, any>(); // 使用 Map 去重，key 为 field.code
 
-        if (field.type === 'SELECT_SINGLE' || field.type === 'SELECT_MULTI' || field.type === 'LOOKUP') {
+    // 先添加内置字段（除了产线，产线会从API返回）
+    builtInFields.forEach((field) => {
+      if (field.code !== 'organization') {
+        console.log(`添加内置字段: ${field.code}`);
+        fieldMap.set(field.code, { ...field, isBuiltIn: true });
+      }
+    });
+
+    if (employeeInfoFields && employeeInfoFields.length > 0) {
+      employeeInfoFields.forEach((field: any, index: number) => {
+        // 判断字段类型 - 优先检查organization类型
+        let fieldType: 'organization' | 'select' | 'text' | 'number' | 'date' | 'dateRange' = 'text';
+
+        // 优先检查是否为组织类型
+        if (field.fieldType === 'organization' ||
+            field.fieldType === 'ORG' ||
+            (field.dataSource?.code && field.dataSource.code.toLowerCase().includes('organization'))) {
+          fieldType = 'organization';
+        } else if (field.hasDataSource) {
+          // 如果有数据源，作为下拉类型
           fieldType = 'select';
-        } else if (field.type === 'NUMBER') {
-          fieldType = 'number';
+        } else {
+          // 没有数据源时根据原类型判断
+          if (field.fieldType === 'SELECT_SINGLE' || field.fieldType === 'SELECT_MULTI' ||
+              field.fieldType === 'select' || field.fieldType === 'select_multi' ||
+              field.fieldType === 'LOOKUP' || field.fieldType === 'lookup') {
+            fieldType = 'select';
+          } else if (field.fieldType === 'NUMBER' || field.fieldType === 'number') {
+            fieldType = 'number';
+          } else if (field.fieldType === 'DATE' || field.fieldType === 'date') {
+            fieldType = 'date';
+          }
         }
 
-        fields.push({
-          code: field.code,
+        const fieldInfo = {
+          code: field.field,
           name: field.name,
           type: fieldType,
-          configCode: field.type === 'LOOKUP' ? field.lookupConfigCode : undefined,
-          fieldData: field,
+          fieldData: field, // 保存完整的字段数据
+          isBuiltIn: false,
+        };
+
+        console.log(`[${index}] 添加字段 [${field.field}]:`, {
+          name: field.name,
+          tabCode: field.tabCode,
+          fieldType: field.fieldType,
+          hasDataSource: field.hasDataSource,
+          dataSourceCode: field.dataSource?.code,
+          optionsCount: field.dataSource?.options?.length || 0,
+          mappedType: fieldType,
         });
+
+        // API字段优先，直接覆盖内置字段
+        fieldMap.set(field.field, fieldInfo);
       });
     }
 
+    const fields = Array.from(fieldMap.values());
+
+    console.log('=== allFields 构建完成 ===');
+    console.log('字段总数:', fields.length);
+    console.log('字段代码列表:', fields.map((f: any) => f.code));
+    console.log('有数据源的字段:', fields.filter((f: any) => f.fieldData?.hasDataSource).map((f: any) => f.code));
+    console.log('内置字段:', fields.filter((f: any) => f.isBuiltIn).map((f: any) => f.code));
+
     return fields;
-  }, [customFields]);
+  }, [employeeInfoFields]);
 
   // 获取字段的选项数据
   const getFieldOptions = (fieldCode: string) => {
+    console.log('=== getFieldOptions 被调用 ===');
+    console.log('查找字段代码:', fieldCode);
+    console.log('allFields 长度:', allFields.length);
+    console.log('allFields 中的字段代码:', allFields.map(f => f.code));
+
     const field = allFields.find((f) => f.code === fieldCode);
-    if (!field) return [];
-
-    console.log('getFieldOptions - fieldCode:', fieldCode, 'field:', field);
-
-    // 产线字段特殊处理
-    if (field.type === 'organization') {
+    if (!field) {
+      console.error('❌ 字段未找到:', fieldCode);
       return [];
     }
 
-    // 内置字段：从人事信息配置中获取
-    if ((field as any).configCode) {
-      const config = employeeInfoConfigs?.find((c: any) => c.field === (field as any).configCode);
-      console.log('内置字段 - configCode:', (field as any).configCode, 'config:', config);
-      if (config?.options) {
-        return config.options.map((opt: any) => ({
-          label: opt.label || opt.name,
-          value: opt.value || opt.code,
-        }));
-      }
+    console.log('✅ 找到字段:', fieldCode);
+    console.log('字段类型:', field.type);
+    console.log('字段完整对象:', JSON.stringify(field, null, 2));
+
+    // 产线字段特殊处理
+    if (field.type === 'organization') {
+      console.log('跳过产线字段');
+      return [];
     }
 
-    // 自定义字段
+    // 从字段数据中获取选项
     const fieldData = (field as any).fieldData;
-    if (fieldData) {
-      console.log('自定义字段 - fieldData:', fieldData);
 
-      // LOOKUP 类型：从关联的数据源获取选项
-      if (fieldData.type === 'LOOKUP' && fieldData.dataSource) {
-        const dataSourceId = typeof fieldData.dataSource === 'object' ? fieldData.dataSource.id : fieldData.dataSource;
-        const dataSource = dataSources?.find((ds: any) => ds.id === dataSourceId);
-        console.log('LOOKUP 类型 - dataSourceId:', dataSourceId, 'dataSource:', dataSource);
-
-        if (dataSource?.options) {
-          return dataSource.options.map((opt: any) => ({
-            label: opt.label || opt.name,
-            value: opt.value || opt.code,
-          }));
-        }
-      }
-      // SELECT_SINGLE 或 SELECT_MULTI 类型：直接从字段配置中获取选项
-      else if ((fieldData.type === 'SELECT_SINGLE' || fieldData.type === 'SELECT_MULTI') && fieldData.options) {
-        return fieldData.options.map((opt: any) => ({
-          label: opt.label || opt.name,
-          value: opt.value || opt.code,
-        }));
-      }
+    if (!fieldData) {
+      console.error('❌ 字段没有 fieldData 属性');
+      console.log('字段的所有属性:', Object.keys(field));
+      return [];
     }
 
-    console.log('未找到选项，返回空数组');
-    return [];
+    console.log('✅ fieldData 存在');
+    console.log('fieldData.hasDataSource:', fieldData.hasDataSource);
+    console.log('fieldData.dataSource:', fieldData.dataSource);
+
+    if (!fieldData.hasDataSource) {
+      console.log('❌ 字段没有数据源标记');
+      return [];
+    }
+
+    if (!fieldData.dataSource) {
+      console.log('❌ 字段没有 dataSource 对象');
+      return [];
+    }
+
+    console.log('✅ 字段有数据源');
+    console.log('数据源代码:', fieldData.dataSource.code);
+    console.log('数据源名称:', fieldData.dataSource.name);
+    console.log('数据源选项数量:', fieldData.dataSource.options?.length || 0);
+    console.log('数据源选项:', fieldData.dataSource.options);
+
+    if (!fieldData.dataSource.options || fieldData.dataSource.options.length === 0) {
+      console.log('❌ 数据源没有选项');
+      return [];
+    }
+
+    const options = fieldData.dataSource.options.map((opt: any) => ({
+      label: opt.label || opt.name,
+      value: opt.value || opt.code,
+    }));
+
+    console.log('✅ 返回选项列表:', options);
+    return options;
   };
 
   // 添加条件
@@ -242,10 +296,8 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
   ) => {
     const newConditions = [...conditions];
     newConditions[conditionIndex] = { ...newConditions[conditionIndex], ...updates };
-    console.log('EmployeeFieldFilter - 更新条件:', newConditions[conditionIndex]);
     setConditions(newConditions);
     const fieldGroup = [{ id: 'default', conditions: newConditions }];
-    console.log('EmployeeFieldFilter - 发送的fieldGroups:', JSON.stringify(fieldGroup, null, 2));
     onChange?.(fieldGroup);
   };
 
@@ -349,6 +401,8 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
     if (condition.fieldType === 'select') {
       const options = getFieldOptions(condition.fieldCode);
 
+      console.log(`渲染 Select 组件 [${condition.fieldCode}]: 选项数量=${options.length}`);
+
       if (isMulti) {
         return (
           <Select
@@ -375,6 +429,32 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
           showSearch
           optionFilterProp="label"
           options={options}
+        />
+      );
+    }
+
+    // 日期类型字段
+    if (condition.fieldType === 'date') {
+      if (condition.operator === 'between') {
+        // 日期区间选择器
+        return (
+          <RangePicker
+            style={{ width: '100%' }}
+            placeholder={['开始日期', '结束日期']}
+            value={condition.value}
+            onChange={(dates) => updateCondition(conditionIndex, { value: dates })}
+            disabled={disabled}
+          />
+        );
+      }
+      // 单个日期选择器
+      return (
+        <DatePicker
+          style={{ width: '100%' }}
+          placeholder="选择日期"
+          value={condition.value}
+          onChange={(date) => updateCondition(conditionIndex, { value: date })}
+          disabled={disabled}
         />
       );
     }
@@ -414,6 +494,11 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
     if (fieldType === 'number') {
       return operatorOptions;
     }
+    if (fieldType === 'date') {
+      return operatorOptions.filter((op) =>
+        ['eq', 'ne', 'gt', 'lt', 'between'].includes(op.value)
+      );
+    }
     return operatorOptions.filter((op) =>
       ['eq', 'ne', 'contains', 'notContains'].includes(op.value)
     );
@@ -438,6 +523,8 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
                 value={condition.fieldCode}
                 onChange={(val) => {
                   const field = allFields.find((f) => f.code === val);
+                  console.log(`选择字段: ${val}, 类型: ${field?.type}`);
+
                   updateCondition(conditionIndex, {
                     fieldCode: val,
                     fieldName: field?.name || val,

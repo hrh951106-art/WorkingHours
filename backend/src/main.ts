@@ -2,12 +2,25 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    // 启用事件发射器
+    bufferLogs: true,
+  });
+
+  // 禁用 ETag
+  const httpAdapter = app.getHttpAdapter();
+  const inst = httpAdapter.getInstance();
+  inst.disable('x-powered-by');
+  inst.set('etag', false);
 
   // 全局前缀
   app.setGlobalPrefix('api');
+
+  // 全局异常过滤器
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // CORS
   app.enableCors({

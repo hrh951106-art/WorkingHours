@@ -64,7 +64,7 @@ export class AccountMergeService {
         ],
       },
       include: {
-        account: true,
+        // account: true,
       },
       orderBy: {
         effectiveDate: 'desc',
@@ -204,7 +204,6 @@ export class AccountMergeService {
         level: path.split('/').filter(Boolean).length,
         path: path, // 添加path字段
         namePath: path,
-        effectiveDate: new Date(),
         status: 'ACTIVE',
       },
     });

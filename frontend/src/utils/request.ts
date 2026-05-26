@@ -33,6 +33,16 @@ request.interceptors.response.use(
     }
 
     const { data } = response;
+
+    // 如果后端返回的是被TransformInterceptor包装的响应，提取data字段
+    if (data && data.success !== undefined && data.data !== undefined) {
+      if (data.success === false) {
+        return Promise.reject(new Error(data.message || '请求失败'));
+      }
+      return data.data;
+    }
+
+    // 否则返回原始数据
     if (data && data.success === false) {
       return Promise.reject(new Error(data.message || '请求失败'));
     }

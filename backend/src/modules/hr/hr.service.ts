@@ -128,19 +128,52 @@ export class HrService {
   // ==================== 人员管理 ====================
 
   async getEmployees(query: EmployeeQueryDto, user?: any) {
-    const { page = 1, pageSize = 10, keyword, search, orgId, status } = query;
+    const {
+      page = 1,
+      pageSize = 10,
+      keyword,
+      search,
+      orgId,
+      status,
+      employeeNo,
+      name,
+      employeeType,
+      entryDate
+    } = query;
     const skip = (page - 1) * pageSize;
 
-    // 优先使用 search 参数（前端发送的），如果没有则使用 keyword
+    // 优先使用单独字段查询，如果没有则使用关键字搜索
     const searchKeyword = search || keyword;
 
     const where: any = {};
-    if (searchKeyword && searchKeyword.trim()) {
+
+    // 单独字段查询（优先级更高）
+    if (employeeNo) {
+      where.employeeNo = { contains: employeeNo };
+    }
+    if (name) {
+      where.name = { contains: name };
+    }
+    if (employeeType) {
+      where.employeeType = employeeType;
+    }
+    if (entryDate) {
+      // 支持 entryDate 单独查询
+      const date = new Date(entryDate);
+      where.entryDate = {
+        gte: new Date(date.setHours(0, 0, 0, 0)),
+        lte: new Date(date.setHours(23, 59, 59, 999)),
+      };
+    }
+
+    // 如果没有单独字段查询，则使用关键字搜索
+    if (!employeeNo && !name && !employeeType && !entryDate && searchKeyword && searchKeyword.trim()) {
       where.OR = [
         { name: { contains: searchKeyword } },
         { employeeNo: { contains: searchKeyword } },
       ];
     }
+
     if (status && status.trim()) {
       where.status = status;
     }
@@ -193,6 +226,54 @@ export class HrService {
     return employee;
   }
 
+  /**
+   * 获取员工选择列表（不需要权限，用于下拉选择）
+   * 应用数据权限过滤，只返回用户有权查看的员工
+   */
+  async getEmployeeSelectList(
+    params: {
+      status?: string;
+      keyword?: string;
+      pageSize?: number;
+    },
+    user?: any
+  ) {
+    const { status = 'ACTIVE', keyword, pageSize = 1000 } = params;
+
+    const where: any = {};
+
+    if (status && status.trim()) {
+      where.status = status;
+    }
+
+    if (keyword && keyword.trim()) {
+      where.OR = [
+        { name: { contains: keyword } },
+        { employeeNo: { contains: keyword } },
+      ];
+    }
+
+    // 应用数据权限过滤
+    if (user && user.username !== 'admin') {
+      const dataScopeFilter = await this.dataScopeService.getEmployeeFilter(user, user.orgId);
+      Object.assign(where, dataScopeFilter);
+    }
+
+    const items = await this.prisma.employee.findMany({
+      where,
+      take: +pageSize,
+      include: {
+        org: true,
+      },
+      orderBy: { employeeNo: 'asc' },
+    });
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
   async getEmployeeChangeLogs(employeeId: number) {
     return this.prisma.employeeChangeLog.findMany({
       where: { employeeId },
@@ -200,7 +281,53 @@ export class HrService {
     });
   }
 
+  /**
+   * 自动生成员工工号
+   * 规则：年月 + 三位序号（例如：202604001）
+   */
+  async generateEmployeeNo(): Promise<string> {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const yearMonth = `${year}${month}`;
+
+    // 查询当前年月已有的最大工号
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        employeeNo: {
+          startsWith: yearMonth,
+        },
+      },
+      select: {
+        employeeNo: true,
+      },
+      orderBy: {
+        employeeNo: 'desc',
+      },
+      take: 1,
+    });
+
+    let nextSerial = 1;
+    if (employees.length > 0 && employees[0].employeeNo) {
+      const lastEmployeeNo = employees[0].employeeNo;
+      const lastSerial = parseInt(lastEmployeeNo.slice(-3));
+      if (!isNaN(lastSerial)) {
+        nextSerial = lastSerial + 1;
+      }
+    }
+
+    const serial = String(nextSerial).padStart(3, '0');
+    return `${yearMonth}${serial}`;
+  }
+
   async createEmployee(dto: CreateEmployeeDto) {
+    console.log('========== 开始创建员工 ==========');
+    console.log('接收到的原始数据:', JSON.stringify(dto, null, 2));
+
+    // 如果没有提供工号，自动生成
+    if (!dto.employeeNo) {
+      dto.employeeNo = await this.generateEmployeeNo();
+    }
 
     const existingByNo = await this.prisma.employee.findUnique({
       where: { employeeNo: dto.employeeNo },
@@ -246,8 +373,8 @@ export class HrService {
     const hiddenFieldCodes = new Set<string>();  // 隐藏字段
     const requiredFieldCodes = new Set<string>();  // 显示且必填的字段
 
-    // 三个核心字段：始终必填且不能隐藏
-    const coreFields = ['employeeNo', 'entryDate', 'orgId'];
+    // 三个核心字段：始终必填且不能隐藏（employeeNo 可以自动生成，所以不是严格必填）
+    const coreFields = ['entryDate', 'orgId'];
     coreFields.forEach(field => requiredFieldCodes.add(field));
 
     if (basicInfoTab && basicInfoTab.groups) {
@@ -289,22 +416,25 @@ export class HrService {
     }
 
     // 定义 Employee 表的字段（基本信息页签）
+    // 这些字段直接存储在 Employee 表中（根据 Prisma schema 定义）
     const employeeFields = [
       'employeeNo', 'name', 'gender', 'idCard', 'phone', 'email', 'orgId', 'entryDate',
       'status', 'birthDate', 'age', 'maritalStatus', 'nativePlace', 'politicalStatus',
       'householdRegister', 'currentAddress', 'photo', 'emergencyContact',
-      'emergencyPhone', 'emergencyRelation', 'homeAddress', 'homePhone'
+      'emergencyPhone', 'emergencyRelation', 'homeAddress', 'homePhone', 'customFields'
     ];
 
     // 定义工作信息字段（工作信息页签）
+    // 这些字段存储在 WorkInfoHistory 表中（根据 Prisma schema 定义）
     const workInfoFields = [
       'changeType', 'position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress',
       'hireDate', 'probationStart', 'probationEnd', 'probationMonths',
       'regularDate', 'resignationDate', 'resignationReason', 'workYears',
+      'costCenter', 'employmentRelation',
       'orgId', 'effectiveDate', 'isCurrent', 'reason'
     ];
 
-    // 分离数据：Employee 表数据、工作信息数据、子表数据
+    // 分离数���：Employee 表数据、工作信息数据、子表数据
     const {
       educations,
       workExperiences,
@@ -317,6 +447,12 @@ export class HrService {
     const employeeData: any = {};
     const workInfoData: any = {};
     const finalCustomFields: any = {};
+
+    // 工作信息的自定义字段（不在 WorkInfoHistory 表中的工作信息相关字段）
+    const workInfoCustomFieldKeys = [
+      'probationPeriod', 'jobPost', 'usageStartDate', 'serviceYearsStartDate', 'estimatedProbationEndDate'
+    ];
+    const workInfoCustomFields: any = {};
 
     // 解析前端传递的 customFields
     let parsedCustomFields: any = {};
@@ -340,6 +476,15 @@ export class HrService {
         return;
       }
 
+      // 对于 workInfoFields，即使是空值也要处理（保存为 null）
+      // 对于其他字段，跳过空值（undefined、null、空字符串）
+      if (!workInfoFields.includes(key)) {
+        if (value === undefined || value === null || value === '') {
+          console.log(`跳过空值字段: ${key}`);
+          return;
+        }
+      }
+
       if (employeeFields.includes(key)) {
         // Employee 表字段
         let finalValue = value;
@@ -350,21 +495,40 @@ export class HrService {
           }
         }
         employeeData[key] = finalValue;
+        console.log(`Employee 字段: ${key} = ${finalValue}`);
       } else if (workInfoFields.includes(key)) {
-        // 工作信息字段
+        // 工作信息字段（即使是空值也保存为 null）
         let finalValue = value;
         // 转换日期字符串为 Date 对象
         if (typeof value === 'string' && (key.includes('Date') || key.includes('Start') || key.includes('End'))) {
           finalValue = new Date(value);
         }
+        // 如果是空值，保存为 null
+        if (value === undefined || value === null || value === '') {
+          finalValue = null;
+        }
         workInfoData[key] = finalValue;
+        console.log(`WorkInfo 字段: ${key} = ${finalValue}`);
+      } else if (workInfoCustomFieldKeys.includes(key)) {
+        // 工作信息的自定义字段（保存到 WorkInfoHistory.customFields）
+        let finalValue = value;
+        // 转换日期字符串为 Date 对象
+        if (typeof value === 'string' && (key.includes('Date') || key.includes('Start') || key.includes('End'))) {
+          finalValue = new Date(value);
+        }
+        workInfoCustomFields[key] = finalValue;
+        console.log(`WorkInfo Custom 字段: ${key} = ${finalValue}`);
       } else {
-        // 其他字段放入 customFields（用于扩展）
+        // 其他字段放入 Employee 的 customFields（用于扩展）
         finalCustomFields[key] = value;
+        console.log(`Employee Custom 字段: ${key} = ${value}`);
       }
     });
 
     console.log('处理后的 employeeData:', JSON.stringify(employeeData, null, 2));
+    console.log('处理后的 workInfoData:', JSON.stringify(workInfoData, null, 2));
+    console.log('处理后的 workInfoCustomFields:', JSON.stringify(workInfoCustomFields, null, 2));
+    console.log('处理后的 finalCustomFields:', JSON.stringify(finalCustomFields, null, 2));
 
     // 合并前端传递的 customFields（只保留不在表结构中的字段）
     Object.keys(parsedCustomFields).forEach(key => {
@@ -388,21 +552,26 @@ export class HrService {
 
     // 创建工作信息历史记录
     try {
-      // 工作信息的 customFields（用于扩展）
-      const workInfoCustomFields = {};
-
-      // 序列化 customFields
+      // 序列化 workInfoCustomFields
       const customFieldsJson = JSON.stringify(workInfoCustomFields);
+
+      console.log('准备创建 WorkInfoHistory，数据如下:');
+      console.log('workInfoData:', JSON.stringify(workInfoData, null, 2));
+      console.log('workInfoCustomFields:', JSON.stringify(workInfoCustomFields, null, 2));
+      console.log('customFieldsJson:', customFieldsJson);
 
 
       // 如果有工作信息字段中的任何一个，就创建工作信息历史
       const hasWorkInfo = Object.keys(workInfoData).length > 0 || Object.keys(workInfoCustomFields).length > 0;
       if (hasWorkInfo) {
+        // 新增员工时，固定设置异动类型为"入职"（ENTRY）
+        const finalChangeType = workInfoData.changeType || 'ENTRY';
+
         await this.prisma.workInfoHistory.create({
           data: {
             employeeId: employee.id,
-            effectiveDate: employee.entryDate || new Date(),
-            changeType: workInfoData.changeType || null,
+            effectiveDate: workInfoData.effectiveDate || employee.entryDate || new Date(),
+            changeType: finalChangeType,
             position: workInfoData.position || null,
             jobLevel: workInfoData.jobLevel || null,
             employeeType: workInfoData.employeeType || null,
@@ -416,17 +585,27 @@ export class HrService {
             resignationDate: workInfoData.resignationDate || null,
             resignationReason: workInfoData.resignationReason || null,
             workYears: workInfoData.workYears || null,
-            orgId: employee.orgId,
+            costCenter: workInfoData.costCenter || null,
+            employmentRelation: workInfoData.employmentRelation || null,
+            orgId: workInfoData.orgId || employee.orgId,
             customFields: customFieldsJson,
             isCurrent: true,
           },
+        }).then(created => {
+          console.log('WorkInfoHistory 创建成功，ID:', created.id);
+          console.log('costCenter:', created.costCenter);
+          console.log('employmentRelation:', created.employmentRelation);
+          console.log('workLocation:', created.workLocation);
+          console.log('workAddress:', created.workAddress);
+          return created;
         });
       } else {
-        // 即使没有工作信息，也创建一个默认的工作信息历史
+        // 即使没有工作信息，也创建一个默认的工作信息历史，异动类型固定为"入职"
         await this.prisma.workInfoHistory.create({
           data: {
             employeeId: employee.id,
             effectiveDate: employee.entryDate || new Date(),
+            changeType: 'ENTRY', // 新增员工时固定为入职
             orgId: employee.orgId,
             customFields: customFieldsJson,
             isCurrent: true,
@@ -676,6 +855,17 @@ export class HrService {
     // 检查自定义字段是否发生变更
     const isCustomFieldsChanged = dto.customFields && dto.customFields !== employee.customFields;
 
+    // 在更新数据之前，先计算当前的账户路径
+    let oldAccountPath = '';
+    if (isOrgChanged || isCustomFieldsChanged) {
+      try {
+        oldAccountPath = await this.accountService.calculateEmployeeAccountPath(id);
+        console.log('更新前的账户路径:', oldAccountPath);
+      } catch (error: any) {
+        console.warn('无法计算更新前的账户路径:', error.message);
+      }
+    }
+
     // 记录组织变更
     if (isOrgChanged) {
       const newOrg = await this.prisma.organization.findUnique({
@@ -784,21 +974,54 @@ export class HrService {
       status: updatedEmployee.status,
     });
 
+    // 定义工作信息字段（这些字段变更会影响账户路径，需要创建新账户）
+    const workInfoFieldCodes = new Set([
+      'orgId',
+      'position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress'
+    ]);
+
+    // 检查是否有任何字段发生变更
+    const hasAnyFieldChanges = isOrgChanged || isCustomFieldsChanged || Object.keys(updateData).length > 0;
+
     // 只有当影响账户路径的字段发生变更时，才重新生成劳动力账户
     let shouldRegenerateAccounts = false;
+    let isWorkInfoChanged = false;
 
     if (isOrgChanged || isCustomFieldsChanged) {
       try {
-        // 计算更新前的账户路径
-        const oldPath = await this.accountService.calculateEmployeeAccountPath(id);
-
         // 计算更新后的账户路径（基于更新后的数据）
-        const newPath = await this.accountService.calculateEmployeeAccountPath(id);
+        const newAccountPath = await this.accountService.calculateEmployeeAccountPath(id);
+        console.log('更新后的账户路径:', newAccountPath);
+
+        // 检查是否是工作信息字段变更
+        isWorkInfoChanged = isOrgChanged; // 组织变更肯定是工作信息变更
+
+        if (!isWorkInfoChanged && isCustomFieldsChanged && dto.customFields) {
+          // 检查 customFields 中的工作信息字段是否变更
+          const oldCustomFields = typeof employee.customFields === 'string'
+            ? JSON.parse(employee.customFields)
+            : employee.customFields || {};
+          const newCustomFields = typeof dto.customFields === 'string'
+            ? JSON.parse(dto.customFields)
+            : dto.customFields || {};
+
+          // 检查是否有工作信息字段变更
+          for (const field of workInfoFieldCodes) {
+            if (field !== 'orgId' && oldCustomFields[field] !== newCustomFields[field]) {
+              isWorkInfoChanged = true;
+              break;
+            }
+          }
+        }
 
         // 只有当路径发生变化时才重新生成账户
-        if (oldPath !== newPath) {
+        if (oldAccountPath !== newAccountPath) {
+          console.log('账户路径发生变化，需要重新生成账户');
+          console.log('  旧路径:', oldAccountPath);
+          console.log('  新路径:', newAccountPath);
           shouldRegenerateAccounts = true;
         } else {
+          console.log('账户路径未发生变化');
         }
       } catch (error: any) {
         // 如果无法计算路径（例如没有配置层级），则不重新生成
@@ -806,13 +1029,24 @@ export class HrService {
       }
     }
 
-    // 重新生成劳动力账户
+    // 处理账户更新
     if (shouldRegenerateAccounts) {
+      // 工作信息变更：重新生成劳动力账户（创建新账户，旧账户失效）
       try {
+        console.log('工作信息变更，重新生成劳动力账户');
         await this.accountService.regenerateAccountsForEmployee(id);
       } catch (error: any) {
         // 记录错误但不影响员工更新
         console.error(`员工 ${updatedEmployee.employeeNo} 账户更新失败:`, error.message);
+      }
+    } else if (hasAnyFieldChanges && !isWorkInfoChanged) {
+      // 非工作信息变更：只更新当前账户元数据，不创建新账户
+      try {
+        console.log('非工作信息变更，更新当前账户元数据');
+        await this.accountService.updateCurrentAccount(id);
+      } catch (error: any) {
+        // 记录错误但不影响员工更新
+        console.error(`员工 ${updatedEmployee.employeeNo} 账户元数据更新失败:`, error.message);
       }
     }
 
@@ -856,16 +1090,29 @@ export class HrService {
   }
 
   async getEmployeeAccounts(employeeId: number) {
-    return this.prisma.laborAccount.findMany({
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { employeeNo: true },
+    });
+
+    if (!employee) {
+      return [];
+    }
+
+    const accountLinks = await this.prisma.employeeLaborAccount.findMany({
       where: {
-        employeeId,
-        // 移除 status 过滤，返回所有账户（包括失效的）
+        employeeNo: employee.employeeNo,
+      },
+      include: {
+        account: true,
       },
       orderBy: [
-        { level: 'asc' },
-        { effectiveDate: 'desc' }, // 按生效日期倒序，最新的账户在前
+        { account: { level: 'asc' } },
+        { effectiveDate: 'desc' },
       ],
     });
+
+    return accountLinks.map(link => link.account);
   }
 
   async regenerateEmployeeAccounts(employeeId: number) {
@@ -903,8 +1150,42 @@ export class HrService {
 
   // 获取人事信息字段配置（用于劳动力账户层级）
   async getEmployeeInfoConfigs() {
+    // 1. 获取员工信息页签中所有配置了数据源的字段（包括系统字段和自定义字段）
+    const tabFields = await this.prisma.employeeInfoTabField.findMany({
+      where: {
+        dataSourceId: { not: null },
+        tab: {
+          status: 'ACTIVE',
+        },
+      },
+      include: {
+        dataSource: {
+          include: {
+            options: {
+              where: { isActive: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        },
+        tab: {
+          select: {
+            code: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: [
+        { tab: { sort: 'asc' } },
+        { sort: 'asc' },
+      ],
+    });
+
+    // 2. 获取所有配置了数据源的自定义字段（包括未配置在页签中的）
     const customFields = await this.prisma.customField.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        status: 'ACTIVE',
+        dataSourceId: { not: null },
+      },
       include: {
         dataSource: {
           include: {
@@ -918,20 +1199,279 @@ export class HrService {
       orderBy: { sort: 'asc' },
     });
 
-    // 转换为前端需要的格式
-    return customFields
-      .filter(field => field.dataSource) // 只返回有数据源的字段
+    // 3. 转换页签字段
+    const tabFieldConfigs = tabFields
+      .filter(field => field.dataSource && field.dataSource.options && field.dataSource.options.length > 0)
       .map(field => ({
-        field: field.code,
-        name: field.name,
-        options: field.dataSource.options?.map(opt => ({
+        field: field.fieldCode,
+        name: field.fieldName,
+        tabCode: field.tab.code,
+        tabName: field.tab.name,
+        isSystem: field.isSystem,
+        options: field.dataSource.options.map(opt => ({
           id: opt.id,
           name: opt.label,
           label: opt.label,
           value: opt.value,
           code: opt.value,
-        })) || [],
-      }));
+        })),
+      }))
+      .filter(config => config.options.length > 0);
+
+    // 4. 转换自定义字段（只添加没有在页签字段中的）
+    const tabFieldCodes = new Set(tabFieldConfigs.map(config => config.field));
+    const customFieldConfigs = customFields
+      .filter(field => field.dataSource && field.dataSource.options && field.dataSource.options.length > 0)
+      .filter(field => !tabFieldCodes.has(field.code)) // 排除已存在于页签中的
+      .map(field => ({
+        field: field.code,
+        name: field.name,
+        tabCode: 'custom_field',
+        tabName: '自定义字段',
+        isSystem: field.isSystem,
+        options: field.dataSource.options.map(opt => ({
+          id: opt.id,
+          name: opt.label,
+          label: opt.label,
+          value: opt.value,
+          code: opt.value,
+        })),
+      }))
+      .filter(config => config.options.length > 0);
+
+    // 5. 合并结果
+    const result = [...tabFieldConfigs, ...customFieldConfigs];
+
+    console.log('=== getEmployeeInfoConfigs 返回数据 ===');
+    console.log('页签字段数量:', tabFieldConfigs.length);
+    console.log('自定义字段数量:', customFields.length);
+    console.log('字段总数:', result.length);
+    console.log('返回数据:', JSON.stringify(result, null, 2));
+
+    return result;
+  }
+
+  /**
+   * 获取所有人事信息模版字段（用于人员筛选条件）
+   * 只返回基本信息和工作信息页签的字段
+   */
+  async getAllEmployeeInfoFields() {
+    // 定义允许的页签代码
+    const allowedTabCodes = ['basic_info', 'work_info'];
+
+    console.log('=== getAllEmployeeInfoFields 开始执行 ===');
+    console.log('允许的页签:', allowedTabCodes);
+
+    // 1. 获取所有员工信息页签字段（只获取指定页签）
+    const tabFields = await this.prisma.employeeInfoTabField.findMany({
+      where: {
+        tab: {
+          status: 'ACTIVE',
+          code: {
+            in: allowedTabCodes,
+          },
+        },
+        isHidden: false, // 不返回隐藏字段
+      },
+      include: {
+        dataSource: {
+          include: {
+            options: {
+              where: { isActive: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        },
+        tab: {
+          select: {
+            code: true,
+            name: true,
+          },
+        },
+        group: {
+          select: {
+            code: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: [
+        { tab: { sort: 'asc' } },
+        { group: { sort: 'asc' } },
+        { sort: 'asc' },
+      ],
+    });
+
+    console.log('=== getAllEmployeeInfoFields - 查询结果 ===');
+    console.log('筛选的页签代码:', allowedTabCodes);
+    console.log('页签字段总数:', tabFields.length);
+
+    // 打印每个字段的数据源情况
+    tabFields.forEach(field => {
+      console.log(`字段 [${field.fieldCode}] ${field.fieldName}:`, {
+        fieldType: field.fieldType,
+        hasDataSource: !!field.dataSource,
+        dataSourceId: field.dataSourceId,
+        dataSourceCode: field.dataSource?.code,
+        optionsCount: field.dataSource?.options?.length || 0,
+      });
+    });
+
+    // 2. 转换页签字段
+    const tabFieldConfigs = tabFields.map(field => {
+      const config = {
+        field: field.fieldCode,
+        name: field.fieldName,
+        tabCode: field.tab.code,
+        tabName: field.tab.name,
+        groupCode: field.group?.code,
+        groupName: field.group?.name,
+        isSystem: field.isSystem,
+        fieldType: field.fieldType,
+        isRequired: field.isRequired,
+        isHidden: field.isHidden,
+        hasDataSource: !!field.dataSource,
+        dataSource: field.dataSource ? {
+          id: field.dataSource.id,
+          code: field.dataSource.code,
+          name: field.dataSource.name,
+          options: field.dataSource.options.map(opt => ({
+            id: opt.id,
+            label: opt.label,
+            value: opt.value,
+            code: opt.value,
+            sort: opt.sort,
+          })),
+        } : null,
+        sort: field.sort,
+      };
+
+      // 调试：打印每个字段配置
+      if (config.hasDataSource) {
+        console.log(`✅ 字段 [${field.fieldCode}] ${field.fieldName} 有数据源:`, {
+          dataSourceCode: config.dataSource.code,
+          optionsCount: config.dataSource.options.length,
+        });
+      } else {
+        console.log(`❌ 字段 [${field.fieldCode}] ${field.fieldName} 无数据源`);
+      }
+
+      return config;
+    });
+
+    // 3. 转换自定义字段（只添加没有在页签中配置的，且类型合适的）
+    const tabFieldCodes = new Set(tabFieldConfigs.map(config => config.field));
+
+    // 获取自定义字段，但只返回基本信息和工作信息相关的
+    const customFields = await this.prisma.customField.findMany({
+      where: {
+        status: 'ACTIVE',
+        // 只获取合适的字段类型用于筛选
+        type: {
+          in: ['TEXT', 'NUMBER', 'SELECT_SINGLE', 'SELECT_MULTI', 'LOOKUP'],
+        },
+      },
+      include: {
+        dataSource: {
+          include: {
+            options: {
+              where: { isActive: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: { sort: 'asc' },
+    });
+
+    console.log('自定义字段总数:', customFields.length);
+
+    // 使用 Map 去重，key 为字段代码
+    const fieldMap = new Map<string, any>();
+
+    // 先添加页签字段
+    tabFieldConfigs.forEach(config => {
+      fieldMap.set(config.field, {
+        ...config,
+        source: 'tab', // 标记来源
+      });
+    });
+
+    // 再处理自定义字段，只添加不在页签中的
+    customFields.forEach(field => {
+      if (!fieldMap.has(field.code)) {
+        // 只添加不在页签中的字段
+        const config = {
+          field: field.code,
+          name: field.name,
+          tabCode: 'custom_field',
+          tabName: '自定义字段',
+          groupCode: null,
+          groupName: null,
+          isSystem: field.isSystem,
+          fieldType: this.mapCustomFieldTypeToFieldType(field.type),
+          isRequired: field.isRequired || false,
+          isHidden: false,
+          hasDataSource: !!field.dataSource,
+          dataSource: field.dataSource ? {
+            id: field.dataSource.id,
+            code: field.dataSource.code,
+            name: field.dataSource.name,
+            options: field.dataSource.options.map(opt => ({
+              id: opt.id,
+              label: opt.label,
+              value: opt.value,
+              code: opt.value,
+              sort: opt.sort,
+            })),
+          } : null,
+          sort: field.sort,
+          source: 'custom', // 标记来源
+        };
+
+        fieldMap.set(field.code, config);
+      }
+    });
+
+    // 转换为数组
+    const result = Array.from(fieldMap.values());
+
+    console.log('=== 去重后的字段列表 ===');
+    result.forEach(f => {
+      console.log(`- [${f.field}] ${f.name} (${f.source}) - 有数据源: ${f.hasDataSource}`);
+    });
+
+    console.log('=== getAllEmployeeInfoFields 返回数据 ===');
+    console.log('基本信息字段数量:', tabFieldConfigs.filter(f => f.tabCode === 'basic_info').length);
+    console.log('工作信息字段数量:', tabFieldConfigs.filter(f => f.tabCode === 'work_info').length);
+    console.log('自定义字段数量:', customFields.length);
+    console.log('字段总数:', result.length);
+    console.log('有数据源的字段:', result.filter(f => f.hasDataSource).length);
+    console.log('无数据源的字段:', result.filter(f => !f.hasDataSource).length);
+
+    // 打印所有有数据源的字段
+    const fieldsWithDataSource = result.filter(f => f.hasDataSource);
+    console.log('=== 有数据源的字段列表 ===');
+    fieldsWithDataSource.forEach(f => {
+      console.log(`- [${f.field}] ${f.name}: ${f.dataSource?.code} (${f.dataSource?.options.length} 选项)`);
+    });
+
+    return result;
+  }
+
+  /**
+   * 将自定义字段类型映射到字段类型
+   */
+  private mapCustomFieldTypeToFieldType(customFieldType: string): string {
+    const typeMap: Record<string, string> = {
+      'TEXT': 'text',
+      'NUMBER': 'number',
+      'DATE': 'date',
+      'SELECT_SINGLE': 'select',
+      'SELECT_MULTI': 'select_multi',
+      'LOOKUP': 'lookup',
+    };
+    return typeMap[customFieldType] || 'text';
   }
 
   async createCustomField(dto: any) {
@@ -1086,17 +1626,90 @@ export class HrService {
   // ==================== 数据源选项管理 ====================
 
   async getDataSourceOptions(dataSourceId: number) {
-    return this.prisma.dataSourceOption.findMany({
+    // 首先获取数据源信息
+    const dataSource = await this.prisma.dataSource.findUnique({
+      where: { id: dataSourceId },
+    });
+
+    if (!dataSource) {
+      throw new NotFoundException('数据源不存在');
+    }
+
+    console.log(`[getDataSourceOptions] dataSourceId: ${dataSourceId}, code: ${dataSource.code}`);
+
+    // 优先从 DataSourceOption 表获取数据
+    const customOptions = await this.prisma.dataSourceOption.findMany({
       where: {
         dataSourceId,
         isActive: true,
       },
       orderBy: { sort: 'asc' },
     });
+
+    console.log(`[getDataSourceOptions] customOptions count: ${customOptions.length}`);
+    if (customOptions.length > 0) {
+      console.log(`[getDataSourceOptions] Returning DataSourceOption data:`, customOptions.map(o => o.label));
+    }
+
+    // 如果有自定义选项，直接返回
+    if (customOptions.length > 0) {
+      return customOptions;
+    }
+
+    // 如果没有自定义选项，且是内置数据源，从相应的表中获取数据
+    if (dataSource.type === 'BUILTIN') {
+      if (dataSource.code === 'PRODUCT') {
+        // 从产品表获取数据
+        const products = await this.prisma.product.findMany({
+          where: { status: 'ACTIVE' },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+          orderBy: { code: 'asc' },
+        });
+
+        return products.map((product) => ({
+          id: product.id,
+          label: `${product.code} - ${product.name}`,
+          value: product.code,
+          sort: 0,
+          isActive: true,
+        }));
+      }
+
+      if (dataSource.code === 'PROCESS') {
+        // 从工序表获取数据
+        const processes = await this.prisma.process.findMany({
+          where: {
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        });
+
+        return processes.map((process) => ({
+          id: process.id,
+          label: `${process.code} - ${process.name}`,
+          value: process.code,
+          sort: 0,
+          isActive: true,
+        }));
+      }
+    }
+
+    // 如果都没有数据，返回空数组
+    return [];
   }
 
   async createDataSourceOption(dataSourceId: number, dto: any) {
-    return this.prisma.dataSourceOption.create({
+    const option = await this.prisma.dataSourceOption.create({
       data: {
         dataSourceId,
         label: dto.label,
@@ -1104,10 +1717,15 @@ export class HrService {
         sort: dto.sort || 0,
       },
     });
+
+    // 同步到层级明细表
+    await this.accountService.syncDataSourceChangesToHierarchyDetails(dataSourceId);
+
+    return option;
   }
 
   async updateDataSourceOption(id: number, dto: any) {
-    return this.prisma.dataSourceOption.update({
+    const option = await this.prisma.dataSourceOption.update({
       where: { id },
       data: {
         label: dto.label,
@@ -1115,13 +1733,29 @@ export class HrService {
         sort: dto.sort,
       },
     });
+
+    // 同步到层级明细表
+    await this.accountService.syncDataSourceChangesToHierarchyDetails(option.dataSourceId);
+
+    return option;
   }
 
   async deleteDataSourceOption(id: number) {
+    const option = await this.prisma.dataSourceOption.findUnique({
+      where: { id },
+    });
+
+    if (!option) {
+      throw new NotFoundException('数据源选项不存在');
+    }
+
     await this.prisma.dataSourceOption.update({
       where: { id },
       data: { isActive: false },
     });
+
+    // 同步到层级明细表
+    await this.accountService.syncDataSourceChangesToHierarchyDetails(option.dataSourceId);
 
     return { message: '删除成功' };
   }
@@ -1146,18 +1780,16 @@ export class HrService {
   }
 
   async createSearchConditionConfig(dto: any) {
-    // 检查是否已存在相同的页面和字段配置
-    const existing = await this.prisma.searchConditionConfig.findUnique({
+    // 检查是否已存在相同的配置编码和字段配置
+    const existing = await this.prisma.searchConditionConfig.findFirst({
       where: {
-        pageCode_fieldCode: {
-          pageCode: dto.pageCode,
-          fieldCode: dto.fieldCode,
-        },
+        configCode: dto.configCode,
+        fieldCode: dto.fieldCode,
       },
     });
 
     if (existing) {
-      throw new BadRequestException('该页面的字段配置已存在');
+      throw new BadRequestException('该配置的字段已存在');
     }
 
     return this.prisma.searchConditionConfig.create({
@@ -1213,6 +1845,368 @@ export class HrService {
       count: createdConfigs.length,
       data: createdConfigs,
     };
+  }
+
+  // ==================== 统一查询条件配置 ====================
+
+  async getUnifiedSearchConditionConfigs(query: any) {
+    const { configCode, pageCode } = query;
+
+    const configs = await this.prisma.searchConditionConfig.findMany({
+      where: configCode ? { configCode } : undefined,
+      orderBy: [{ configCode: 'asc' }, { sortOrder: 'asc' }],
+    });
+
+    // 获取所有自定义字段的映射，用于规范化字段类型
+    const customFields = await this.prisma.customField.findMany({
+      include: {
+        dataSource: true,
+      },
+    });
+    const customFieldMap = new Map(customFields.map(cf => [cf.code, cf]));
+
+    // 获取所有员工信息字段，用于规范化字段类型
+    const employeeFields = await this.prisma.employeeInfoTabField.findMany({
+      include: {
+        dataSource: true,
+      },
+    });
+    const employeeFieldMap = new Map(employeeFields.map(ef => [ef.fieldCode, ef]));
+
+    // 规范化配置中的字段类型
+    const normalizeConfig = (config: any) => {
+      let normalizedFieldType = config.fieldType;
+      let normalizedDataSourceCode = config.dataSourceCode;
+
+      // 如果配置的字段类型是text，尝试从实际字段配置中获取正确的类型
+      if (config.fieldType === 'text') {
+        // 首先检查是否是自定义字段
+        if (customFieldMap.has(config.fieldCode)) {
+          const customField = customFieldMap.get(config.fieldCode);
+          normalizedDataSourceCode = customField.dataSource?.code;
+          normalizedFieldType = this.normalizeFieldType(customField.type, normalizedDataSourceCode);
+        }
+        // 然后检查是否是员工信息字段
+        else if (employeeFieldMap.has(config.fieldCode)) {
+          const employeeField = employeeFieldMap.get(config.fieldCode);
+
+          // 如果是自定义字段类型，从CustomField表获取详细信息
+          if (employeeField.fieldType === 'CUSTOM' && customFieldMap.has(employeeField.fieldCode)) {
+            const customField = customFieldMap.get(employeeField.fieldCode);
+            normalizedDataSourceCode = customField.dataSource?.code;
+            normalizedFieldType = this.normalizeFieldType(customField.type, normalizedDataSourceCode);
+          } else {
+            normalizedDataSourceCode = employeeField.dataSource?.code;
+            normalizedFieldType = this.normalizeFieldType(employeeField.fieldType, normalizedDataSourceCode);
+          }
+        }
+      }
+
+      return {
+        ...config,
+        applicablePages: JSON.parse(config.applicablePages || '[]'),
+        fieldType: normalizedFieldType,
+        dataSourceCode: normalizedDataSourceCode,
+      };
+    };
+
+    // 如果指定了pageCode，返回适用于该页面的配置
+    if (pageCode) {
+      return configs
+        .filter((config) => {
+          const applicablePages = JSON.parse(config.applicablePages || '[]');
+          return applicablePages.includes(pageCode);
+        })
+        .map(normalizeConfig);
+    }
+
+    return configs.map(normalizeConfig);
+  }
+
+  async createUnifiedSearchConditionConfig(dto: any) {
+    const { applicablePages, ...rest } = dto;
+
+    // 检查是否已存在相同编码的配置（使用findFirst而不是findUnique，因为唯一约束是组合的）
+    const existing = await this.prisma.searchConditionConfig.findFirst({
+      where: {
+        configCode: dto.configCode,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('配置编码已存在');
+    }
+
+    return this.prisma.searchConditionConfig.create({
+      data: {
+        ...rest,
+        applicablePages: JSON.stringify(applicablePages || []),
+      },
+    });
+  }
+
+  async updateUnifiedSearchConditionConfig(id: number, dto: any) {
+    const config = await this.prisma.searchConditionConfig.findUnique({
+      where: { id },
+    });
+
+    if (!config) {
+      throw new NotFoundException('统一查询条件配置不存在');
+    }
+
+    const { applicablePages, ...rest } = dto;
+
+    return this.prisma.searchConditionConfig.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...(applicablePages !== undefined && {
+          applicablePages: JSON.stringify(applicablePages),
+        }),
+      },
+    });
+  }
+
+  async deleteUnifiedSearchConditionConfig(id: number) {
+    await this.prisma.searchConditionConfig.delete({
+      where: { id },
+    });
+
+    return { message: '删除成功' };
+  }
+
+  async batchSaveUnifiedSearchConditionConfigs(dto: any) {
+    try {
+      const { configs } = dto;
+
+      console.log('=== batchSaveUnifiedSearchConditionConfigs 开始 ===');
+      console.log('收到的配置数量:', configs.length);
+      console.log('配置详情:', JSON.stringify(configs, null, 2));
+
+      if (!configs || configs.length === 0) {
+        throw new Error('配置不能为空');
+      }
+
+      // 获取configCode
+      const configCode = configs[0]?.configCode;
+      if (!configCode) {
+        throw new Error('配置编码不能为空');
+      }
+
+      console.log('配置编码:', configCode);
+
+      // 删除该配置的所有现有记录
+      const existingConfigs = await this.prisma.searchConditionConfig.findMany({
+        where: { configCode },
+      });
+
+      if (existingConfigs.length > 0) {
+        const idsToDelete = existingConfigs.map(c => c.id);
+        console.log('要删除的旧配置ID:', idsToDelete);
+        await this.prisma.searchConditionConfig.deleteMany({
+          where: { id: { in: idsToDelete } },
+        });
+      }
+
+      console.log('已删除旧配置');
+
+      // 批量创建新配置
+      const createdConfigs = await Promise.all(
+        configs.map((config: any) => {
+          // 只提取需要的字段
+          const data: any = {
+            configCode: config.configCode,
+            configName: config.configName,
+            pageCode: config.pageCode,
+            pageName: config.pageName,
+            fieldCode: config.fieldCode,
+            fieldName: config.fieldName,
+            fieldType: config.fieldType,
+            isEnabled: config.isEnabled ?? true,
+            sortOrder: config.sortOrder ?? 0,
+            applicablePages: typeof config.applicablePages === 'string'
+              ? config.applicablePages
+              : JSON.stringify(config.applicablePages || []),
+          };
+
+          // 如果有dataSourceCode才添加
+          if (config.dataSourceCode) {
+            data.dataSourceCode = config.dataSourceCode;
+          }
+
+          console.log('创建配置数据:', JSON.stringify(data, null, 2));
+
+          return this.prisma.searchConditionConfig.create({
+            data,
+          });
+        })
+      );
+
+      console.log('创建了新配置数量:', createdConfigs.length);
+
+      return {
+        message: '批量保存成功',
+        count: createdConfigs.length,
+        data: createdConfigs,
+      };
+    } catch (error) {
+      console.error('=== batchSaveUnifiedSearchConditionConfigs 错误 ===');
+      console.error('错误详情:', error);
+      console.error('错误堆栈:', error instanceof Error ? error.stack : 'No stack');
+      throw error;
+    }
+  }
+
+  async getAvailableSearchFields() {
+    // 获取基本信息和工作信息页签
+    const tabs = await this.prisma.employeeInfoTab.findMany({
+      where: {
+        status: 'ACTIVE',
+        code: {
+          in: ['basic_info', 'work_info'],
+        },
+      },
+      include: {
+        groups: {
+          where: { status: 'ACTIVE' },
+          include: {
+            fields: {
+              include: {
+                dataSource: true,
+              },
+              orderBy: { sort: 'asc' },
+            },
+          },
+          orderBy: { sort: 'asc' },
+        },
+        fields: {
+          where: { groupId: null },
+          include: {
+            dataSource: true,
+          },
+          orderBy: { sort: 'asc' },
+        },
+      },
+      orderBy: { sort: 'asc' },
+    });
+
+    // 获取所有自定义字段的映射
+    const customFields = await this.prisma.customField.findMany({
+      where: {
+        code: {
+          in: [...tabs.flatMap(tab =>
+            [...tab.groups.flatMap(g => g.fields.map(f => f.fieldCode)),
+             ...tab.fields.map(f => f.fieldCode)]
+          )]
+        },
+      },
+      include: {
+        dataSource: true,
+      },
+    });
+
+    const customFieldMap = new Map(customFields.map(cf => [cf.code, cf]));
+
+    const result: any[] = [];
+
+    for (const tab of tabs) {
+      const tabFields: any[] = [];
+
+      // 处理分组内的字段
+      for (const group of tab.groups) {
+        for (const field of group.fields) {
+          if (!field.isHidden) {
+            let dataSourceCode = field.dataSource?.code;
+            let actualFieldType = field.fieldType;
+
+            // 如果是自定义字段，从 CustomField 表获取详细信息
+            if (field.fieldType === 'CUSTOM' && customFieldMap.has(field.fieldCode)) {
+              const customField = customFieldMap.get(field.fieldCode);
+              dataSourceCode = customField.dataSource?.code;
+              actualFieldType = customField.type;
+            }
+
+            tabFields.push({
+              fieldCode: field.fieldCode,
+              fieldName: field.fieldName,
+              fieldType: this.normalizeFieldType(actualFieldType, dataSourceCode),
+              dataSourceCode: dataSourceCode,
+              groupName: group.name,
+              tabCode: tab.code,
+              tabName: tab.name,
+            });
+          }
+        }
+      }
+
+      // 处理未分组的字段
+      for (const field of tab.fields) {
+        if (!field.isHidden) {
+          let dataSourceCode = field.dataSource?.code;
+          let actualFieldType = field.fieldType;
+
+          // 如果是自定义字段，从 CustomField 表获取详细信息
+          if (field.fieldType === 'CUSTOM' && customFieldMap.has(field.fieldCode)) {
+            const customField = customFieldMap.get(field.fieldCode);
+            dataSourceCode = customField.dataSource?.code;
+            actualFieldType = customField.type;
+          }
+
+          tabFields.push({
+            fieldCode: field.fieldCode,
+            fieldName: field.fieldName,
+            fieldType: this.normalizeFieldType(actualFieldType, dataSourceCode),
+            dataSourceCode: dataSourceCode,
+            groupName: null,
+            tabCode: tab.code,
+            tabName: tab.name,
+          });
+        }
+      }
+
+      result.push({
+        tabCode: tab.code,
+        tabName: tab.name,
+        fields: tabFields,
+      });
+    }
+
+    return result;
+  }
+
+  private normalizeFieldType(fieldType: string, dataSourceCode?: string): 'text' | 'select' | 'date' | 'dateRange' | 'organization' {
+    const type = fieldType.toLowerCase().trim();
+
+    // 处理组织类型字段
+    if (type === 'org' || type === 'organization') {
+      return 'organization';
+    }
+
+    // 如果字段关联了数据源，则是下拉选择类型
+    if (dataSourceCode) {
+      return 'select';
+    }
+
+    if (type.includes('select') ||
+        type.includes('lookup') ||
+        type === 'select_single' ||
+        type === 'select_multi') {
+      return 'select';
+    }
+
+    if (type.includes('date') && type.includes('range')) {
+      return 'dateRange';
+    }
+
+    if (type.includes('date')) {
+      return 'date';
+    }
+
+    if (type.includes('organization')) {
+      return 'organization';
+    }
+
+    return 'text';
   }
 
   // 系统配置相关方法
@@ -1309,7 +2303,7 @@ export class HrService {
 
   /**
    * 获取工作信息版本列表
-   * 从 EmployeeChangeLog 中提取工作信息相关的变更记录
+   * 直接从 WorkInfoHistory 表查询
    */
   async getWorkInfoVersions(employeeId: number) {
     const employee = await this.prisma.employee.findUnique({
@@ -1320,57 +2314,49 @@ export class HrService {
       throw new NotFoundException('员工不存在');
     }
 
-    // 获取工作信息相关的字段变更记录
-    const workInfoFields = [
-      'position',
-      'jobLevel',
-      'employeeType',
-      'workLocation',
-      'workAddress',
-      'orgId',
-    ];
-
-    const changeLogs = await this.prisma.employeeChangeLog.findMany({
-      where: {
-        employeeId,
-        fieldName: {
-          in: workInfoFields,
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
+    // 查询所有工作信息历史记录，按生效日期倒序排列
+    const workInfoHistories = await this.prisma.workInfoHistory.findMany({
+      where: { employeeId },
+      orderBy: { effectiveDate: 'desc' },
     });
 
-    // 按日期分组，生成版本列表
-    const versionMap = new Map<string, any>();
+    // 如果没有任何历史记录，返回空数组
+    if (workInfoHistories.length === 0) {
+      return [];
+    }
 
-    changeLogs.forEach((log) => {
-      const dateKey = log.createdAt.toISOString().split('T')[0];
+    // 转换为版本列表格式
+    // 排除当前版本（isCurrent=true 的记录）作为历史版本
+    const historyVersions = workInfoHistories
+      .filter(info => !info.isCurrent)
+      .map(info => ({
+        id: String(info.id),
+        effectiveDate: info.effectiveDate,
+        changeType: info.changeType,
+        description: this.getChangeTypeLabel(info.changeType),
+        createdAt: info.createdAt,
+      }));
 
-      if (!versionMap.has(dateKey)) {
-        versionMap.set(dateKey, {
-          id: dateKey,
-          effectiveDate: dateKey,
-          description: `${log.fieldName} 变更`,
-          createdAt: log.createdAt,
-        });
-      }
-    });
+    return historyVersions;
+  }
 
-    // 添加当前版本
-    const versions = [
-      {
-        id: 'current',
-        effectiveDate: employee.createdAt.toISOString().split('T')[0],
-        description: '当前版本',
-        createdAt: employee.createdAt,
-        isCurrent: true,
-      },
-      ...Array.from(versionMap.values()),
-    ];
+  /**
+   * 获取异动类型的中文标签
+   */
+  private getChangeTypeLabel(changeType: string | null): string {
+    if (!changeType) return '未知';
 
-    return versions;
+    const labels: Record<string, string> = {
+      'ENTRY': '入职',
+      'TRANSFER': '调动',
+      'PROMOTION': '升职',
+      'DEMOTION': '降职',
+      'RESIGNATION': '离职',
+      'SALARY_ADJUSTMENT': '调薪',
+      'OTHER': '其他',
+    };
+
+    return labels[changeType] || changeType;
   }
 
   /**
@@ -1478,46 +2464,100 @@ export class HrService {
       return result;
     }
 
-    // 如果是历史版本，查找该日期的变更记录
-    const versionDate = new Date(version);
-    const changeLogs = await this.prisma.employeeChangeLog.findMany({
+    // 如果是历史版本，从 WorkInfoHistory 表查找
+    // version 参数是 WorkInfoHistory 的 ID
+    const historyId = +version;
+
+    if (isNaN(historyId)) {
+      throw new NotFoundException('版本ID格式不正确');
+    }
+
+    const historyWorkInfo = await this.prisma.workInfoHistory.findFirst({
       where: {
+        id: historyId,
         employeeId,
-        createdAt: {
-          lte: versionDate,
-        },
       },
-      orderBy: {
-        createdAt: 'desc',
+      include: {
+        org: true,
       },
     });
 
-    // 构建历史快照
-    const snapshot: any = {
-      id: employeeId,
-      employeeNo: employee.employeeNo,
-      name: employee.name,
-      customFields: JSON.parse(employee.customFields || '{}'),
+    if (!historyWorkInfo) {
+      throw new NotFoundException('工作信息历史记录不存在');
+    }
+
+    // 解析员工的自定义字段（非工作信息页签的）
+    const employeeCustomFields = JSON.parse(employee.customFields || '{}');
+
+    // 解析历史工作信息的自定义字段
+    const workInfoCustomFields = JSON.parse(historyWorkInfo.customFields || '{}');
+
+    // 合并所有自定义字段
+    const mergedCustomFields = {
+      ...employeeCustomFields,
+      ...workInfoCustomFields,
     };
 
-    // 应用变更记录，回溯到指定时间点的状态
-    changeLogs.forEach((log) => {
-      if (log.fieldName === 'position') {
-        snapshot.position = log.oldValue;
-      } else if (log.fieldName === 'jobLevel') {
-        snapshot.jobLevel = log.oldValue;
-      } else if (log.fieldName === 'employeeType') {
-        snapshot.employeeType = log.oldValue;
-      } else if (log.fieldName === 'orgId') {
-        snapshot.orgId = log.oldValue ? +log.oldValue : null;
-      } else if (log.fieldName === 'workLocation') {
-        snapshot.workLocation = log.oldValue;
-      } else if (log.fieldName === 'workAddress') {
-        snapshot.workAddress = log.oldValue;
-      }
+    // 获取所有学历信息
+    const educations = await this.prisma.employeeEducation.findMany({
+      where: { employeeId },
+      orderBy: [{ isHighest: 'desc' }, { endDate: 'desc' }],
     });
 
-    return snapshot;
+    // 获取所有工作经历
+    const workExperiences = await this.prisma.employeeWorkExperience.findMany({
+      where: { employeeId },
+      orderBy: { startDate: 'desc' },
+    });
+
+    // 获取所有家庭成员
+    const familyMembers = await this.prisma.employeeFamilyMember.findMany({
+      where: { employeeId },
+      orderBy: [{ isEmergency: 'desc' }, { sortOrder: 'asc' }],
+    });
+
+    // 返回结构化的数据
+    const result = {
+      // 基本信息 - 包含Employee表的所有字段
+      id: employee.id,
+      employeeNo: employee.employeeNo,
+      name: employee.name,
+      gender: employee.gender,
+      idCard: employee.idCard,
+      phone: employee.phone,
+      email: employee.email,
+      orgId: employee.orgId,
+      entryDate: employee.entryDate,
+      status: employee.status,
+      // 基本信息页签字段
+      birthDate: employee.birthDate,
+      age: employee.age,
+      maritalStatus: employee.maritalStatus,
+      nativePlace: employee.nativePlace,
+      politicalStatus: employee.politicalStatus,
+      householdRegister: employee.householdRegister,
+      currentAddress: employee.currentAddress,
+      photo: employee.photo,
+      emergencyContact: employee.emergencyContact,
+      emergencyPhone: employee.emergencyPhone,
+      emergencyRelation: employee.emergencyRelation,
+      homeAddress: employee.homeAddress,
+      homePhone: employee.homePhone,
+      customFields: JSON.stringify(mergedCustomFields),
+      // 历史工作信息
+      currentWorkInfo: {
+        ...historyWorkInfo,
+        customFields: workInfoCustomFields, // 解析后的自定义字段
+      },
+      // 学历列表
+      educations,
+      // 工作经历列表
+      workExperiences,
+      // 家庭成员列表
+      familyMembers,
+    };
+
+    return result;
   }
 
   /**
@@ -1536,7 +2576,7 @@ export class HrService {
     }
 
     // 职位信息字段（支持时间轴）
-    const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType'];
+    const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType', 'costCenter', 'employmentRelation'];
 
     // 入职信息字段（不支持时间轴）
     const entryInfoFields = ['entryDate', 'hireDate'];
@@ -1699,7 +2739,7 @@ export class HrService {
     }
 
     // 职位信息字段（支持时间轴）
-    const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType'];
+    const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType', 'costCenter', 'employmentRelation'];
 
     // 解析新的 customFields
     const newCustomFields = JSON.parse(customFields || '{}');
@@ -1863,6 +2903,174 @@ export class HrService {
   }
 
   /**
+   * 创建员工异动记录（异动/离职）
+   */
+  async createWorkInfoChange(employeeId: number, dto: any) {
+    console.log('创建员工异动记录，接收数据:', dto);
+
+    const { changeType, effectiveDate, resignationDate, resignationReason, customFields, ...otherFields } = dto;
+
+    // 验证员工是否存在
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('员工不存在');
+    }
+
+    // 将当前工作信息记录设为非当前
+    await this.prisma.workInfoHistory.updateMany({
+      where: { employeeId, isCurrent: true },
+      data: { isCurrent: false },
+    });
+
+    // 准备自定义字段
+    const currentWorkInfo = await this.prisma.workInfoHistory.findFirst({
+      where: { employeeId, isCurrent: true },
+    });
+
+    const currentCustomFields = currentWorkInfo?.customFields
+      ? (typeof currentWorkInfo.customFields === 'string'
+          ? JSON.parse(currentWorkInfo.customFields)
+          : currentWorkInfo.customFields)
+      : {};
+
+    const newCustomFields = {
+      ...currentCustomFields,
+      ...customFields,
+    };
+
+    console.log('合并后的自定义字段:', newCustomFields);
+
+    // 构建创建数据，只包含有值的字段
+    const createData: any = {
+      employeeId,
+      changeType,
+      effectiveDate: effectiveDate ? new Date(effectiveDate) : new Date(),
+      isCurrent: true,
+      customFields: JSON.stringify(newCustomFields),
+    };
+
+    // 只有离职时才添加这些字段
+    if (changeType === 'RESIGNATION') {
+      if (resignationDate) {
+        createData.endDate = new Date(resignationDate);
+        createData.resignationDate = new Date(resignationDate);
+      }
+      if (resignationReason) {
+        createData.resignationReason = resignationReason;
+      }
+    }
+
+    // 添加其他工作信息字段（只添加有值的）
+    const workInfoFields = ['orgId', 'position', 'jobLevel', 'employeeType', 'workLocation',
+                             'workAddress', 'hireDate', 'probationStart', 'probationEnd',
+                             'probationMonths', 'regularDate', 'costCenter', 'employmentRelation'];
+
+    workInfoFields.forEach(field => {
+      if (otherFields[field] !== undefined && otherFields[field] !== null) {
+        // 如果是日期字段，转换为 Date 对象
+        if (field.endsWith('Date') || field.endsWith('Start') || field.endsWith('End')) {
+          if (typeof otherFields[field] === 'string') {
+            createData[field] = new Date(otherFields[field]);
+          } else {
+            createData[field] = otherFields[field];
+          }
+        } else {
+          createData[field] = otherFields[field];
+        }
+      }
+    });
+
+    console.log('准备创建的工作信息数据:', createData);
+
+    // 创建新的工作信息历史记录
+    const newWorkInfo = await this.prisma.workInfoHistory.create({
+      data: createData,
+      include: {
+        org: true,
+      },
+    });
+
+    console.log('创建成功，新记录ID:', newWorkInfo.id);
+
+    // 更新员工表中的相关信息
+    const employeeUpdateData: any = {};
+
+    // 如果发生了组织变更，更新员工表的orgId
+    if (createData.orgId && createData.orgId !== employee.orgId) {
+      employeeUpdateData.orgId = createData.orgId;
+      console.log(`组织变更: ${employee.orgId} -> ${createData.orgId}`);
+    }
+
+    // 更新员工的customFields（合并工作信息的自定义字段）
+    const employeeCustomFields = typeof employee.customFields === 'string'
+      ? JSON.parse(employee.customFields)
+      : employee.customFields || {};
+
+    const mergedCustomFields = {
+      ...employeeCustomFields,
+      ...newCustomFields,
+    };
+
+    // 只更新工作信息相关的字段
+    const workInfoFieldsForUpdate = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType'];
+    for (const field of workInfoFieldsForUpdate) {
+      if (newCustomFields[field] !== undefined) {
+        mergedCustomFields[field] = newCustomFields[field];
+      }
+    }
+
+    employeeUpdateData.customFields = JSON.stringify(mergedCustomFields);
+
+    // 更新员工表
+    if (Object.keys(employeeUpdateData).length > 0) {
+      await this.prisma.employee.update({
+        where: { id: employeeId },
+        data: employeeUpdateData,
+      });
+      console.log('员工表已更新:', Object.keys(employeeUpdateData));
+    }
+
+    // 如果是离职，根据生效日期判断是否更新员工状态
+    if (changeType === 'RESIGNATION' && effectiveDate) {
+      const effectiveDateTime = new Date(effectiveDate);
+      const now = new Date();
+
+      // 设置为当天开始时间进行比较（忽略时分秒）
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const effectiveDay = new Date(effectiveDateTime.getFullYear(), effectiveDateTime.getMonth(), effectiveDateTime.getDate());
+
+      // 如果生效日期在今天或之前，立即更新员工状态为离职
+      if (effectiveDay <= today) {
+        await this.prisma.employee.update({
+          where: { id: employeeId },
+          data: {
+            status: 'INACTIVE',
+          },
+        });
+        console.log('员工状态已更新为离职');
+      }
+      // 如果生效日期在未来，不更新状态（等待定时任务处理）
+    }
+
+    // 工作信息变更需要重新生成劳动力账户
+    // 使用异动的生效日期作为新账户的生效日期
+    if (createData.orgId || Object.keys(newCustomFields).some(key => workInfoFieldsForUpdate.includes(key))) {
+      try {
+        console.log('工作信息发生变更，触发劳动力账户生成，生效日期:', effectiveDate);
+        await this.accountService.regenerateAccountsForEmployeeWithDate(employeeId, new Date(effectiveDate));
+      } catch (error: any) {
+        console.error('生成劳动力账户失败:', error.message);
+        // 不抛出异常，避免影响工作信息变更的保存
+      }
+    }
+
+    return newWorkInfo;
+  }
+
+  /**
    * 更新指定的工作信息历史记录
    * 用于更正历史版本，不记录变更日志
    */
@@ -1879,7 +3087,7 @@ export class HrService {
     const { customFields, entryInfo } = dto;
 
     // 职位信息字段（支持时间轴）
-    const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType'];
+    const positionInfoFields = ['position', 'jobLevel', 'employeeType', 'workLocation', 'workAddress', 'orgId', 'changeType', 'costCenter', 'employmentRelation'];
 
     // 入职信息字段（不支持时间轴）
     const entryInfoFields = ['entryDate', 'hireDate'];
@@ -2097,5 +3305,104 @@ export class HrService {
     });
 
     return { message: '删除成功' };
+  }
+
+  // ==================== 工序管理 ====================
+
+  async getProcesses(query: any) {
+    const { keyword, status } = query;
+
+    const where: any = { deletedAt: null };
+    if (keyword) {
+      where.OR = [
+        { code: { contains: keyword } },
+        { name: { contains: keyword } },
+      ];
+    }
+    if (status) {
+      where.status = status;
+    }
+
+    const processes = await this.prisma.process.findMany({
+      where,
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return processes;
+  }
+
+  async getProcess(id: number) {
+    const process = await this.prisma.process.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!process) {
+      throw new NotFoundException('工序不存在');
+    }
+
+    return process;
+  }
+
+  async createProcess(dto: any) {
+    const { code, name, description, sortOrder } = dto;
+
+    const existing = await this.prisma.process.findFirst({
+      where: {
+        code,
+        deletedAt: null,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('工序编码已存在');
+    }
+
+    return this.prisma.process.create({
+      data: {
+        code,
+        name,
+        description,
+        sortOrder: sortOrder || 0,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  async updateProcess(id: number, dto: any) {
+    const process = await this.prisma.process.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!process) {
+      throw new NotFoundException('工序不存在');
+    }
+
+    const { name, description, sortOrder, status } = dto;
+
+    return this.prisma.process.update({
+      where: { id },
+      data: {
+        name,
+        description,
+        sortOrder,
+        status,
+      },
+    });
+  }
+
+  async deleteProcess(id: number) {
+    const process = await this.prisma.process.findFirst({
+      where: { id, deletedAt: null },
+    });
+
+    if (!process) {
+      throw new NotFoundException('工序不存在');
+    }
+
+    // 软删除
+    return this.prisma.process.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
   }
 }

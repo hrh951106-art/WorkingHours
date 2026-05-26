@@ -281,40 +281,21 @@ const OrganizationPage: React.FC = () => {
           icon={<PlusOutlined />}
           onClick={handleAdd}
           style={{
-            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
+            background: 'var(--color-primary)',
             border: 'none',
-            borderRadius: 8,
+            borderRadius: 'var(--radius-md)',
             height: 40,
             fontWeight: 500,
-            boxShadow: '0 2px 8px rgba(34, 185, 112, 0.3)',
           }}
         >
           新建组织
         </Button>
       }
-      stats={[
-        {
-          title: '组织总数',
-          value: flattenOrgs(orgs).length,
-          prefix: <ApartmentOutlined style={{ color: '#22B970' }} />,
-          color: '#22B970',
-        },
-        {
-          title: '激活组织',
-          value: flattenOrgs(orgs).filter((o: any) => o.status === 'ACTIVE').length,
-          color: '#10b981',
-        },
-        {
-          title: '最大层级',
-          value: Math.max(...flattenOrgs(orgs).map((o: any) => o.level), 0),
-          color: '#f59e0b',
-        },
-      ]}
     >
       <Card
         style={{
-          borderRadius: 12,
-          border: '1px solid #e2e8f0',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--color-border-1)',
         }}
         bodyStyle={{ padding: '24px' }}
       >
@@ -338,16 +319,16 @@ const OrganizationPage: React.FC = () => {
               style={{
                 height: 600,
                 overflow: 'auto',
-                borderRadius: 8,
-                border: '1px solid #e2e8f0',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border-1)',
               }}
               headStyle={{
-                borderBottom: '2px solid #e2e8f0',
+                borderBottom: '2px solid var(--color-border-1)',
                 fontWeight: 600,
               }}
             >
               {isLoading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-secondary)' }}>
                   加载中...
                 </div>
               ) : (
@@ -380,7 +361,7 @@ const OrganizationPage: React.FC = () => {
                             handleSelect(nodeData.data);
                             handleEdit();
                           }}
-                          style={{ color: '#22B970' }}
+                          style={{ color: 'var(--color-primary)' }}
                         />
                         <Button
                           type="text"
@@ -412,7 +393,7 @@ const OrganizationPage: React.FC = () => {
                         <Button
                           icon={<EditOutlined />}
                           onClick={handleEdit}
-                          style={{ borderRadius: 8 }}
+                          style={{ borderRadius: 'var(--radius-md)' }}
                         >
                           编辑
                         </Button>
@@ -420,7 +401,7 @@ const OrganizationPage: React.FC = () => {
                           danger
                           icon={<DeleteOutlined />}
                           onClick={() => handleDelete(selectedOrg.id)}
-                          style={{ borderRadius: 8 }}
+                          style={{ borderRadius: 'var(--radius-md)' }}
                         >
                           删除
                         </Button>
@@ -428,7 +409,7 @@ const OrganizationPage: React.FC = () => {
                     )}
                     {isEditing && (
                       <>
-                        <Button onClick={handleCancel} style={{ borderRadius: 8 }}>
+                        <Button onClick={handleCancel} style={{ borderRadius: 'var(--radius-md)' }}>
                           取消
                         </Button>
                         <Button
@@ -437,9 +418,9 @@ const OrganizationPage: React.FC = () => {
                           onClick={handleSubmit}
                           loading={createMutation.isPending || updateMutation.isPending}
                           style={{
-                            background: 'linear-gradient(135deg, #22B970 0%, rgba(255, 255, 255, 0.2) 100%)',
+                            background: 'var(--color-primary)',
                             border: 'none',
-                            borderRadius: 8,
+                            borderRadius: 'var(--radius-md)',
                           }}
                         >
                           保存
@@ -452,11 +433,11 @@ const OrganizationPage: React.FC = () => {
               style={{
                 height: 600,
                 overflow: 'auto',
-                borderRadius: 8,
-                border: '1px solid #e2e8f0',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border-1)',
               }}
               headStyle={{
-                borderBottom: '2px solid #e2e8f0',
+                borderBottom: '2px solid var(--color-border-1)',
                 fontWeight: 600,
               }}
             >
@@ -616,7 +597,7 @@ const OrganizationPage: React.FC = () => {
                   style={{
                     textAlign: 'center',
                     padding: '50px',
-                    color: '#64748b',
+                    color: 'var(--color-text-secondary)',
                     fontSize: '14px',
                   }}
                 >

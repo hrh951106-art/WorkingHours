@@ -58,6 +58,12 @@ const PunchRecordPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchForm] = useState<any>(null);
 
+  // 分页状态
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+  });
+
   const { data: employees } = useQuery({
     queryKey: ['employees'],
     queryFn: () => request.get('/hr/employees').then((res: any) => res.items || []),
@@ -69,11 +75,13 @@ const PunchRecordPage: React.FC = () => {
   });
 
   const { data: records, isLoading } = useQuery({
-    queryKey: ['punchRecords', dateRange, dynamicFilters],
+    queryKey: ['punchRecords', dateRange, dynamicFilters, pagination],
     queryFn: () => request.get('/punch/records', {
       params: {
         startDate: dateRange.start.format('YYYY-MM-DD'),
         endDate: dateRange.end.format('YYYY-MM-DD'),
+        page: pagination.current,
+        pageSize: pagination.pageSize,
         ...dynamicFilters,
       }
     }).then((res: any) => res),
@@ -87,9 +95,13 @@ const PunchRecordPage: React.FC = () => {
       };
       return request.post('/punch/records', requestData);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       message.success('补录成功');
+
+      // 刷新所有相关查询（后端已自动触发摆卡）
       queryClient.invalidateQueries({ queryKey: ['punchRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['punchPairs'] });
+
       setIsRecordModalOpen(false);
       recordForm.resetFields();
       setSelectedRecord(null);
@@ -109,9 +121,13 @@ const PunchRecordPage: React.FC = () => {
       };
       return request.put(`/punch/records/${id}`, requestData);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       message.success('更新成功');
+
+      // 刷新所有相关查询（后端已自动触发摆卡）
       queryClient.invalidateQueries({ queryKey: ['punchRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['punchPairs'] });
+
       setIsRecordModalOpen(false);
       recordForm.resetFields();
       setSelectedRecord(null);
@@ -125,9 +141,12 @@ const PunchRecordPage: React.FC = () => {
 
   const deleteRecordMutation = useMutation({
     mutationFn: (id: number) => request.delete(`/punch/records/${id}`),
-    onSuccess: () => {
+    onSuccess: async () => {
       message.success('删除成功');
+
+      // 刷新所有相关查询（后端已自动触发摆卡）
       queryClient.invalidateQueries({ queryKey: ['punchRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['punchPairs'] });
     },
     onError: (error: any) => {
       const errorMsg = error?.response?.data?.message || error?.message || '删除失败';
@@ -138,9 +157,12 @@ const PunchRecordPage: React.FC = () => {
 
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: number[]) => Promise.all(ids.map(id => request.delete(`/punch/records/${id}`))),
-    onSuccess: () => {
-      message.success(`成功删除 ${selectedRowKeys.length} 条记录`);
+    onSuccess: async (_, variables) => {
+      message.success(`成功删除 ${variables.length} 条记录`);
+
+      // 刷新所有相关查询（后端已自动触发摆卡）
       queryClient.invalidateQueries({ queryKey: ['punchRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['punchPairs'] });
       setSelectedRowKeys([]);
     },
     onError: (error: any) => {
@@ -303,31 +325,16 @@ const PunchRecordPage: React.FC = () => {
     }
   };
 
-  // 过滤打卡记录
-  const filteredRecords = (records?.items || []).filter((record: any) => {
-    if (!dynamicFilters || Object.keys(dynamicFilters).length === 0) return true;
-
-    // 简单过滤：如果dynamicFilters中有值，则进行匹配
-    return Object.keys(dynamicFilters).every((key) => {
-      if (!dynamicFilters[key]) return true;
-
-      const searchValue = dynamicFilters[key].toLowerCase();
-      return (
-        record.employeeNo?.toLowerCase().includes(searchValue) ||
-        record.employee?.name?.toLowerCase().includes(searchValue) ||
-        record.device?.name?.toLowerCase().includes(searchValue) ||
-        record.device?.code?.toLowerCase().includes(searchValue) ||
-        record.punchType?.toLowerCase().includes(searchValue)
-      );
-    });
-  });
-
   const handleSearch = (values: any) => {
     setDynamicFilters(values);
+    // 搜索时重置到第一页
+    setPagination(prev => ({ ...prev, current: 1 }));
   };
 
   const handleReset = () => {
     setDynamicFilters({});
+    // 重置时重置到第一页
+    setPagination(prev => ({ ...prev, current: 1 }));
   };
 
   const rowSelection = {
@@ -340,6 +347,12 @@ const PunchRecordPage: React.FC = () => {
   const handleRecordModalOk = async () => {
     try {
       const values = await recordForm.validateFields();
+
+      // 调试日志：打印提交的数据
+      console.log('[创建���卡记录] 表单数据:', values);
+      console.log('[创建打卡记录] accountId:', values.accountId);
+      console.log('[创建打卡记录] accountId 类型:', typeof values.accountId);
+
       if (selectedRecord) {
         updateRecordMutation.mutate({ id: selectedRecord.id, data: values });
       } else {
@@ -448,20 +461,29 @@ const PunchRecordPage: React.FC = () => {
             onFixedFilterChange={(key: string, value: any) => {
               if (key === 'dateRange' && value && value[0] && value[1]) {
                 setDateRange({ start: value[0], end: value[1] });
+                // 日期范围变化时重置到第一页
+                setPagination(prev => ({ ...prev, current: 1 }));
               }
             }}
           />
         </div>
         <Table
           columns={recordColumns}
-          dataSource={filteredRecords}
+          dataSource={records?.items || []}
           rowKey="id"
           loading={isLoading}
           rowSelection={rowSelection}
           pagination={{
-            total: filteredRecords.length,
-            pageSize: 10,
-            current: 1,
+            total: records?.total || 0,
+            pageSize: pagination.pageSize,
+            current: pagination.current,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total) => `共 ${total} 条记录`,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            onChange: (page, pageSize) => {
+              setPagination({ current: page, pageSize: pageSize || 10 });
+            },
           }}
         />
       </Card>

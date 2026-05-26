@@ -17,7 +17,7 @@ import {
 } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, PlusOutlined, LoadingOutlined, DeleteOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import request from '@/utils/request';
 import type { UploadChangeParam, UploadFile, UploadProps } from 'antd';
 
@@ -30,6 +30,9 @@ const EmployeeCreatePage: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [photoFileList, setPhotoFileList] = useState<UploadFile[]>([]);
   const [photoUploading, setPhotoUploading] = useState(false);
+
+  // 保存所有步骤的数据
+  const [allStepsData, setAllStepsData] = useState<any>({});
 
   const { data: orgTree, isLoading: orgTreeLoading, error: orgTreeError } = useQuery({
     queryKey: ['orgTree'],
@@ -50,6 +53,19 @@ const EmployeeCreatePage: React.FC = () => {
     queryKey: ['dataSources'],
     queryFn: () => request.get('/hr/data-sources').then((res: any) => res || []),
   });
+
+  // 获取下一个工号（预览）
+  const { data: nextEmployeeNo } = useQuery({
+    queryKey: ['nextEmployeeNo'],
+    queryFn: () => request.get('/hr/employees/next-employee-no').then((res: any) => res),
+  });
+
+  // 当获取到工号时，自动填充到表单
+  useEffect(() => {
+    if (nextEmployeeNo) {
+      form.setFieldValue('employeeNo', nextEmployeeNo);
+    }
+  }, [nextEmployeeNo, form]);
 
   // 下拉类型的自定义字段
   const dropdownFields = customFields?.filter((f: any) =>
@@ -102,6 +118,16 @@ const EmployeeCreatePage: React.FC = () => {
       member_work: 'memberWork',
       member_address: 'memberAddress',
       member_phone: 'memberPhone',
+      // 新增字段映射
+      employment_relation: 'employmentRelation',
+      position_title: 'positionTitle',
+      cost_center: 'costCenter',
+      job_post: 'jobPost',
+      probation_period: 'probationPeriod',
+      usage_start_date: 'usageStartDate',
+      service_years_start_date: 'serviceYearsStartDate',
+      estimated_probation_end_date: 'estimatedProbationEndDate',
+      regular_date: 'regularDate',
     };
     return fieldMapping[code] || code;
   };
@@ -180,7 +206,7 @@ const EmployeeCreatePage: React.FC = () => {
   };
 
   // 渲染系统字段
-  const renderSystemField = (fieldCode: string, fieldName: string, isRequired: boolean = false) => {
+  const renderSystemField = (fieldCode: string, fieldName: string, isRequired: boolean = false, fieldType?: string) => {
     // 字段标签映射 - 只在 fieldName 未提供时使用
     const getFieldLabel = (code: string, providedFieldName?: string) => {
       // 如果提供了 fieldName，直接使用
@@ -263,9 +289,15 @@ const EmployeeCreatePage: React.FC = () => {
           <Form.Item
             name={mapFieldName(fieldCode)}
             label={getFieldLabel(fieldCode, fieldName)}
-            rules={createRules()}
+            tooltip="系统自动生成工号（格式：年月+序号，如202604001）"
+            extra={nextEmployeeNo ? `系统已生成工号：${nextEmployeeNo}` : '正在生成工号...'}
+            initialValue={nextEmployeeNo}
           >
-            <Input placeholder={`请输入${getFieldLabel(fieldCode, fieldName)}`} />
+            <Input
+              disabled
+              placeholder="系统自动生成"
+              addonAfter={nextEmployeeNo && <span style={{ color: 'var(--color-success)', fontSize: '12px' }}>✓ 自动生成</span>}
+            />
           </Form.Item>
         );
 
@@ -281,7 +313,7 @@ const EmployeeCreatePage: React.FC = () => {
         );
 
       case 'gender':
-        const genderOptions = getOptionsByDataSourceCode('gender');
+        const genderOptions = getOptionsByDataSourceCode('GENDER');
         return (
           <Form.Item
             name="gender"
@@ -441,6 +473,7 @@ const EmployeeCreatePage: React.FC = () => {
             name="status"
             label={getFieldLabel(fieldCode, fieldName)}
             rules={createRules()}
+            initialValue="ACTIVE"
           >
             <Select placeholder={`请选择${getFieldLabel(fieldCode, fieldName)}`}>
               <Select.Option value="ACTIVE">在职</Select.Option>
@@ -489,7 +522,7 @@ const EmployeeCreatePage: React.FC = () => {
 
       case 'maritalStatus':
       case 'marital_status':
-        const maritalStatusOptions = getOptionsByDataSourceCode('marital_status');
+        const maritalStatusOptions = getOptionsByDataSourceCode('MARITAL_STATUS');
         return (
           <Form.Item
             name={mapFieldName(fieldCode)}
@@ -508,7 +541,7 @@ const EmployeeCreatePage: React.FC = () => {
 
       case 'politicalStatus':
       case 'political_status':
-        const politicalStatusOptions = getOptionsByDataSourceCode('political_status');
+        const politicalStatusOptions = getOptionsByDataSourceCode('POLITICAL_STATUS');
         return (
           <Form.Item
             name={mapFieldName(fieldCode)}
@@ -545,7 +578,7 @@ const EmployeeCreatePage: React.FC = () => {
 
       case 'emergencyRelation':
       case 'emergency_relation':
-        const emergencyRelationOptions = getOptionsByDataSourceCode('family_relation');
+        const emergencyRelationOptions = getOptionsByDataSourceCode('EMERGENCY_CONTACT_RELATION');
         return (
           <Form.Item
             name={mapFieldName(fieldCode)}
@@ -564,7 +597,7 @@ const EmployeeCreatePage: React.FC = () => {
 
       case 'memberRelation':
       case 'member_relation':
-        const memberRelationOptions = getOptionsByDataSourceCode('family_relation');
+        const memberRelationOptions = getOptionsByDataSourceCode('EMERGENCY_CONTACT_RELATION');
         return (
           <Form.Item
             name={mapFieldName(fieldCode)}
@@ -599,6 +632,7 @@ const EmployeeCreatePage: React.FC = () => {
           </Form.Item>
         );
 
+      case 'positionTitle':
       case 'jobLevel':
       case 'job_level':
         const jobLevelOptions = getOptionsByDataSourceCode('JOB_LEVEL');
@@ -810,6 +844,90 @@ const EmployeeCreatePage: React.FC = () => {
           </Form.Item>
         );
 
+      // 新增字段：工作关系
+      case 'employmentRelation':
+        const employmentRelationOptions = getOptionsByDataSourceCode('EMPLOYMENT_RELATION');
+        return (
+          <Form.Item
+            name={mapFieldName(fieldCode)}
+            label={getFieldLabel(fieldCode, fieldName)}
+            rules={createRules()}
+          >
+            <Select placeholder={`请选择${getFieldLabel(fieldCode, fieldName)}`}>
+              {employmentRelationOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      // 新增字段：成本中心
+      case 'costCenter':
+        const costCenterOptions = getOptionsByDataSourceCode('COST_CENTER');
+        return (
+          <Form.Item
+            name={mapFieldName(fieldCode)}
+            label={getFieldLabel(fieldCode, fieldName)}
+            rules={createRules()}
+          >
+            <Select placeholder={`请选择${getFieldLabel(fieldCode, fieldName)}`}>
+              {costCenterOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      // 新增字段：岗位
+      case 'jobPost':
+        const jobPostOptions = getOptionsByDataSourceCode('JOB_POST');
+        return (
+          <Form.Item
+            name={mapFieldName(fieldCode)}
+            label={getFieldLabel(fieldCode, fieldName)}
+            rules={createRules()}
+          >
+            <Select placeholder={`请选择${getFieldLabel(fieldCode, fieldName)}`}>
+              {jobPostOptions.map((option: any) => (
+                <Select.Option key={option.id} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        );
+
+      // 新增字段：试用期周期（NUMBER）
+      case 'probationPeriod':
+        return (
+          <Form.Item
+            name={mapFieldName(fieldCode)}
+            label={getFieldLabel(fieldCode, fieldName)}
+            rules={createRules([{ type: 'number', min: 0, max: 120, message: '请输入有效的月数（0-120）' }])}
+          >
+            <Input type="number" placeholder={`请输入${getFieldLabel(fieldCode, fieldName)}`} />
+          </Form.Item>
+        );
+
+      // 新增字段：转正日期、使用开始日期、工龄开始日期、预计试用结束日期（DATE）
+      case 'regularDate':
+      case 'usageStartDate':
+      case 'serviceYearsStartDate':
+      case 'estimatedProbationEndDate':
+        return (
+          <Form.Item
+            name={mapFieldName(fieldCode)}
+            label={getFieldLabel(fieldCode, fieldName)}
+            rules={createRules()}
+          >
+            <DatePicker style={{ width: '100%' }} placeholder={`请选择${getFieldLabel(fieldCode, fieldName)}`} />
+          </Form.Item>
+        );
+
       case 'photo':
         const uploadButton = (
           <button
@@ -823,7 +941,7 @@ const EmployeeCreatePage: React.FC = () => {
             type="button"
           >
             {photoUploading ? (
-              <LoadingOutlined style={{ fontSize: 32, color: '#22B970' }} />
+              <LoadingOutlined style={{ fontSize: 32, color: 'var(--color-primary)' }} />
             ) : (
               <PlusOutlined style={{ fontSize: 32, color: '#999' }} />
             )}
@@ -1049,7 +1167,7 @@ const EmployeeCreatePage: React.FC = () => {
                 <Card
                   key={key}
                   size="small"
-                  style={{ marginBottom: 16 }}
+                  style={{ marginBottom: 16, borderRadius: 'var(--radius-md)' }}
                   extra={
                     <Button
                       type="text"
@@ -1283,10 +1401,12 @@ const EmployeeCreatePage: React.FC = () => {
             return null;
           }
 
-          // 过滤掉隐藏的字段（包含SYSTEM、SELECT_SINGLE、SELECT_MULTI类型）
+          // 过滤掉隐藏的字段
+          // 系统字段：isSystem=true 且未隐藏的字段
           const systemFields = group.fields?.filter((f: any) =>
-            (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden
+            f.isSystem && !f.isHidden
           ) || [];
+          // 自定义字段：fieldType='CUSTOM' 且未隐藏的字段
           const groupCustomFields = group.fields?.filter((f: any) =>
             f.fieldType === 'CUSTOM' && !f.isHidden
           ) || [];
@@ -1300,13 +1420,13 @@ const EmployeeCreatePage: React.FC = () => {
             <Card
               key={group.id}
               title={group.name}
-              style={{ marginBottom: 16 }}
+              style={{ marginBottom: 16, borderRadius: 'var(--radius-md)' }}
               size="small"
             >
               <Row gutter={16}>
                 {systemFields.map((field: any) => (
                   <Col span={12} key={field.fieldCode}>
-                    {renderSystemField(field.fieldCode, field.fieldName, field.isRequired)}
+                    {renderSystemField(field.fieldCode, field.fieldName, field.isRequired, field.fieldType)}
                   </Col>
                 ))}
                 {groupCustomFields.map((field: any) => {
@@ -1346,7 +1466,7 @@ const EmployeeCreatePage: React.FC = () => {
           if (group.status === 'INACTIVE') return;
 
           const requiredSystemFields = group.fields?.filter((f: any) =>
-            (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden && f.isRequired
+            f.isSystem && !f.isHidden && f.isRequired
           ) || [];
           const requiredCustomFields = group.fields?.filter((f: any) =>
             f.fieldType === 'CUSTOM' && !f.isHidden && f.isRequired
@@ -1368,18 +1488,16 @@ const EmployeeCreatePage: React.FC = () => {
         }
       });
 
-      // 执行验证并获取表单值
-      let values;
-      if (fieldsToValidate.length > 0) {
-        // validateFields 返回验证通过的值
-        values = await form.validateFields(fieldsToValidate);
-        // 获取所有表单字段的值（不只是验证的字段）
-        const allValues = await form.getFieldsValue();
-        // 合并：使用 validateFields 返回的必填字段值，加上其他所有字段的值
-        values = { ...allValues, ...values };
-      } else {
-        values = await form.getFieldsValue();
-      }
+      // 获取当前步骤的数据（最后一步）
+      const currentStepData = form.getFieldsValue();
+
+      // 合并所有步骤的数据
+      const values = {
+        ...allStepsData,
+        ...currentStepData,
+      };
+
+      console.log('提交的数据:', values);
 
       // 提交所有显示的字段，不做限制
       const formattedValues: any = {};
@@ -1389,7 +1507,7 @@ const EmployeeCreatePage: React.FC = () => {
       (tabs || []).forEach((tab: any) => {
         tab.groups?.forEach((group: any) => {
           if (group.status === 'INACTIVE') return;
-          group.fields?.filter((f: any) => (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden)
+          group.fields?.filter((f: any) => f.isSystem && !f.isHidden)
             .forEach((f: any) => {
               // 同时添加下划线命名和驼峰命名
               configuredSystemFields.add(f.fieldCode);
@@ -1405,14 +1523,19 @@ const EmployeeCreatePage: React.FC = () => {
       Object.keys(values).forEach(key => {
         const value = values[key];
 
-        // 跳过 status 字段（创建时不需要）
-        if (key === 'status') return;
-
         // 将下划线命名字段转换为驼峰命名（后端期望驼峰命名）
         const camelCaseKey = mapFieldName(key);
 
         // 检查是否为配置中的字段（需要同时检查驼峰和下划线命名）
         const isConfiguredField = configuredSystemFields.has(key) || configuredSystemFields.has(camelCaseKey);
+
+        // 特殊处理 employeeNo：只发送有值的情况，让后端自动生成
+        if (camelCaseKey === 'employeeNo') {
+          if (value && typeof value === 'string' && value.trim() !== '') {
+            formattedValues.employeeNo = value.trim();
+          }
+          return; // 跳过后续处理
+        }
 
         // 处理日期字段
         if (value && typeof value === 'object' && value.format) {
@@ -1468,6 +1591,8 @@ const EmployeeCreatePage: React.FC = () => {
       });
 
       createMutation.mutate(formattedValues);
+
+      console.log('发送到后端的数据:', JSON.stringify(formattedValues, null, 2));
     } catch (error) {
       console.error('表单验证失败:', error);
       console.error('错误详情:', error.errorFields);
@@ -1489,7 +1614,7 @@ const EmployeeCreatePage: React.FC = () => {
         if (group.status === 'INACTIVE') return;
 
         const systemFields = group.fields?.filter((f: any) =>
-          (f.fieldType === 'SYSTEM' || f.fieldType === 'SELECT_SINGLE' || f.fieldType === 'SELECT_MULTI') && !f.isHidden && f.isRequired
+          f.isSystem && !f.isHidden && f.isRequired
         ) || [];
         const customFieldCodes = group.fields?.filter((f: any) =>
           f.fieldType === 'CUSTOM' && !f.isHidden && f.isRequired
@@ -1508,6 +1633,13 @@ const EmployeeCreatePage: React.FC = () => {
       if (fieldsToValidate.length > 0) {
         await form.validateFields(fieldsToValidate);
       }
+
+      // 保存当前步骤的数据
+      const currentStepData = form.getFieldsValue();
+      setAllStepsData(prev => ({
+        ...prev,
+        ...currentStepData,
+      }));
 
       setCurrentStep(currentStep + 1);
     } catch (error) {
@@ -1585,7 +1717,7 @@ const EmployeeCreatePage: React.FC = () => {
           <div style={{
             width: '280px',
             paddingRight: '24px',
-            borderRight: '1px solid #f0f0f0',
+            borderRight: '1px solid var(--color-border-1)',
             position: 'relative'
           }}>
             {/* 步骤项容器 */}
@@ -1615,7 +1747,7 @@ const EmployeeCreatePage: React.FC = () => {
                       top: '24px',
                       width: '2px',
                       height: '80px',
-                      background: index < currentStep ? '#22B970' : '#e2e8f0',
+                      background: index < currentStep ? 'var(--color-primary)' : 'var(--color-border-1)',
                       zIndex: 0
                     }} />
                   )}
@@ -1625,8 +1757,8 @@ const EmployeeCreatePage: React.FC = () => {
                     width: '24px',
                     height: '24px',
                     borderRadius: '50%',
-                    background: index < currentStep ? '#22B970' : index === currentStep ? '#22B970' : '#fff',
-                    border: `2px solid ${index <= currentStep ? '#22B970' : '#e2e8f0'}`,
+                    background: index < currentStep ? 'var(--color-primary)' : index === currentStep ? 'var(--color-primary)' : '#fff',
+                    border: `2px solid ${index <= currentStep ? 'var(--color-primary)' : 'var(--color-border-1)'}`,
                     flexShrink: 0,
                     display: 'flex',
                     alignItems: 'center',
@@ -1642,7 +1774,7 @@ const EmployeeCreatePage: React.FC = () => {
                   {/* 标题 */}
                   <span style={{
                     fontSize: '14px',
-                    color: index <= currentStep ? '#22B970' : '#64748b',
+                    color: index <= currentStep ? 'var(--color-primary)' : 'var(--color-text-secondary)',
                     fontWeight: index === currentStep ? 'bold' : 'normal',
                     paddingTop: '2px'
                   }}>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Card,
   Tabs,
@@ -48,7 +48,7 @@ const WorkHourDetailPage: React.FC = () => {
     end: dayjs().endOf('month'),
   });
   const [dynamicFilters, setDynamicFilters] = useState<any>({});
-  const [searchForm] = useState<any>(null);
+  const [searchForm] = Form.useForm();
 
   // 获取员工列表
   const { data: employees } = useQuery({
@@ -118,7 +118,7 @@ const WorkHourDetailPage: React.FC = () => {
       >
         <div style={{ marginBottom: 24 }}>
           <DynamicSearchConditions
-            pageCode="workhour-details"
+            pageCode="work-hour-details"
             onSearch={handleSearch}
             onReset={handleReset}
             loading={false}
@@ -138,6 +138,7 @@ const WorkHourDetailPage: React.FC = () => {
         style={{
           borderRadius: 12,
           border: '1px solid #e2e8f0',
+          overflow: 'hidden',
         }}
         bodyStyle={{ padding: 0 }}
       >
@@ -148,7 +149,7 @@ const WorkHourDetailPage: React.FC = () => {
           size="large"
           tabBarStyle={{
             margin: 0,
-            padding: '0 24px',
+            padding: '0 16px',
             borderBottom: '1px solid #e2e8f0',
           }}
         />

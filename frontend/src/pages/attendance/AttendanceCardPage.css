@@ -1,0 +1,602 @@
+/* 考勤卡页面样式 - 参考盖雅WFM设计规范 */
+
+:root {
+  /* 主色（默认盖雅绿，支持自定义主题色替换） */
+  --color-primary: #00B365;
+  --color-primary-hover: #00994F;
+  --color-primary-active: #008040;
+  --color-primary-disabled: rgba(0,179,101,0.4);
+  --color-primary-light: rgba(0,179,101,0.08);
+
+  /* 功能色（不跟随主题色） */
+  --color-success: #00B365;
+  --color-info: #1890FF;
+  --color-warning: #FAAD14;
+  --color-error: #F5222D;
+
+  /* 文字色 */
+  --color-text-primary: #1F2F4D;
+  --color-text-secondary: #5A6A87;
+  --color-text-tertiary: #8C96A8;
+  --color-text-disabled: #BCC4D0;
+
+  /* 边框色 */
+  --color-border-1: #E5E8ED;
+  --color-border-2: #D0D5DD;
+
+  /* 背景色 */
+  --color-bg-white: #FFFFFF;
+  --color-bg-light: #F7F8FA;
+  --color-bg-dark: #F0F2F5;
+  --color-bg-disabled: #F5F5F5;
+
+  /* 遮罩 */
+  --color-mask: rgba(31,47,77,0.5);
+
+  /* 投影 */
+  --shadow-s1: 0 1px 5px rgba(31,47,77,0.1);
+  --shadow-s2: 1px 3px 12px rgba(31,47,77,0.12);
+  --shadow-s3: 1px 8px 20px rgba(31,47,77,0.12);
+
+  /* 字体 */
+  --font-family: 'PingFang SC','Heiti SC','Microsoft YaHei',Roboto,Helvetica,Arial,sans-serif;
+
+  /* 间距 */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-default: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+
+  /* 圆角 */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  /* 分割线 */
+  --divider-color: #E5E8ED;
+  --divider-size: 1px;
+
+  /* 动效 */
+  --duration-fast: 0.15s;
+  --duration-normal: 0.2s;
+  --duration-moderate: 0.3s;
+  --ease-out: cubic-bezier(0.25,0.8,0.25,1);
+  --ease-in: cubic-bezier(0.55,0,1,0.45);
+  --ease-in-out: cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ===== 内容卡片容器 ===== */
+.attendance-card-container {
+  background: var(--color-bg-white);
+  border-radius: var(--radius-lg);
+  border: var(--divider-size) solid var(--color-border-1);
+  overflow: hidden;
+  margin-bottom: var(--space-default);
+}
+
+/* ===== 筛选区 ===== */
+.filter-bar {
+  padding: var(--space-default) var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border-bottom: var(--divider-size) solid var(--divider-color);
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-right: var(--space-xs);
+  white-space: nowrap;
+}
+
+.filter-select {
+  height: 32px;
+  border: var(--divider-size) solid var(--color-border-1);
+  border-radius: var(--radius-md);
+  padding: 0 28px 0 var(--space-md);
+  font-size: 12px;
+  outline: none;
+  appearance: none;
+  background: var(--color-bg-white) url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238C96A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out);
+  min-width: 120px;
+}
+
+.filter-select:focus {
+  border-color: var(--color-primary);
+}
+
+/* Ant Design Select 组件样式覆盖 */
+.filter-select-antd {
+  font-size: 12px;
+}
+
+.filter-select-antd .ant-select-selector {
+  height: 32px !important;
+  border: var(--divider-size) solid var(--color-border-1) !important;
+  border-radius: var(--radius-md) !important;
+  font-size: 12px !important;
+}
+
+.filter-select-antd:hover .ant-select-selector {
+  border-color: var(--color-primary) !important;
+}
+
+.filter-select-antd.ant-select-focused .ant-select-selector {
+  border-color: var(--color-primary) !important;
+  box-shadow: none !important;
+}
+
+/* ===== 按钮样式 ===== */
+.btn {
+  height: 32px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: var(--divider-size) solid transparent;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.btn-secondary {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.btn-default {
+  background: var(--color-bg-white);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-2);
+}
+
+.btn-default:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.btn-text {
+  background: none;
+  color: var(--color-primary);
+  border: none;
+  padding: 0 var(--space-xs);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.btn-text:hover {
+  color: var(--color-primary-hover);
+}
+
+/* ===== 表格工具栏 ===== */
+.table-toolbar {
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: var(--divider-size) solid var(--divider-color);
+}
+
+.table-count {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.table-count b {
+  color: var(--color-text-primary);
+}
+
+/* ===== 表格 ===== */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+.table-wrapper-workhour {
+  max-height: 400px;
+}
+
+.attendance-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1000px;
+  table-layout: fixed;
+}
+
+.attendance-table thead th {
+  padding: 10px 16px 10px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-light);
+  border-bottom: var(--divider-size) solid var(--divider-color);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.attendance-table thead th.align-center {
+  text-align: center;
+}
+
+.attendance-table thead th.align-center {
+  text-align: center;
+}
+
+.attendance-table thead th.align-right {
+  text-align: right;
+}
+
+.attendance-table tbody td {
+  padding: 10px 16px 10px 16px;
+  font-size: 12px;
+  border-bottom: var(--divider-size) solid var(--divider-color);
+  vertical-align: middle;
+  transition: background var(--duration-fast) var(--ease-out);
+  word-break: break-word;
+}
+
+/* 表格单元格内容不换行（保留原始设置） */
+.attendance-table tbody td .date-with-weekday-inline,
+.attendance-table tbody td.align-center,
+.attendance-table tbody td .time-disabled,
+.attendance-table tbody td .time-success,
+.attendance-table tbody td .tag {
+  white-space: nowrap;
+}
+
+/* 长文本省略显示 */
+.attendance-table tbody td {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attendance-table tbody td a {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-table tbody td.align-center {
+  text-align: center;
+}
+
+.attendance-table tbody td.align-left {
+  text-align: left;
+}
+
+.attendance-table tbody td.align-right {
+  text-align: right;
+}
+
+.attendance-table tbody tr:hover td {
+  background: var(--color-primary-light);
+}
+
+.attendance-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ===== 标签 ===== */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tag-success {
+  background: rgba(0,179,101,0.1);
+  color: #00B365;
+}
+
+.tag-warning {
+  background: rgba(250,173,20,0.1);
+  color: #D48806;
+}
+
+.tag-error {
+  background: rgba(245,34,45,0.1);
+  color: #F5222D;
+}
+
+.tag-info {
+  background: rgba(24,144,255,0.1);
+  color: #1890FF;
+}
+
+.tag-default {
+  background: var(--color-bg-light);
+  color: var(--color-text-secondary);
+}
+
+/* ===== 统计概览卡片 ===== */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-default);
+  margin-bottom: var(--space-default);
+}
+
+.summary-card {
+  background: var(--color-bg-white);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  border: var(--divider-size) solid var(--color-border-1);
+  text-align: center;
+  transition: box-shadow var(--duration-normal) var(--ease-out);
+}
+
+.summary-card:hover {
+  box-shadow: var(--shadow-s1);
+}
+
+.summary-label {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+
+.summary-value {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+/* ===== 分页 ===== */
+.pagination {
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pagination-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.page-total {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.page-btns {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.page-btn {
+  width: 28px;
+  height: 28px;
+  border: var(--divider-size) solid var(--color-border-1);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-white);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.page-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.page-btn.active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.page-btn.disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.page-btn.disabled:hover {
+  border-color: var(--color-border-1);
+  color: var(--color-text-disabled);
+}
+
+.page-size {
+  height: 28px;
+  border: var(--divider-size) solid var(--color-border-1);
+  border-radius: var(--radius-md);
+  padding: 0 24px 0 var(--space-sm);
+  font-size: 12px;
+  outline: none;
+  appearance: none;
+  background: var(--color-bg-white) url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238C96A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 6px center;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.page-jump input {
+  width: 40px;
+  height: 28px;
+  border: var(--divider-size) solid var(--color-border-1);
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.page-jump input:focus {
+  border-color: var(--color-primary);
+}
+
+/* ===== 自定义日期范围选择器 ===== */
+.custom-date-range {
+  display: none;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.custom-date-range.show {
+  display: flex;
+}
+
+/* ===== 日期星期合并显示 ===== */
+/* 内联显示 - 节省表格空间 */
+.date-with-weekday-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.date-with-weekday-inline .date {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.date-with-weekday-inline .weekday {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* 垂直显示 - 备用样式 */
+.date-with-weekday {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-with-weekday .date {
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.date-with-weekday .weekday {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.date-input {
+  width: 140px;
+  height: 32px;
+  border: var(--divider-size) solid var(--color-border-1);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-md);
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.date-input:focus {
+  border-color: var(--color-primary);
+}
+
+/* ===== 加载状态 ===== */
+.loading-container {
+  padding: 40px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+/* ===== 空状态 ===== */
+.empty-container {
+  padding: 60px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
+
+/* ===== 复选框 ===== */
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border: var(--divider-size) solid var(--color-border-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  vertical-align: middle;
+  position: relative;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.checkbox:checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* ===== 时间文本颜色 ===== */
+.time-success {
+  color: var(--color-success);
+}
+
+.time-warning {
+  color: var(--color-warning);
+}
+
+.time-error {
+  color: var(--color-error);
+}
+
+.time-disabled {
+  color: var(--color-text-disabled);
+}

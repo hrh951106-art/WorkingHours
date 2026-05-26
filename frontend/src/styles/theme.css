@@ -67,13 +67,13 @@
 
 .dashboard-tab-active {
   background: #ffffff !important;
-  color: #22B970 !important;
+  color: #00B365 !important;
   font-weight: 500 !important;
 }
 
 .dashboard-tab-active:hover {
   background: #ffffff !important;
-  color: #22B970 !important;
+  color: #00B365 !important;
 }
 
 /* 未激活的页签：透明背景，白色文字，无边框 */
@@ -99,7 +99,7 @@
   border: none !important;
   border-radius: 0 !important;
   background: #ffffff !important;
-  color: #22B970 !important;
+  color: #00B365 !important;
 }
 
 /* 激活的页签不响应悬浮效果 */
@@ -107,30 +107,30 @@
   border: none !important;
   border-radius: 0 !important;
   background: #ffffff !important;
-  color: #22B970 !important;
+  color: #00B365 !important;
 }
 
 .ant-tabs.custom-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: #22B970 !important;
+  color: #00B365 !important;
 }
 
 /* 关闭按钮样式 - 主题色，透明 */
 .ant-tabs.custom-tabs .ant-tabs-tab-remove {
-  color: rgba(34, 185, 112, 0.7) !important;
+  color: rgba(0, 179, 101, 0.7) !important;
   margin-left: 8px !important;
 }
 
 .ant-tabs.custom-tabs .ant-tabs-tab-remove:hover {
-  color: #22B970 !important;
+  color: #00B365 !important;
 }
 
 /* 激活页签的关闭按钮保持主题色 */
 .ant-tabs.custom-tabs .ant-tabs-tab-active .ant-tabs-tab-remove {
-  color: rgba(34, 185, 112, 0.7) !important;
+  color: rgba(0, 179, 101, 0.7) !important;
 }
 
 .ant-tabs.custom-tabs .ant-tabs-tab-active .ant-tabs-tab-remove:hover {
-  color: #22B970 !important;
+  color: #00B365 !important;
 }
 
 .ant-tabs.custom-tabs .ant-tabs-ink-bar {
@@ -143,11 +143,11 @@
 
 /* 配色方案 - 2025年流行趋势 */
 :root {
-  /* 主色调 - 使用现代绿色渐变 */
-  --primary-color: #22B970;
-  --primary-hover: #1ea864;
-  --primary-active: #178c52;
-  --primary-bg: #e8f5f0;
+  /* 主色调 - 使用盖雅绿（符合UI设计规范） */
+  --primary-color: #00B365;
+  --primary-hover: #00994F;
+  --primary-active: #008040;
+  --primary-bg: rgba(0, 179, 101, 0.1);
 
   /* 成功色 */
   --success-color: #10b981;
@@ -248,7 +248,7 @@ body {
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
   border: none;
   border-radius: var(--radius-md);
-  box-shadow: 0 2px 8px rgba(84, 210, 75, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 179, 101, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-weight: 500;
   padding: 8px 20px;
@@ -257,7 +257,7 @@ body {
 
 .modern-btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(84, 210, 75, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 179, 101, 0.4);
 }
 
 .modern-btn-secondary {
@@ -462,7 +462,7 @@ body {
 .modern-input .ant-input:focus,
 .modern-input .ant-select-focused .ant-select-selector {
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(34, 185, 112, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 179, 101, 0.1);
 }
 
 /* 模态框样式 */
