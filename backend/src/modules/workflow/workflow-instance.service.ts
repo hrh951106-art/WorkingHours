@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateWorkflowInstanceDto, SubmitApprovalDto, GetInstancesDto, InstanceStatus } from './dto/workflow-instance.dto';
+import { CreateWorkflowInstanceDto, SubmitApprovalDto, GetInstancesDto, ForceApprovalDto, InstanceStatus } from './dto/workflow-instance.dto';
 
 @Injectable()
 export class WorkflowInstanceService {
@@ -184,19 +184,36 @@ export class WorkflowInstanceService {
 
     console.log('[getApprovers] 审批人策略:', JSON.stringify(strategy));
 
-    // 兼容旧格式：策略是数组，直接是角色ID列表
+    // 新格式：策略是数组，元素可能是参与人配置code（如 'A001', 'A002'）
     if (Array.isArray(strategy)) {
-      console.log('[getApprovers] 检测到旧格式策略（角色ID数组）:', strategy);
-      for (const roleId of strategy) {
-        const userRoles = await this.prisma.userRole.findMany({
-          where: { roleId },
-          include: { user: true },
-        });
-        const activeUserRoles = userRoles.filter(ur => ur.user.status === 'ACTIVE');
-        approvers.push(...activeUserRoles.map(ur => ({ id: ur.user.id, name: ur.user.name })));
+      console.log('[getApprovers] 检测到数组格式策略:', strategy);
+
+      // 检查是否是参与人配置code（字符串，如 'A001', 'A002'）
+      const isParticipantCodes = strategy.length > 0 && typeof strategy[0] === 'string';
+
+      if (isParticipantCodes) {
+        console.log('[getApprovers] 检测到参与人配置code列表，解析参与人配置');
+        // 遍历每个参与人配置code
+        for (const code of strategy) {
+          const participantApprovers = await this.getApproversByParticipantCode(code, context);
+          approvers.push(...participantApprovers);
+        }
+        console.log('[getApprovers] 参与人配置找到审批人:', approvers.length);
+        return approvers;
+      } else {
+        // 兼容旧格式：策略是数组，直接是角色ID列表
+        console.log('[getApprovers] 检测到旧格式策略（角色ID数组）:', strategy);
+        for (const roleId of strategy) {
+          const userRoles = await this.prisma.userRole.findMany({
+            where: { roleId },
+            include: { user: true },
+          });
+          const activeUserRoles = userRoles.filter(ur => ur.user.status === 'ACTIVE');
+          approvers.push(...activeUserRoles.map(ur => ({ id: ur.user.id, name: ur.user.name })));
+        }
+        console.log('[getApprovers] 旧格式找到审批人:', approvers.length);
+        return approvers;
       }
-      console.log('[getApprovers] 旧格式找到审批人:', approvers.length);
-      return approvers;
     }
 
     // 新格式：策略是对象，根据type字段判断
@@ -477,6 +494,9 @@ export class WorkflowInstanceService {
           endTime: new Date(),
         },
       });
+
+      // 处理工时报工流程完成的业务逻辑
+      await this.handleLaborHourReportCompleted(reloadedInstance.id);
     }
   }
 
@@ -538,6 +558,13 @@ export class WorkflowInstanceService {
             createdAt: 'asc',
           },
         },
+        laborHourReports: {
+          select: {
+            id: true,
+            requestNo: true,
+          },
+          take: 1,
+        },
       },
     });
 
@@ -555,7 +582,9 @@ export class WorkflowInstanceService {
    * 获取实例列表
    */
   async getInstances(query: GetInstancesDto) {
-    const { status, category, page = 1, pageSize = 10 } = query;
+    console.log('=== getInstances called ===');
+    console.log('Query params:', query);
+    const { status, category, startDate, endDate, keyword, page = 1, pageSize = 10 } = query;
 
     const where: any = {
       deletedAt: null,
@@ -569,36 +598,130 @@ export class WorkflowInstanceService {
       where.category = category;
     }
 
+    // 日期范围查询
+    if (startDate || endDate) {
+      where.initiatedAt = {};
+      if (startDate) {
+        where.initiatedAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // 结束日期需要包含当天的所有时间，所以设置为结束日期的23:59:59
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        where.initiatedAt.lte = endDateTime;
+      }
+    }
+
+    console.log('Where clause:', where);
+
+    // 转换为整数
+    const pageNum = Number(page);
+    const pageSizeNum = Number(pageSize);
+
+    // 先查询所有符合基本条件的数据
     const [total, items] = await Promise.all([
       this.prisma.workflowInstance.count({ where }),
       this.prisma.workflowInstance.findMany({
         where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: (pageNum - 1) * pageSizeNum,
+        take: pageSizeNum,
         orderBy: { initiatedAt: 'desc' },
         include: {
-          definition: true,
-          approvals: true,
+          definition: {
+            include: {
+              nodes: {
+                where: {
+                  nodeType: 'approval',
+                },
+                orderBy: {
+                  sortOrder: 'asc',
+                },
+              },
+            },
+          },
+          approvals: {
+            // 获取所有审批记录，不限制状态
+          },
+          laborHourReports: {
+            select: {
+              id: true,
+              requestNo: true,
+            },
+            take: 1,
+          },
         },
       }),
     ]);
 
-    // 格式化返回数据
-    const formattedItems = items.map(item => ({
-      ...item,
-      workflowName: item.definition.name,
-    }));
+    console.log('Total count:', total);
+    console.log('Items count:', items.length);
+    console.log('First item category:', items[0]?.category);
 
-    return {
-      success: true,
-      data: {
-        total,
-        items: formattedItems,
-        page,
-        pageSize,
-        totalPages: Math.ceil(total / pageSize),
-      },
+    // 关键词搜索（在内存中过滤，因为涉及到解析JSON数据）
+    let filteredItems = items;
+    if (keyword) {
+      const keywordLower = keyword.toLowerCase();
+      filteredItems = items.filter(item => {
+        // 搜索发起人姓名
+        if (item.initiatorName && item.initiatorName.toLowerCase().includes(keywordLower)) {
+          return true;
+        }
+
+        // 搜索表单数据中的申请人信息
+        try {
+          const data = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+          if (item.category === 'LABOR_HOUR_REPORT') {
+            // 工时报工：搜索员工姓名或工号
+            if (data.employeeName && data.employeeName.toLowerCase().includes(keywordLower)) {
+              return true;
+            }
+            if (data.employeeNo && data.employeeNo.toLowerCase().includes(keywordLower)) {
+              return true;
+            }
+          } else if (item.category === 'SUPPORT_REQUEST') {
+            // 支援申请：搜索发起人或支援人员
+            if (data.supportEmployeeName && data.supportEmployeeName.toLowerCase().includes(keywordLower)) {
+              return true;
+            }
+            if (data.supportEmployeeNo && data.supportEmployeeNo.toLowerCase().includes(keywordLower)) {
+              return true;
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing data:', e);
+        }
+
+        return false;
+      });
+    }
+
+    // 格式化返回数据
+    const formattedItems = filteredItems.map(item => {
+      // 获取当前节点信息
+      const currentStep = item.currentStep;
+      const currentNodes = item.definition.nodes.filter(node => node.nodeName === currentStep);
+
+      return {
+        ...item,
+        workflowName: item.definition.name,
+        currentNodes: currentNodes.map(node => ({
+          id: node.id,
+          name: node.nodeName,
+          code: node.nodeCode,
+        })),
+      };
+    });
+
+    const result = {
+      total: keyword ? filteredItems.length : total,
+      items: formattedItems,
+      page: pageNum,
+      pageSize: pageSizeNum,
+      totalPages: Math.ceil((keyword ? filteredItems.length : total) / pageSizeNum),
     };
+
+    console.log('Returning result:', JSON.stringify(result, null, 2).substring(0, 500) + '...');
+    return result;
   }
 
   /**
@@ -668,5 +791,467 @@ export class WorkflowInstanceService {
       success: true,
       message: '已强制跳过该节点',
     };
+  }
+
+  /**
+   * 根据参与人配置code获取审批人列表
+   */
+  private async getApproversByParticipantCode(code: string, context: CreateWorkflowInstanceDto): Promise<any[]> {
+    const approvers: any[] = [];
+
+    console.log('[getApproversByParticipantCode] 查询参与人配置:', code);
+
+    // 查询参与人配置
+    const participantConfig = await this.prisma.participantConfig.findUnique({
+      where: { code },
+    });
+
+    if (!participantConfig) {
+      console.log(`[getApproversByParticipantCode] 未找到参与人配置: ${code}`);
+      return approvers;
+    }
+
+    if (participantConfig.status !== 'ACTIVE') {
+      console.log(`[getApproversByParticipantCode] 参与人配置未激活: ${code}`);
+      return approvers;
+    }
+
+    console.log(`[getApproversByParticipantCode] 找到参与人配置: ${participantConfig.name}, 类型: ${participantConfig.type}`);
+
+    // 解析配置
+    let config: any = {};
+    try {
+      config = participantConfig.config ? JSON.parse(participantConfig.config) : {};
+    } catch (e) {
+      console.error('[getApproversByParticipantCode] 解析config失败:', e);
+    }
+
+    // 解析participants
+    let participants: any[] = [];
+    try {
+      participants = participantConfig.participants ? JSON.parse(participantConfig.participants) : [];
+    } catch (e) {
+      console.error('[getApproversByParticipantCode] 解析participants失败:', e);
+    }
+
+    // 根据类型获取审批人
+    switch (participantConfig.type) {
+      case 'FIXED_USER':
+        // 固定人员
+        console.log('[getApproversByParticipantCode] 处理固定人员类型');
+        if (participants.length > 0 && participants[0].type === 'FIXED_USER') {
+          const userIds = participants[0].userIds || [];
+          console.log('[getApproversByParticipantCode] 固定用户IDs:', userIds);
+          const users = await this.prisma.user.findMany({
+            where: {
+              id: { in: userIds },
+              status: 'ACTIVE',
+            },
+          });
+          approvers.push(...users.map(u => ({ id: u.id, name: u.name })));
+        }
+        break;
+
+      case 'ORG_MANAGER':
+        // 组织主管
+        console.log('[getApproversByParticipantCode] 处理组织主管类型');
+        if (participants.length > 0 && participants[0].type === 'ORG_MANAGER') {
+          const subjectType = participants[0].subjectType;
+          const orgLevel = participants[0].orgLevel;
+
+          console.log('[getApproversByParticipantCode] subjectType:', subjectType, 'orgLevel:', orgLevel);
+
+          // 如果是SUBMITTER，从context中获取发起人信息
+          if (subjectType === 'SUBMITTER' && context.initiatorOrgId) {
+            console.log('[getApproversByParticipantCode] 获取提交人所在组��主管, orgId:', context.initiatorOrgId);
+
+            // 查询组织信息
+            const org = await this.prisma.organization.findUnique({
+              where: { id: context.initiatorOrgId },
+            });
+
+            if (org?.leaderId) {
+              // Organization.leaderId 是 Employee ID
+              const employee = await this.prisma.employee.findUnique({
+                where: { id: org.leaderId },
+                select: {
+                  id: true,
+                  employeeNo: true,
+                  name: true,
+                },
+              });
+
+              if (employee) {
+                // 通过 employeeNo 查找对应的 User
+                const user = await this.prisma.user.findFirst({
+                  where: {
+                    username: employee.employeeNo,
+                    status: 'ACTIVE',
+                  },
+                });
+
+                if (user) {
+                  approvers.push({ id: user.id, name: user.name });
+                  console.log('[getApproversByParticipantCode] 找到组织主管:', user.name);
+                } else {
+                  console.log('[getApproversByParticipantCode] 未找到对应的User, employeeNo:', employee.employeeNo);
+                }
+              }
+            }
+          }
+        }
+        break;
+
+      case 'ROLE':
+        // 角色成员
+        console.log('[getApproversByParticipantCode] 处理角色成员类型');
+        if (participants.length > 0 && participants[0].type === 'ROLE') {
+          const roleIds = participants[0].roleIds || [];
+          console.log('[getApproversByParticipantCode] 角色IDs:', roleIds);
+          for (const roleId of roleIds) {
+            const userRoles = await this.prisma.userRole.findMany({
+              where: { roleId },
+              include: { user: true },
+            });
+            const activeUserRoles = userRoles.filter(ur => ur.user.status === 'ACTIVE');
+            approvers.push(...activeUserRoles.map(ur => ({ id: ur.user.id, name: ur.user.name })));
+          }
+        }
+        break;
+
+      default:
+        console.log(`[getApproversByParticipantCode] 未知的参与人类型: ${participantConfig.type}`);
+        break;
+    }
+
+    console.log(`[getApproversByParticipantCode] ${code} 找到审批人:`, approvers.length);
+    return approvers;
+  }
+
+  /**
+   * 管理员强制审批（强制通过所有剩余节点）
+   */
+  async forceApproval(dto: ForceApprovalDto, adminId: number, adminName: string) {
+    console.log(`[forceApproval] 管理员 ${adminName} 强制审批实例 ${dto.instanceId}`);
+
+    // 1. 获取工作流实例
+    const instance = await this.prisma.workflowInstance.findUnique({
+      where: { id: dto.instanceId },
+      include: {
+        approvals: {
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+        definition: {
+          include: {
+            nodes: {
+              where: {
+                nodeType: 'approval',
+              },
+              orderBy: {
+                sortOrder: 'asc',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!instance) {
+      throw new NotFoundException('工作流实例不存在');
+    }
+
+    if (!instance.definition) {
+      throw new NotFoundException('工作流定义不存在');
+    }
+
+    if (instance.status !== InstanceStatus.RUNNING) {
+      throw new BadRequestException('工作流已结束，无法审批');
+    }
+
+    // 2. 获取所有审批节点（按排序）
+    const nodes = instance.definition.nodes
+      .filter((n: any) => n.nodeType === 'approval')
+      .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+
+    // 3. 找到起始节点位置
+    const startIndex = nodes.findIndex((n: any) => n.id === dto.nodeId);
+    if (startIndex === -1) {
+      throw new NotFoundException('起始节点不存在');
+    }
+
+    // 4. 获取从起始节点开始的所有剩余节点
+    const remainingNodes = nodes.slice(startIndex);
+
+    console.log(`[forceApproval] 剩余节点数量: ${remainingNodes.length}`);
+    console.log(`[forceApproval] 剩余节点:`, remainingNodes.map((n: any) => n.nodeName));
+
+    // 5. 批量强制通过所有剩余节点
+    let totalUpdated = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const node of remainingNodes) {
+        // ���事务内重新查询该节点的所有待审批记录（确保获取最新数据）
+        // Prisma 查询 null 值的正确方式
+        const pendingApprovals = await tx.workflowApproval.findMany({
+          where: {
+            instanceId: dto.instanceId,
+            nodeId: node.id,
+            status: 'PENDING', // 使用状态字段来查找待审批记录
+          },
+        });
+
+        console.log(`[forceApproval] 节点 ${node.nodeName} 待审批记录数: ${pendingApprovals.length}`);
+
+        if (pendingApprovals.length === 0) {
+          // 如果该节点没有待审批记录，检查是否所有记录都已审批
+          const allApprovals = await tx.workflowApproval.findMany({
+            where: {
+              instanceId: dto.instanceId,
+              nodeId: node.id,
+            },
+          });
+
+          console.log(`[forceApproval] 节点 ${node.nodeName} 总审批记录数: ${allApprovals.length}`);
+
+          // 如果所有记录都已审批（status不是PENDING），跳过
+          if (allApprovals.length > 0 && allApprovals.every(a => a.status !== 'PENDING')) {
+            console.log(`[forceApproval] 节点 ${node.nodeName} 所有记录已审批，跳过`);
+            continue;
+          }
+
+          // 如果没有任何审批记录，创建一条强制通过的记录
+          if (allApprovals.length === 0) {
+            console.log(`[forceApproval] 节点 ${node.nodeName} 没有审批记录，创建强制通过记录`);
+            await tx.workflowApproval.create({
+              data: {
+                instanceId: dto.instanceId,
+                instanceNo: instance.instanceNo,
+                nodeId: node.id,
+                nodeCode: node.nodeCode || `NODE_${node.id}`,
+                nodeName: node.nodeName,
+                step: node.sortOrder?.toString() || '0',
+                approverId: adminId,
+                approverName: `${adminName}（强制通过）`,
+                approvers: JSON.stringify([{ id: adminId, name: adminName }]),
+                needAllApprove: false,
+                action: 'APPROVED',
+                comment: `[强制通过] ${adminName}: ${dto.comment}`,
+                approvedAt: new Date(),
+                status: 'APPROVED',
+              },
+            });
+            totalUpdated++;
+            continue;
+          }
+        }
+
+        // 批量更新所有待审批记录
+        for (const approval of pendingApprovals) {
+          await tx.workflowApproval.update({
+            where: { id: approval.id },
+            data: {
+              action: 'APPROVED',
+              comment: `[强制通过] ${adminName}: ${dto.comment}`,
+              approvedAt: new Date(),
+              status: 'APPROVED',
+              approverId: adminId,
+              approverName: `${adminName}（强制通过）`,
+            },
+          });
+          totalUpdated++;
+        }
+
+        console.log(`[forceApproval] 节点 ${node.nodeName} 强制通过完成`);
+      }
+    });
+
+    console.log(`[forceApproval] 总共更新 ${totalUpdated} 条审批记录`);
+
+    // 6. 完成流程
+    await this.prisma.workflowInstance.update({
+      where: { id: instance.id },
+      data: {
+        status: InstanceStatus.COMPLETED,
+        currentStep: null,
+        finishedAt: new Date(),
+        endTime: new Date(),
+      },
+    });
+
+    // 7. 处理工时报工流程完成的业务逻辑
+    await this.handleLaborHourReportCompleted(instance.id);
+
+    return {
+      success: true,
+      message: `已强制通过 ${remainingNodes.length} 个节点，更新 ${totalUpdated} 条审批记录`,
+    };
+  }
+
+  /**
+   * 处理工时报工流程完成的业务逻辑
+   * 将工时报工数据写入 WorkHourResult 表
+   */
+  private async handleLaborHourReportCompleted(instanceId: number) {
+    console.log(`[handleLaborHourReportCompleted] 处理工时报工流程完成，instanceId: ${instanceId}`);
+
+    try {
+      // 1. 查询流程实例
+      const instance = await this.prisma.workflowInstance.findUnique({
+        where: { id: instanceId },
+      });
+
+      if (!instance) {
+        console.log('[handleLaborHourReportCompleted] 流程实例不存在，跳过');
+        return;
+      }
+
+      // 2. 检查是否为工时报工流程
+      if (instance.category !== 'LABOR_HOUR_REPORT') {
+        console.log('[handleLaborHourReportCompleted] 非工时报工流程，跳过');
+        return;
+      }
+
+      // 3. 查询关联的工时报工申请记录
+      const laborHourReports = await this.prisma.laborHourReportRequest.findMany({
+        where: { instanceId },
+      });
+
+      if (laborHourReports.length === 0) {
+        console.log('[handleLaborHourReportCompleted] 未找到关联的工时报工申请记录，跳过');
+        return;
+      }
+
+      console.log(`[handleLaborHourReportCompleted] 找到 ${laborHourReports.length} 条工时报工申请记录`);
+
+      // 4. 处理每条工时报工申请记录
+      await this.prisma.$transaction(async (tx) => {
+        for (const report of laborHourReports) {
+          // 更新申请状态为已批准
+          await tx.laborHourReportRequest.update({
+            where: { id: report.id },
+            data: {
+              status: 'APPROVED',
+              approverId: instance.initiatorId,
+              approverName: instance.initiatorName,
+              approvedAt: new Date(),
+            },
+          });
+
+          // 查询报工员工列表
+          const reportEmployees = await tx.laborHourReportEmployee.findMany({
+            where: { requestId: report.id },
+          });
+
+          console.log(`[handleLaborHourReportCompleted] 申请 ${report.requestNo} 包含 ${reportEmployees.length} 个员工`);
+
+          // 根据报工模式处理数据
+          if (report.reportMode === 'personal') {
+            // 个人报工：只写入主员工数据
+            await this.createWorkHourResult(tx, report, report.employeeId, report.employeeNo, report.employeeName);
+          } else if (report.reportMode === 'team') {
+            // 团队报工：写入所有团队成员数据
+            for (const employee of reportEmployees) {
+              await this.createWorkHourResult(tx, report, employee.employeeId, employee.employeeNo, employee.employeeName);
+            }
+          }
+        }
+      });
+
+      console.log('[handleLaborHourReportCompleted] 工时报工数据处理完成');
+    } catch (error) {
+      console.error('[handleLaborHourReportCompleted] 处理工时报工数据失败:', error);
+      // 不抛出异常，避免影响流程完成状态
+    }
+  }
+
+  /**
+   * 创建工时结果记录
+   */
+  private async createWorkHourResult(
+    tx: any,
+    report: any,
+    employeeId: number | null,
+    employeeNo: string | null,
+    employeeName: string | null,
+  ) {
+    console.log(`[createWorkHourResult] 开始创建工时结果，hourType: ${report.hourType}`);
+
+    // ✅ 根据 hourType 查询 DefinitionAttendanceCode
+    const definitionAttendanceCode = await tx.definitionAttendanceCode.findFirst({
+      where: {
+        code: report.hourType,
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        calcAttendanceCode: true,
+      },
+    });
+
+    if (!definitionAttendanceCode) {
+      console.error(`[createWorkHourResult] 未找到工时类型 ${report.hourType} 对应的定义出勤代码`);
+      throw new Error(`未找到工时类型 ${report.hourType} 对应的定义出勤代码`);
+    }
+
+    console.log(`[createWorkHourResult] 查询到定义出勤代码:`, {
+      id: definitionAttendanceCode.id,
+      code: definitionAttendanceCode.code,
+      name: definitionAttendanceCode.name,
+      calcAttendanceCode: definitionAttendanceCode.calcAttendanceCode,
+    });
+
+    // 构建工作时间（使用本地时间）
+    const workDate = new Date(report.reportDate);
+    const [startHour, startMinute] = report.startTime.split(':');
+    const [endHour, endMinute] = report.endTime.split(':');
+
+    // 创建本地时间的Date对象（会按照本地时区解释）
+    const startTime = new Date(workDate);
+    startTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
+    const endTime = new Date(workDate);
+    endTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
+
+    // 保存原始的本地时间字符串，方便后续使用
+    const localStartTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.startTime}`;
+    const localEndTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.endTime}`;
+
+    // 写入工时结果表
+    await tx.workHourResult.create({
+      data: {
+        employeeNo: employeeNo || '',
+        employeeId: employeeId,
+        workDate: workDate,
+        calcDate: workDate, // ✅ 修复：使用 workDate 而不是 new Date()
+        definitionAttendanceCodeId: definitionAttendanceCode.id, // ✅ 添加新字段
+        definitionAttendanceCodeStr: definitionAttendanceCode.name, // ✅ 添加新字段
+        calcAttendanceCode: definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code, // ✅ 添加新字段
+        attendanceCode: report.hourType, // 保留旧字段以兼容
+        attendanceCodeName: report.hourTypeName, // 保留旧字段以兼容
+        workHours: report.value,
+        accountId: report.accountId,
+        accountName: report.accountName,
+        accountPath: report.accountCode,
+        sourceType: 'LABOR_HOUR_REPORT', // 标记为工时报工填报数据
+        sourceId: report.id,
+        source: `工时报表申请: ${report.title}`,
+        startTime,
+        endTime,
+        customFields: JSON.stringify({
+          isManualInput: true, // 标记为手工填报数据
+          requestNo: report.requestNo, // 申请单号
+          reportMode: report.reportMode, // 报工模式
+          description: report.description, // 备注说明
+          localStartTime: localStartTimeStr, // 保存本地时间字符串
+          localEndTime: localEndTimeStr, // 保存本地时间字符串
+        }),
+        status: 'ACTIVE', // 直接激活
+      },
+    });
+
+    console.log(`[createWorkHourResult] 已创建工时结果: 员工=${employeeName}, 工时=${report.value}小时, 类型=${report.hourTypeName}, 时间段=${report.startTime}-${report.endTime}`);
+    console.log(`[createWorkHourResult] definitionAttendanceCodeId=${definitionAttendanceCode.id}, definitionAttendanceCodeStr=${definitionAttendanceCode.name}, calcAttendanceCode=${definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code}`);
   }
 }

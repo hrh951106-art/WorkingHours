@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateLaborHourReportRequestDto } from './dto/create-request.dto';
 import { ApproveLaborHourReportRequestDto } from './dto/approve-request.dto';
 import { WorkflowInstanceService } from '../workflow/workflow-instance.service';
+import { ApiResponse } from '../../common/dto/response.dto';
 
 @Injectable()
 export class LaborHourReportService {
@@ -62,12 +63,15 @@ export class LaborHourReportService {
         });
       }
 
-      // 获取工作流定义
+      // 获取工作流定义（选择最新版本的已发布定义）
       const workflow = await this.prisma.workflowDefinition.findFirst({
         where: {
           category: 'LABOR_HOUR_REPORT',
           status: 'PUBLISHED',
           deletedAt: null,
+        },
+        orderBy: {
+          createdAt: 'desc', // 按创建时间降序，选择最新版本
         },
       });
 
@@ -137,11 +141,7 @@ export class LaborHourReportService {
         } : {})
       });
 
-      return {
-        success: true,
-        message: '工时报表申请创建成功',
-        data: request,
-      };
+      return ApiResponse.ok(request, '工时报表申请创建成功');
     } catch (error: any) {
       console.error('创建工时报工申请失败:', error);
       throw new BadRequestException(error.message || '创建工时报工申请失败');
@@ -196,16 +196,13 @@ export class LaborHourReportService {
       }),
     ]);
 
-    return {
-      success: true,
-      data: {
-        total,
-        items,
-        page,
-        pageSize,
-        totalPages: Math.ceil(total / pageSize),
-      },
-    };
+    return ApiResponse.ok({
+      total,
+      items,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    });
   }
 
   /**
@@ -250,19 +247,16 @@ export class LaborHourReportService {
       approverStrategy: node.approverStrategy ? JSON.parse(node.approverStrategy) : [],
     })) || [];
 
-    return {
-      success: true,
-      data: {
-        ...request,
-        instance: request.instance ? {
-          ...request.instance,
-          definition: request.instance.definition ? {
-            ...request.instance.definition,
-            nodes: nodesWithApprovers,
-          } : null,
+    return ApiResponse.ok({
+      ...request,
+      instance: request.instance ? {
+        ...request.instance,
+        definition: request.instance.definition ? {
+          ...request.instance.definition,
+          nodes: nodesWithApprovers,
         } : null,
-      },
-    };
+      } : null,
+    });
   }
 
   /**
@@ -273,10 +267,7 @@ export class LaborHourReportService {
       where: { requestId: id },
     });
 
-    return {
-      success: true,
-      data: employees,
-    };
+    return ApiResponse.ok(employees);
   }
 
   /**
@@ -285,6 +276,9 @@ export class LaborHourReportService {
   async approveRequest(id: number, dto: ApproveLaborHourReportRequestDto) {
     const request = await this.prisma.laborHourReportRequest.findUnique({
       where: { id },
+      include: {
+        employees: true, // ✅ 包含团队报工的员工列表
+      },
     });
 
     if (!request) {
@@ -294,6 +288,43 @@ export class LaborHourReportService {
     if (request.status !== 'PENDING') {
       throw new BadRequestException('该申请已被处理');
     }
+
+    // ✅ 根据 hourType 查询 DefinitionAttendanceCode
+    console.log('=== 审批工时报工 ===');
+    console.log('申请ID:', id);
+    console.log('hourType:', request.hourType);
+    console.log('hourTypeName:', request.hourTypeName);
+
+    const definitionAttendanceCode = await this.prisma.definitionAttendanceCode.findFirst({
+      where: {
+        code: request.hourType,
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        calcAttendanceCode: true,
+      },
+    });
+
+    console.log('查询到的定义出勤代码:', definitionAttendanceCode);
+
+    if (!definitionAttendanceCode) {
+      console.error('未找到定义出勤代码，hourType:', request.hourType);
+      throw new BadRequestException(`未找到工时类型 ${request.hourType} 对应的定义出勤代码`);
+    }
+
+    // ✅ 转换时间字符串 (HH:mm) 为完整的 DateTime 对象
+    const parseTime = (timeStr: string, date: Date) => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const result = new Date(date);
+      result.setHours(hours, minutes, 0, 0);
+      return result;
+    };
+
+    const startTime = parseTime(request.startTime, request.reportDate);
+    const endTime = parseTime(request.endTime, request.reportDate);
 
     // 使用事务更新申请状态并同步到工时结果表
     await this.prisma.$transaction(async (tx) => {
@@ -309,30 +340,61 @@ export class LaborHourReportService {
         },
       });
 
-      // 2. 同步到工时结果表
-      await tx.workHourResult.create({
-        data: {
-          employeeId: request.employeeId,
-          employeeNo: request.employeeNo,
-          accountId: request.accountId,
-          accountName: request.accountName,
-          accountPath: request.accountCode, // 暂时使用accountCode作为path
-          workDate: request.reportDate,
-          attendanceCode: request.hourType,
-          attendanceCodeName: request.hourTypeName,
-          workHours: request.value,
-          sourceType: 'LABOR_HOUR_REPORT',
-          sourceId: request.id,
-          source: `工时报表申请: ${request.title}`,
-          status: 'ACTIVE',
-        },
-      });
+      // 2. 确定要创建工时结果的员工列表
+      let employeesToCreate: Array<{ employeeId: number; employeeNo: string; employeeName: string }> = [];
+
+      if (request.reportMode === 'team' && request.employees && request.employees.length > 0) {
+        // ✅ 团队报工模式：为每个员工创建记录
+        employeesToCreate = request.employees.map(emp => ({
+          employeeId: emp.employeeId,
+          employeeNo: emp.employeeNo,
+          employeeName: emp.employeeName,
+        }));
+      } else {
+        // ✅ 个人报工模式：使用主员工信息
+        employeesToCreate = [{
+          employeeId: request.employeeId!,
+          employeeNo: request.employeeNo!,
+          employeeName: request.employeeName!,
+        }];
+      }
+
+      // 3. 为每个员工创建工时结果记录
+      for (const employee of employeesToCreate) {
+        console.log('创建工时结果记录，员工:', employee.employeeNo);
+        console.log('definitionAttendanceCodeId:', definitionAttendanceCode.id);
+        console.log('definitionAttendanceCodeStr:', definitionAttendanceCode.name);
+        console.log('calcAttendanceCode:', definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code);
+
+        const workHourResult = await tx.workHourResult.create({
+          data: {
+            employeeId: employee.employeeId,
+            employeeNo: employee.employeeNo,
+            accountId: request.accountId,
+            accountName: request.accountName,
+            accountPath: request.accountCode, // 暂时使用accountCode作为path
+            workDate: request.reportDate,
+            calcDate: request.reportDate, // ✅ 添加 calcDate 字段
+            startTime: startTime, // ✅ 添加 startTime 字段
+            endTime: endTime, // ✅ 添加 endTime 字段
+            definitionAttendanceCodeId: definitionAttendanceCode.id, // ✅ 使用新字段
+            definitionAttendanceCodeStr: definitionAttendanceCode.name, // ✅ 使用新字段
+            calcAttendanceCode: definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code, // ✅ 添加 calcAttendanceCode
+            attendanceCode: request.hourType, // 保留旧字段以兼容
+            attendanceCodeName: request.hourTypeName, // 保留旧字段以兼容
+            workHours: request.value,
+            sourceType: 'LABOR_HOUR_REPORT',
+            sourceId: request.id,
+            source: `工时报表申请: ${request.title}`,
+            status: 'ACTIVE',
+          },
+        });
+
+        console.log('工时结果记录创建成功，ID:', workHourResult.id);
+      }
     });
 
-    return {
-      success: true,
-      message: '审批通过，数据已同步到工时结果表',
-    };
+    return ApiResponse.ok(null, '审批通过，数据已同步到工时结果表');
   }
 
   /**
@@ -362,10 +424,7 @@ export class LaborHourReportService {
       },
     });
 
-    return {
-      success: true,
-      message: '申请已拒绝',
-    };
+    return ApiResponse.ok(null, '申请已拒绝');
   }
 
   /**
@@ -388,9 +447,6 @@ export class LaborHourReportService {
       where: { id },
     });
 
-    return {
-      success: true,
-      message: '申请已删除',
-    };
+    return ApiResponse.ok(null, '申请已删除');
   }
 }

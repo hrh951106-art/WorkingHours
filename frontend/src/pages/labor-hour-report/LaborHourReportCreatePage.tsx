@@ -45,6 +45,7 @@ const LaborHourReportCreatePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [reportMode, setReportMode] = useState<'personal' | 'team'>('personal');
   const [selectedEmployees, setSelectedEmployees] = useState<Employee[]>([]);
+  const [manualEmployees, setManualEmployees] = useState<Set<number>>(new Set()); // 手动添加的员工ID集合
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>('小时');
   const [selectedAttendanceCode, setSelectedAttendanceCode] = useState<AttendanceCode | null>(null);
@@ -132,15 +133,6 @@ const LaborHourReportCreatePage: React.FC = () => {
     },
   });
 
-  // 员工选择变更（个人报工模式）
-  const handleEmployeeChange = (employeeId: number) => {
-    const employee = employees?.items?.find((e: Employee) => e.id === employeeId);
-    if (employee) {
-      setSelectedEmployees([employee]);
-      form.setFieldValue('employeeNo', employee.employeeNo);
-      form.setFieldValue('employeeName', employee.name);
-    }
-  };
 
   // 报工模式变更
   const handleReportModeChange = (e: any) => {
@@ -148,6 +140,7 @@ const LaborHourReportCreatePage: React.FC = () => {
     setReportMode(mode);
     // 清空相关字段
     setSelectedEmployees([]);
+    setManualEmployees(new Set()); // 清空手动员工标记
     setSelectedOrgId(null);
     form.setFieldValue('organizationId', null);
     form.setFieldValue('employeeId', undefined);
@@ -158,35 +151,106 @@ const LaborHourReportCreatePage: React.FC = () => {
   // 组织选择变更
   const handleOrganizationChange = (orgId: number) => {
     setSelectedOrgId(orgId);
-    // 清空已选员工
-    setSelectedEmployees([]);
-    form.setFieldValue('employeeId', undefined);
-    form.setFieldValue('employeeNo', undefined);
-    form.setFieldValue('employeeName', undefined);
-
+    // 不清空手动添加的员工，只清空表单显示
     // 加载该组织的员工
     if (orgId) {
       refetchOrgEmployees();
     }
   };
 
-  // 当组织员工加载完成后，自动添加到报工人员列表
+  // 当组织员工加载完成后，自动填充到人员选择字段
   useEffect(() => {
     if (reportMode === 'team' && orgEmployees?.items && orgEmployees.items.length > 0) {
-      setSelectedEmployees(orgEmployees.items);
+      // 获取手动添加的员工（不在新团队中的员工）
+      const manualAddedEmployees = selectedEmployees.filter(emp =>
+        manualEmployees.has(emp.id) && !orgEmployees.items.some((orgEmp: Employee) => orgEmp.id === emp.id)
+      );
+
+      // 合并新团队成员和手动添加的员工
+      const mergedEmployees = [...orgEmployees.items, ...manualAddedEmployees];
+      setSelectedEmployees(mergedEmployees);
+
+      // 同时设置到表单的 employeeId 字段（用于显示）
+      const employeeIds = mergedEmployees.map(emp => emp.id);
+      form.setFieldValue('employeeId', employeeIds);
     }
   }, [orgEmployees, reportMode]);
 
   // 移除报工人员
   const handleRemoveEmployee = (employeeId: number) => {
-    setSelectedEmployees(prev => prev.filter(emp => emp.id !== employeeId));
+    setSelectedEmployees(prev => {
+      const updated = prev.filter(emp => emp.id !== employeeId);
+      // 同步更新表单字段
+      form.setFieldValue('employeeId', updated.map(emp => emp.id));
+      return updated;
+    });
   };
 
-  // 添加报工人员
+  // 添加报工���员
   const handleAddEmployee = (employee: Employee) => {
     const exists = selectedEmployees.some(emp => emp.id === employee.id);
     if (!exists) {
-      setSelectedEmployees(prev => [...prev, employee]);
+      setSelectedEmployees(prev => {
+        const updated = [...prev, employee];
+        // 同步更新表单字段
+        form.setFieldValue('employeeId', updated.map(emp => emp.id));
+        return updated;
+      });
+    }
+  };
+
+  // 人员选择变更（统一处理个人和团队模式）
+  const handleEmployeeChange = (value: number | number[] | null | undefined) => {
+    console.log('handleEmployeeChange 被调用:', value, 'reportMode:', reportMode);
+
+    // Form.Item 会自动处理 employeeId 字段，这里只需要更新状态和隐藏字段
+    const employeeIds = value;
+    const ids = Array.isArray(employeeIds) ? employeeIds : (employeeIds ? [employeeIds] : []);
+
+    if (ids.length > 0) {
+      const employeeList = (employees?.items || []).filter((emp: Employee) =>
+        ids.includes(emp.id)
+      );
+      setSelectedEmployees(employeeList);
+
+      // 标记手动操作的员工（团队模式下）
+      if (reportMode === 'team') {
+        const previousIds = new Set(selectedEmployees.map(emp => emp.id));
+        const idsSet = new Set(ids);
+
+        // 新增的员工标记为手动添加
+        ids.forEach(id => {
+          if (!previousIds.has(id)) {
+            setManualEmployees(prev => new Set(prev).add(id));
+          }
+        });
+
+        // 删除的员工从手动添加集合中移除
+        previousIds.forEach(id => {
+          if (!idsSet.has(id)) {
+            setManualEmployees(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(id);
+              return newSet;
+            });
+          }
+        });
+      }
+
+      // 个人模式：更新隐藏字段
+      if (reportMode === 'personal' && employeeList.length > 0) {
+        console.log('个人模式：设置隐藏字段', {
+          employeeNo: employeeList[0].employeeNo,
+          employeeName: employeeList[0].name,
+        });
+        form.setFieldValue('employeeNo', employeeList[0].employeeNo);
+        form.setFieldValue('employeeName', employeeList[0].name);
+      }
+    } else {
+      setSelectedEmployees([]);
+      if (reportMode === 'team') {
+        setManualEmployees(new Set());
+      }
     }
   };
 
@@ -346,83 +410,25 @@ const LaborHourReportCreatePage: React.FC = () => {
           </Row>
         )}
 
-        {/* 团队报工模式：显示已选人员列表 */}
-        {reportMode === 'team' && selectedEmployees.length > 0 && (
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item label={`团队人员 (${selectedEmployees.length}人)`}>
-                <div style={{
-                  border: '1px solid #d9d9d9',
-                  borderRadius: '6px',
-                  padding: '8px',
-                  minHeight: '40px',
-                  maxHeight: '80px',
-                  overflowY: 'auto',
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '4px'
-                }}>
-                  {selectedEmployees.map((employee) => (
-                    <Tag
-                      key={employee.id}
-                      closable
-                      onClose={() => handleRemoveEmployee(employee.id)}
-                      style={{ marginBottom: 0 }}
-                    >
-                      {employee.name} ({employee.employeeNo})
-                    </Tag>
-                  ))}
-                </div>
-              </Form.Item>
-            </Col>
-          </Row>
-        )}
 
-        {/* 团队报工模式：手动添加人员 */}
-        {reportMode === 'team' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="手动添加人员">
-                <EmployeeSelect
-                  placeholder="选择要添加的人员（可多选）"
-                  onChange={(employeeIds: number[]) => {
-                    if (Array.isArray(employeeIds)) {
-                      employeeIds.forEach(id => {
-                        const employee = employees?.items?.find((e: Employee) => e.id === id);
-                        if (employee) {
-                          handleAddEmployee(employee);
-                        }
-                      });
-                    }
-                  }}
-                  mode="multiple"
-                  style={{ width: '100%' }}
-                  value={undefined}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}></Col>
-          </Row>
-        )}
-
-        {/* 个人报工模式：选择单个员工 */}
-        {reportMode === 'personal' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="报工人员"
-                name="employeeId"
-                rules={[{ required: true, message: '请选择报工人员' }]}
-              >
-                <EmployeeSelect
-                  placeholder="请选择报工人员"
-                  onChange={handleEmployeeChange}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}></Col>
-          </Row>
-        )}
+        {/* 报工人员选择（两种模式下都显示，团队模式为���选） */}
+        <Row gutter={16}>
+          <Col span={reportMode === 'personal' ? 12 : 24}>
+            <Form.Item
+              label="报工人员"
+              name="employeeId"
+              rules={[{ required: true, message: '请选择报工人员' }]}
+            >
+              <EmployeeSelect
+                placeholder={reportMode === 'personal' ? '请选择报工人员' : '请选择报工人员（可多选）'}
+                onChange={handleEmployeeChange}
+                mode={reportMode === 'team' ? 'multiple' : undefined}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Col>
+          {reportMode === 'personal' && <Col span={12}></Col>}
+        </Row>
 
         {/* 个人报工模式：隐藏字段 */}
         {reportMode === 'personal' && (

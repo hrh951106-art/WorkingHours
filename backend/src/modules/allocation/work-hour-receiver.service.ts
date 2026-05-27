@@ -35,24 +35,46 @@ export class WorkHourReceiverService {
 
     for (const item of data) {
       try {
-        // 如果提供了attendanceCode，需要查询ID
-        let attendanceCodeId = item.attendanceCodeId;
-        if (!attendanceCodeId && item.attendanceCode) {
-          const codeRecord = await this.prisma.attendanceCode.findUnique({
-            where: { code: item.attendanceCode },
+        // ✅ 根据 calcAttendanceCode 查询 DefinitionAttendanceCode
+        let definitionAttendanceCodeId = item.attendanceCodeId;
+        let definitionAttendanceCodeStr = item.attendanceCode;
+        let calcAttendanceCode = item.calcAttendanceCode;
+
+        // 如果没有提供 definitionAttendanceCodeId，尝试从 calcAttendanceCode 查询
+        if (!definitionAttendanceCodeId && calcAttendanceCode) {
+          const definitionCode = await this.prisma.definitionAttendanceCode.findFirst({
+            where: {
+              calcAttendanceCode: calcAttendanceCode,
+              status: 'ACTIVE',
+            },
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              calcAttendanceCode: true,
+            },
           });
-          attendanceCodeId = codeRecord?.id;
+
+          if (definitionCode) {
+            definitionAttendanceCodeId = definitionCode.id;
+            definitionAttendanceCodeStr = definitionCode.name;
+            // 使用数据库中的 calcAttendanceCode（可能比推送的更准确）
+            calcAttendanceCode = definitionCode.calcAttendanceCode || calcAttendanceCode;
+            this.logger.log(`通过 calcAttendanceCode=${calcAttendanceCode} 匹配到定义出勤代码: ${definitionCode.code} - ${definitionCode.name}`);
+          } else {
+            this.logger.warn(`未找到 calcAttendanceCode=${calcAttendanceCode} 对应的定义出勤代码`);
+          }
         }
 
         // 验证出勤代码是否存在
-        if (attendanceCodeId) {
-          const attendanceCode = await this.prisma.attendanceCode.findUnique({
-            where: { id: attendanceCodeId },
+        if (definitionAttendanceCodeId) {
+          const definitionCode = await this.prisma.definitionAttendanceCode.findUnique({
+            where: { id: definitionAttendanceCodeId },
           });
 
-          if (!attendanceCode) {
+          if (!definitionCode) {
             results.failed++;
-            results.errors.push(`出勤代码ID ${attendanceCodeId} 不存在`);
+            results.errors.push(`定义出勤代码ID ${definitionAttendanceCodeId} 不存在`);
             continue;
           }
         }
@@ -70,9 +92,9 @@ export class WorkHourReceiverService {
             calcDate: item.calcDate,
             shiftId: item.shiftId,
             shiftName: item.shiftName,
-            definitionAttendanceCodeId: attendanceCodeId, // ✅ 使用新字段
-            definitionAttendanceCodeStr: item.attendanceCode, // ✅ 使用新字段
-            calcAttendanceCode: item.calcAttendanceCode,
+            definitionAttendanceCodeId: definitionAttendanceCodeId, // ✅ 使用新字段
+            definitionAttendanceCodeStr: definitionAttendanceCodeStr, // ✅ 使用新字段
+            calcAttendanceCode: calcAttendanceCode, // ✅ 使用查询到的值
             workHours: item.workHours,
             sourceType: item.sourceType,
             sourceId: item.sourceId,
@@ -82,8 +104,9 @@ export class WorkHourReceiverService {
           },
           update: {
             workHours: item.workHours,
-            definitionAttendanceCodeId: attendanceCodeId,
-            definitionAttendanceCodeStr: item.attendanceCode,
+            definitionAttendanceCodeId: definitionAttendanceCodeId,
+            definitionAttendanceCodeStr: definitionAttendanceCodeStr,
+            calcAttendanceCode: calcAttendanceCode,
             updatedAt: new Date(),
           },
         });
@@ -329,9 +352,9 @@ export class WorkHourReceiverService {
       const start = startDate instanceof Date ? startDate : new Date(startDate);
       const end = endDate instanceof Date ? endDate : new Date(endDate);
 
-      // 设置时间为当天的 00:00:00 和 23:59:59
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+      // 设置时间为当天的 00:00:00 和 23:59:59（使用UTC时间避免时区问题）
+      start.setUTCHours(0, 0, 0, 0);
+      end.setUTCHours(23, 59, 59, 999);
 
       where.workDate = {
         gte: start,
