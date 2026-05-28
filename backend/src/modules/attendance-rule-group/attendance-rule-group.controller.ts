@@ -69,7 +69,18 @@ export class AttendanceRuleGroupController {
    */
   @Put(':id')
   async update(@Param('id') id: string, @Body() data: UpdateAttendanceRuleGroupDto) {
-    return this.attendanceRuleGroupService.update(+id, data);
+    console.log('📥 收到更新考勤规则组请求:');
+    console.log('  URL参数 id:', id, '类型:', typeof id);
+    console.log('  请求体 data:', JSON.stringify(data, null, 2));
+    console.log('  data的所有键:', Object.keys(data));
+    try {
+      const result = await this.attendanceRuleGroupService.update(+id, data);
+      console.log('✅ 更新考勤规则组成功:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ 更新考勤规则组失败:', error);
+      throw error;
+    }
   }
 
   /**

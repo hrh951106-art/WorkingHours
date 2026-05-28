@@ -143,7 +143,7 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
         id: org.id,
         name: org.name,
         code: org.code,
-        value: org.id,  // 使用ID而不是code，确保是数字类型
+        value: org.code,  // ✅ 使用code而不是id
         label: org.name,
         type: org.type,
       });
@@ -177,7 +177,7 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
           id: detail.id,
           name: detail.levelName,
           code: detail.levelCode,
-          value: detail.id,
+          value: detail.levelCode,  // ✅ 使用code而不是id
           label: detail.levelName,
         }));
 

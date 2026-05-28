@@ -13,14 +13,15 @@ interface Employee {
 }
 
 interface EmployeeSelectProps {
-  value?: number | null;
-  onChange?: (value: number | null, employee?: Employee) => void;
+  value?: number | number[] | null;
+  onChange?: (value: number | number[] | null, employee?: Employee | Employee[]) => void;
   disabled?: boolean;
   placeholder?: string;
   allowClear?: boolean;
   style?: React.CSSProperties;
   className?: string;
   status?: string; // 过滤员工状态，如 ACTIVE
+  mode?: 'multiple' | 'tags'; // 多选模式
 }
 
 const EmployeeSelect: React.FC<EmployeeSelectProps> = ({
@@ -32,6 +33,7 @@ const EmployeeSelect: React.FC<EmployeeSelectProps> = ({
   style,
   className,
   status = 'ACTIVE',
+  mode,
 }) => {
   const [searchText, setSearchText] = useState('');
 
@@ -68,9 +70,19 @@ const EmployeeSelect: React.FC<EmployeeSelectProps> = ({
   return (
     <Select
       value={value}
+      mode={mode}
       onChange={(val) => {
-        const employee = employees?.find((e: Employee) => e.id === val);
-        onChange?.(val || null, employee);
+        if (mode === 'multiple') {
+          // 多选模式：val 是 number[]
+          const selectedEmployees = (val as number[]).map(id =>
+            employees?.find((e: Employee) => e.id === id)
+          ).filter(Boolean);
+          onChange?.(val || null, selectedEmployees as Employee[]);
+        } else {
+          // 单选模式：val 是 number
+          const employee = employees?.find((e: Employee) => e.id === val);
+          onChange?.(val || null, employee);
+        }
       }}
       disabled={disabled}
       placeholder={placeholder}

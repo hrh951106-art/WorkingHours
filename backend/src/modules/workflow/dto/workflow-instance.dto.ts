@@ -49,12 +49,35 @@ export class SubmitApprovalDto {
   comment?: string;
 }
 
+export class ForceApprovalDto {
+  @IsInt()
+  instanceId: number;
+
+  @IsInt()
+  nodeId: number;
+
+  @IsEnum(['APPROVED', 'REJECTED'])
+  action: 'APPROVED' | 'REJECTED';
+
+  @IsString()
+  comment: string;
+}
+
 export class GetInstancesDto {
   @IsOptional()
   status?: string;
 
   @IsOptional()
   category?: string;
+
+  @IsOptional()
+  startDate?: string;
+
+  @IsOptional()
+  endDate?: string;
+
+  @IsOptional()
+  keyword?: string;
 
   @IsOptional()
   page?: number;

@@ -833,6 +833,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
 
   const allocationBasisOptions = [
     { value: 'ACTUAL_HOURS', label: '按实际工时比例分摊', description: '根据各目标的实际工时比例分摊挣得工时' },
+    { value: 'ACTUAL_HOURS_COEFFICIENT', label: '按实际工时系数比例分摊', description: '根据各目标的实际工时系数（金额）比例分摊挣得工时' },
     { value: 'AVERAGE', label: '按人员平均分摊', description: '平均分摊挣得工时到所有符合条件的人员' },
   ];
 
@@ -907,6 +908,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
   const getAllocationBasisColor = (basis: string) => {
     const colors: Record<string, string> = {
       'ACTUAL_HOURS': 'blue',
+      'ACTUAL_HOURS_COEFFICIENT': 'cyan',
       'AVERAGE': 'green',
     };
     return colors[basis] || 'default';

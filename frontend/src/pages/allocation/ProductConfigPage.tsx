@@ -66,6 +66,7 @@ interface ProductStandardHourByLevel {
   hierarchyLevelName?: string;
   hierarchyOptionValue?: string;
   hierarchyOptionLabel?: string;
+  accountLevel?: string; // 账户层级（如："产线、工序"）
   accountPath?: string;
   quantity?: number;
   standardHours: number;
@@ -320,6 +321,13 @@ const ProductConfigPage: React.FC = () => {
     try {
       const values = await standardHoursForm.validateFields();
 
+      // 处理日期格式
+      const formattedValues = {
+        ...values,
+        effectiveDate: values.effectiveDate ? values.effectiveDate.format('YYYY-MM-DD') : undefined,
+        expiryDate: values.expiryDate ? values.expiryDate.format('YYYY-MM-DD') : null,
+      };
+
       if (configMode === ConfigMode.GLOBAL) {
         // 全局标准工时处理
         const userStr = localStorage.getItem('user');
@@ -329,7 +337,7 @@ const ProductConfigPage: React.FC = () => {
         const processName = selectedProcess ? selectedProcess.label.split(' - ')[1] : '';
 
         const data = {
-          ...values,
+          ...formattedValues,
           processName,
           createdById: user?.id || 1,
           createdByName: user?.name || '系统管理员',
@@ -345,7 +353,7 @@ const ProductConfigPage: React.FC = () => {
         }
       } else {
         // 按账户层级配置处理
-        await handleByLevelSubmit();
+        await handleByLevelSubmit(formattedValues);
       }
     } catch (error) {
       console.error('表单验证失败:', error);
@@ -388,34 +396,42 @@ const ProductConfigPage: React.FC = () => {
     deleteByLevelMutation.mutate(id);
   };
 
-  const handleByLevelSubmit = async () => {
+  const handleByLevelSubmit = async (formattedValues?: any) => {
     try {
-      const values = await standardHoursForm.validateFields();
+      const values = formattedValues || await standardHoursForm.validateFields();
 
       // 获取当前用户信息
       const userStr = localStorage.getItem('user');
       const user = userStr ? JSON.parse(userStr) : null;
 
-      // 获取选中的层级信息
-      const selectedLevel = hierarchyLevels?.find((l: any) => l.id === values.hierarchyLevelId);
-      const levelName = selectedLevel ? selectedLevel.name : '';
+      // 获取选择的层级信息
+      const selectedLevelIds = values.hierarchyLevelIds || [];
+      const selectedLevels = hierarchyLevels?.filter((l: any) =>
+        selectedLevelIds.includes(l.id)
+      ) || [];
 
-      // 获取层级选项的标签
-      let optionLabel = '';
-      if (values.hierarchyLevelId && values.hierarchyOptionValue) {
-        const levelDetails = selectedLevel?.details || [];
-        const option = levelDetails.find((d: any) => d.id === values.hierarchyOptionValue);
-        optionLabel = option ? option.levelName : values.hierarchyOptionValue;
-      }
+      // 收集每个层级的输入值
+      const levelValues: string[] = [];
+      const levelNames: string[] = [];
 
-      // 生成账户路径
-      const accountPath = values.hierarchyOptionValue ? `${levelName}:${optionLabel}` : '';
+      selectedLevels.forEach((level: any) => {
+        const fieldName = `levelValue_${level.id}`;
+        const value = values[fieldName];
+        if (value) {
+          levelValues.push(value.trim());
+          levelNames.push(level.name);
+        }
+      });
+
+      // 生成账户路径（用"/"连接）
+      const accountPath = levelValues.length > 0 ? levelValues.join('/') : '';
+      // 生成层级名称（用"、"连接）
+      const accountLevel = levelNames.length > 0 ? levelNames.join('、') : '';
 
       const data = {
         ...values,
         productId: selectedProductId,
-        hierarchyLevelName: levelName,
-        hierarchyOptionLabel: optionLabel,
+        accountLevel,
         accountPath,
         createdById: user?.id || 1,
         createdByName: user?.name || '系统管理员',
@@ -979,18 +995,26 @@ const ProductConfigPage: React.FC = () => {
           {/* 按账户层级模式：显示层级选择 */}
           {configMode === ConfigMode.BY_LEVEL && (
             <>
+              <div style={{ marginBottom: 16, padding: 12, background: '#f0f5ff', borderRadius: 4 }}>
+                <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 4 }}>
+                  配置层级标准工时
+                </div>
+                <div style={{ fontSize: 12, color: '#666' }}>
+                  选择需要配置的层级（可多选），系统会根据选择的层级显示对应的输入框。例如：选择"产线"和"工序"，则需输入产线名称和工序名称。
+                </div>
+              </div>
+
               <Form.Item
-                label="账户层级"
-                name="hierarchyLevelId"
-                rules={[{ required: true, message: '请选择账户层级' }]}
+                label="配置层级"
+                name="hierarchyLevelIds"
+                rules={[{ required: true, message: '请选择配置层级' }]}
+                tooltip="支持多选，如同时选择产线和工序"
               >
                 <Select
-                  placeholder="请选择账户层级"
+                  mode="multiple"
+                  placeholder="请选择配置层级（可多选）"
                   showSearch
-                  onChange={(value) => {
-                    // 清空层级选项
-                    standardHoursForm.setFieldsValue({ hierarchyOptionValue: undefined });
-                  }}
+                  allowClear
                 >
                   {hierarchyLevels?.map((level: any) => (
                     <Select.Option key={level.id} value={level.id}>
@@ -1003,30 +1027,54 @@ const ProductConfigPage: React.FC = () => {
               <Form.Item
                 noStyle
                 shouldUpdate={(prevValues, currentValues) =>
-                  prevValues.hierarchyLevelId !== currentValues.hierarchyLevelId
+                  prevValues.hierarchyLevelIds !== currentValues.hierarchyLevelIds
                 }
               >
                 {({ getFieldValue }) => {
-                  const hierarchyLevelId = getFieldValue('hierarchyLevelId');
-                  const selectedLevel = hierarchyLevels?.find((l: any) => l.id === hierarchyLevelId);
-                  const levelDetails = selectedLevel?.details || [];
+                  const selectedLevelIds = getFieldValue('hierarchyLevelIds') || [];
+                  const selectedLevels = hierarchyLevels?.filter((l: any) =>
+                    selectedLevelIds.includes(l.id)
+                  ) || [];
 
+                  // 根据选择的层级，生成对应的输入字段
                   return (
-                    <Form.Item
-                      label="层级选项"
-                      name="hierarchyOptionValue"
-                      rules={[{ required: true, message: '请选择层级选项' }]}
-                    >
-                      <Select placeholder="请选择层级选项" showSearch>
-                        {levelDetails
-                          .filter((detail: any) => detail.status === 'ACTIVE')
-                          .map((detail: any) => (
-                            <Select.Option key={detail.id} value={detail.id}>
-                              {detail.levelName}
-                            </Select.Option>
+                    <>
+                      {selectedLevels.length > 0 && (
+                        <div style={{
+                          marginBottom: 16,
+                          padding: 12,
+                          background: '#fff7e6',
+                          borderRadius: 4,
+                          border: '1px solid #ffd591'
+                        }}>
+                          <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 8, color: '#fa541c' }}>
+                            <span style={{ color: '#ff4d4f', marginRight: 4 }}>*</span>
+                            请输入层级值（所有字段均为必填项）：
+                          </div>
+                          {selectedLevels.map((level: any) => (
+                            <Form.Item
+                              key={level.id}
+                              label={
+                                <span>
+                                  <span style={{ color: '#ff4d4f', marginRight: 4 }}>*</span>
+                                  {level.name}
+                                </span>
+                              }
+                              name={`levelValue_${level.id}`}
+                              rules={[
+                                { required: true, message: `请输入${level.name}，此项为必填项` }
+                              ]}
+                              style={{ marginBottom: 12 }}
+                            >
+                              <Input
+                                placeholder={`请输入${level.name}名称`}
+                                style={{ borderColor: '#ff4d4f' }}
+                              />
+                            </Form.Item>
                           ))}
-                      </Select>
-                    </Form.Item>
+                        </div>
+                      )}
+                    </>
                   );
                 }}
               </Form.Item>
@@ -1089,8 +1137,19 @@ const ProductConfigPage: React.FC = () => {
               <Form.Item
                 label="失效日期"
                 name="expiryDate"
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const effectiveDate = getFieldValue('effectiveDate');
+                      if (value && effectiveDate && value.isBefore(effectiveDate, 'day')) {
+                        return Promise.reject(new Error('失效日期不能小于生效日期'));
+                      }
+                      return Promise.resolve();
+                    },
+                  }),
+                ]}
               >
-                <DatePicker style={{ width: '100%' }} />
+                <DatePicker style={{ width: '100%' }} placeholder="留空表示永久生效" />
               </Form.Item>
             </Col>
           </Row>

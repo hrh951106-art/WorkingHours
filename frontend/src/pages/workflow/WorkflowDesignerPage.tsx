@@ -552,8 +552,8 @@ const WorkflowDesignerPage: React.FC<WorkflowDesignerPageProps> = ({
                       .filter((config: any) => config.status === 'ACTIVE')
                       .map((config: any) => (
                         <Select.Option
-                          key={config.id}
-                          value={config.id}
+                          key={config.code}
+                          value={config.code}
                           label={`${config.name} (${config.code})`}
                         >
                           <Space>
@@ -590,8 +590,8 @@ const WorkflowDesignerPage: React.FC<WorkflowDesignerPageProps> = ({
                     .filter((config: any) => config.status === 'ACTIVE')
                     .map((config: any) => (
                       <Select.Option
-                        key={config.id}
-                        value={config.id}
+                        key={config.code}
+                        value={config.code}
                         label={`${config.name} (${config.code})`}
                       >
                         <Space>

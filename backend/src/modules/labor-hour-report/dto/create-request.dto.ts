@@ -58,13 +58,11 @@ export class CreateLaborHourReportRequestDto {
   @IsString()
   hourTypeName: string;
 
-  @IsNotEmpty()
-  @IsString()
-  startTime: string; // 格式: HH:mm
+  @IsOptional()
+  startTime?: string; // 格式: HH:mm，可选
 
-  @IsNotEmpty()
-  @IsString()
-  endTime: string; // 格式: HH:mm
+  @IsOptional()
+  endTime?: string; // 格式: HH:mm，可选
 
   @IsNotEmpty()
   @IsNumber()
@@ -85,6 +83,10 @@ export class CreateLaborHourReportRequestDto {
   @IsNotEmpty()
   @IsString()
   accountCode: string;
+
+  @IsNotEmpty()
+  @IsString()
+  accountPath: string;
 
   @IsNotEmpty()
   @IsString()

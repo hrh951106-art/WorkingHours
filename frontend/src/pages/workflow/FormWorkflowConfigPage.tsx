@@ -92,8 +92,8 @@ const FormWorkflowConfigPage: React.FC = () => {
   const formsWithStatus = getFormsWithStatus();
 
   const handleConfigure = (form: FormConfig) => {
-    // 导航到表单流程配置详情页
-    navigate(`/workflow/form-config/${form.key}`);
+    // 导航到表单流程配置详情页（使用 embed 路径，不带主布局）
+    navigate(`/embed/workflow/form-config/${form.key}`);
   };
 
   return (

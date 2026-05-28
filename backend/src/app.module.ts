@@ -44,7 +44,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     // WorkflowModule,
     SupportModule,
     // ProductionReportModule,
-    AmountModule,
+    // AmountModule, // AmountModule is imported by WorkflowModule
     AttendanceRuleGroupModule,
     WorkflowModule,
     LaborHourReportModule,

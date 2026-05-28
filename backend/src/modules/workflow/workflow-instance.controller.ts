@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, ParseIntPipe } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WorkflowInstanceService } from './workflow-instance.service';
-import { CreateWorkflowInstanceDto, SubmitApprovalDto, GetInstancesDto } from './dto/workflow-instance.dto';
+import { CreateWorkflowInstanceDto, SubmitApprovalDto, GetInstancesDto, ForceApprovalDto } from './dto/workflow-instance.dto';
 
 @Controller('workflow/instances')
 @UseGuards(JwtAuthGuard)
@@ -54,5 +54,15 @@ export class WorkflowInstanceController {
     const adminId = req.user?.id || req.user?.userId || 1;
     const adminName = req.user?.name || req.user?.username || '系统管理员';
     return this.workflowInstanceService.forceSkipNode(instanceId, nodeId, adminId, adminName);
+  }
+
+  /**
+   * 管理员强制审批
+   */
+  @Post('force-approval')
+  async forceApproval(@Body() dto: ForceApprovalDto, @Req() req: any) {
+    const adminId = req.user?.id || req.user?.userId || 1;
+    const adminName = req.user?.name || req.user?.username || '系统管理员';
+    return this.workflowInstanceService.forceApproval(dto, adminId, adminName);
   }
 }

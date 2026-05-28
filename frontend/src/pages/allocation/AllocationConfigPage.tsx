@@ -840,7 +840,12 @@ const AllocationWizardForm: React.FC<AllocationWizardFormProps> = ({
       case 0:
         return <StepOneDefineSource form={form} attendanceCodes={attendanceCodes} editingConfig={editingConfig} />;
       case 1:
-        return <StepTwoAllocationRules form={form} attendanceCodes={attendanceCodes} editingConfig={editingConfig} />;
+        return <StepTwoAllocationRules
+          key={editingConfig?.id || 'new'}
+          form={form}
+          attendanceCodes={attendanceCodes}
+          editingConfig={editingConfig}
+        />;
       default:
         return null;
     }
@@ -1104,6 +1109,7 @@ interface StepTwoProps {
 
 const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes, editingConfig }) => {
   const [rules, setRules] = useState<any[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // 获取层级配置列表（用于分配归属）
   const { data: hierarchyLevels, isLoading: levelsLoading } = useQuery({
@@ -1115,20 +1121,48 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
   // 监听表单rules字段的变化
   useEffect(() => {
     const currentRules = form.getFieldValue('rules') || [];
-    console.log('规则发生变化:', currentRules);
+    console.log('=== StepTwoAllocationRules useEffect ===');
+    console.log('组件挂载或更新');
+    console.log('editingConfig:', editingConfig);
+    console.log('form.getFieldValue(rules):', currentRules);
+    console.log('form.getFieldsValue(true):', form.getFieldsValue(true));
     console.log('当前层级配置:', hierarchyLevels);
-    setRules(currentRules);
-  }, [form]); // 监听form对象，当form的值变化时会触发
 
-  // 额外监听：当editingConfig变化时，也要更新rules
+    // 如果是编辑模式且有规则数据，直接设置
+    if (editingConfig && currentRules && currentRules.length > 0) {
+      console.log('编辑模式：设置规则', currentRules);
+      setRules(currentRules);
+      setIsInitialized(true);
+    } else if (!isInitialized) {
+      // 首次初始化
+      setRules(currentRules);
+      setIsInitialized(true);
+    }
+  }, [form, editingConfig, isInitialized]); // 监听form对象和editingConfig，确保两者变化时都会更新
+
+  // 额外监听：当editingConfig变化时，也要更新rules（使用多个延迟确保表单值已设置）
   useEffect(() => {
     if (editingConfig) {
-      const currentRules = form.getFieldValue('rules') || [];
-      console.log('编辑配置变化，更新规则:', currentRules);
-      console.log('规则详情:', JSON.stringify(currentRules, null, 2));
-      setRules(currentRules);
+      console.log('=== editingConfig 变化 ===', editingConfig.id);
+      // 使用多个延迟尝试获取表单值
+      const delays = [0, 50, 100, 200];
+
+      const timers = delays.map(delay =>
+        setTimeout(() => {
+          const currentRules = form.getFieldValue('rules') || [];
+          console.log(`延迟${delay}ms - 规则:`, currentRules);
+          if (currentRules.length > 0) {
+            console.log('✅ 成功获取到规则，更新state');
+            setRules(currentRules);
+          }
+        }, delay)
+      );
+
+      return () => {
+        timers.forEach(timer => clearTimeout(timer));
+      };
     }
-  }, [editingConfig, form]);
+  }, [editingConfig]);
 
   // 当层级数据加载完成后，验证并更新rules中的层级ID
   useEffect(() => {
@@ -1150,6 +1184,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
 
   const allocationBasisOptions = [
     { value: 'ACTUAL_HOURS', label: '实际工时比例', description: '根据各目标的实际工时比例分配间接工时' },
+    { value: 'ACTUAL_HOURS_COEFFICIENT', label: '按实际工时系数比例', description: '根据各目标的实际工时系数（金额）比例分配' },
     { value: 'ACTUAL_YIELDS', label: '实际产量比例', description: '根据各目标的实际产量比例分配间接工时' },
     { value: 'PRODUCTION_LINE_AVERAGE', label: '产线平均', description: '将间接工时平均分配给各生产线' },
     // 隐藏以下两种分配方式，但逻辑保留
@@ -1347,6 +1382,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, attendanceCodes,
   const getAllocationBasisColor = (basis: string) => {
     const colors: Record<string, string> = {
       'ACTUAL_HOURS': 'blue',
+      'ACTUAL_HOURS_COEFFICIENT': 'cyan',
       'ACTUAL_YIELDS': 'green',
       'PRODUCTION_LINE_AVERAGE': 'orange',
       'EARNED_HOURS': 'purple',

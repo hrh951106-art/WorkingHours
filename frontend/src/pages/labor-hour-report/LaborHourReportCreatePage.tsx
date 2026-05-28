@@ -47,6 +47,7 @@ const LaborHourReportCreatePage: React.FC = () => {
   const [selectedEmployees, setSelectedEmployees] = useState<Employee[]>([]);
   const [manualEmployees, setManualEmployees] = useState<Set<number>>(new Set()); // 手动添加的员工ID集合
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<any | null>(null); // 存储完整的账户对象
   const [selectedUnit, setSelectedUnit] = useState<string>('小时');
   const [selectedAttendanceCode, setSelectedAttendanceCode] = useState<AttendanceCode | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
@@ -200,17 +201,30 @@ const LaborHourReportCreatePage: React.FC = () => {
   };
 
   // 人员选择变更（统一处理个人和团队模式）
-  const handleEmployeeChange = (value: number | number[] | null | undefined) => {
-    console.log('handleEmployeeChange 被调用:', value, 'reportMode:', reportMode);
+  const handleEmployeeChange = (value: number | number[] | null | undefined, employeeData?: Employee | Employee[]) => {
+    console.log('handleEmployeeChange 被调用:', value, 'employeeData:', employeeData, 'reportMode:', reportMode);
 
     // Form.Item 会自动处理 employeeId 字段，这里只需要更新状态和隐藏字段
     const employeeIds = value;
     const ids = Array.isArray(employeeIds) ? employeeIds : (employeeIds ? [employeeIds] : []);
 
     if (ids.length > 0) {
-      const employeeList = (employees?.items || []).filter((emp: Employee) =>
-        ids.includes(emp.id)
-      );
+      // 优先使用传入的 employeeData，否则从 employees 列表中查找
+      let employeeList: Employee[] = [];
+
+      if (employeeData) {
+        if (Array.isArray(employeeData)) {
+          employeeList = employeeData;
+        } else {
+          employeeList = [employeeData];
+        }
+      } else {
+        // 降级：从 employees 列表中查找
+        employeeList = (employees?.items || []).filter((emp: Employee) =>
+          ids.includes(emp.id)
+        );
+      }
+
       setSelectedEmployees(employeeList);
 
       // 标记手动操作的员工（团队模式下）
@@ -270,8 +284,9 @@ const LaborHourReportCreatePage: React.FC = () => {
   };
 
   // 账户选择变更
-  const handleAccountChange = (value: number) => {
+  const handleAccountChange = (value: number, account?: any) => {
     setSelectedAccountId(value);
+    setSelectedAccount(account || null);
   };
 
   // 计算工时数量
@@ -285,7 +300,29 @@ const LaborHourReportCreatePage: React.FC = () => {
       const diff = end.diff(start, 'hour', true);
       if (diff > 0) {
         form.setFieldValue('value', parseFloat(diff.toFixed(2)));
+      } else {
+        form.setFieldValue('value', 0);
       }
+    }
+  };
+
+  // 时间字段变化处理
+  const handleTimeChange = (field: 'startTime' | 'endTime', value: any) => {
+    // 设置当前字段值
+    form.setFieldValue(field, value);
+
+    // 如果填写了开始时间或结束时间，验证另一个字段是否已填写
+    const startTime = form.getFieldValue('startTime');
+    const endTime = form.getFieldValue('endTime');
+
+    // 如果其中一个已填写，另一个未填写，提示用户
+    if ((startTime && !endTime) || (!startTime && endTime)) {
+      // 不提示，因为不是必填
+    }
+
+    // 如果两个都填写了，自动计算工时
+    if (startTime && endTime) {
+      calculateHours();
     }
   };
 
@@ -313,46 +350,65 @@ const LaborHourReportCreatePage: React.FC = () => {
       return;
     }
 
-    // 查询账户详情
-    try {
-      const account = await request.get(`/account/accounts/${selectedAccountId}`);
+    // 使用已存储的账户对象，避免额外的API调用
+    let account = selectedAccount;
 
-      // 准备报工人员列表
-      const employees = reportMode === 'personal'
-        ? selectedEmployees
-        : selectedEmployees;
-
-      const data = {
-        workflowCode: 'LABOR_HOUR_REPORT',
-        title: reportMode === 'personal'
-          ? `${employees[0].name} - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`
-          : `团队报工(${employees.length}人) - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`,
-        reportDate: values.reportDate.format('YYYY-MM-DD'),
-        reportMode: reportMode,
-        employees: employees.map(emp => ({
-          employeeId: emp.id,
-          employeeNo: emp.employeeNo,
-          employeeName: emp.employeeName || emp.name,
-        })),
-        hourType: selectedAttendanceCode?.code || values.hourType,
-        hourTypeName: values.hourTypeName,
-        startTime: values.startTime.format('HH:mm'),
-        endTime: values.endTime.format('HH:mm'),
-        value: values.value,
-        unit: selectedUnit || values.unit || '小时',
-        description: values.description,
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name || account.namePath,
-        requesterId: user?.id,
-        requesterName: user?.name,
-      };
-
-      createMutation.mutate(data);
-    } catch (error) {
-      message.error('获取账户信息失败');
-      setLoading(false);
+    // 如果没有存储的账户对象，尝试从API获取
+    if (!account) {
+      try {
+        account = await request.get(`/account/accounts/${selectedAccountId}`);
+      } catch (error: any) {
+        console.error('获取账户信息失败:', error);
+        const errorMsg = error?.response?.data?.message || error?.message || '获取账户信息失败，请检查账户是否有效';
+        message.error(errorMsg);
+        setLoading(false);
+        return;
+      }
     }
+
+    // 验证账户对象是否包含必需的字段
+    if (!account || !account.id || !account.code || !account.path) {
+      message.error('账户信息不完整，请重新选择账户');
+      setLoading(false);
+      return;
+    }
+
+    // 准备报工人员列表
+    const reportEmployees = reportMode === 'personal'
+      ? selectedEmployees
+      : selectedEmployees;
+
+    const data = {
+      workflowCode: 'LABOR_HOUR_REPORT',
+      title: reportMode === 'personal'
+        ? `${reportEmployees[0].name} - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`
+        : `团队报工(${reportEmployees.length}人) - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`,
+      reportDate: values.reportDate.format('YYYY-MM-DD'),
+      reportMode: reportMode,
+      employeeId: reportMode === 'personal' ? reportEmployees[0].id : undefined,
+      employeeNo: reportMode === 'personal' ? reportEmployees[0].employeeNo : undefined,
+      employeeName: reportMode === 'personal' ? (reportEmployees[0].employeeName || reportEmployees[0].name) : undefined,
+      employees: reportEmployees.map(emp => ({
+        employeeId: emp.id,
+        employeeNo: emp.employeeNo,
+        employeeName: emp.employeeName || emp.name,
+      })),
+      hourType: selectedAttendanceCode?.code || values.hourType,
+      hourTypeName: values.hourTypeName,
+      startTime: values.startTime && values.startTime.isValid() ? values.startTime.format('HH:mm') : undefined,
+      endTime: values.endTime && values.endTime.isValid() ? values.endTime.format('HH:mm') : undefined,
+      value: values.value,
+      unit: selectedUnit || values.unit || '小时',
+      description: values.description,
+      accountId: account.id,
+      accountCode: account.code,
+      accountPath: account.path, // ✅ 添加路径字段
+      accountName: account.name || account.namePath,
+      requesterId: user?.id,
+      requesterName: user?.name,
+    };
+
+    createMutation.mutate(data);
   };
 
   return (
@@ -424,6 +480,7 @@ const LaborHourReportCreatePage: React.FC = () => {
                 onChange={handleEmployeeChange}
                 mode={reportMode === 'team' ? 'multiple' : undefined}
                 style={{ width: '100%' }}
+                status="ACTIVE"
               />
             </Form.Item>
           </Col>
@@ -491,12 +548,11 @@ const LaborHourReportCreatePage: React.FC = () => {
             <Form.Item
               label="开始时间"
               name="startTime"
-              rules={[{ required: true, message: '请选择开始时间' }]}
             >
               <TimePicker
                 style={{ width: '100%' }}
                 format="HH:mm"
-                onChange={calculateHours}
+                onChange={(value) => handleTimeChange('startTime', value)}
               />
             </Form.Item>
           </Col>
@@ -504,12 +560,11 @@ const LaborHourReportCreatePage: React.FC = () => {
             <Form.Item
               label="结束时间"
               name="endTime"
-              rules={[{ required: true, message: '请选择结束时间' }]}
             >
               <TimePicker
                 style={{ width: '100%' }}
                 format="HH:mm"
-                onChange={calculateHours}
+                onChange={(value) => handleTimeChange('endTime', value)}
               />
             </Form.Item>
           </Col>

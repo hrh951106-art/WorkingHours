@@ -53,7 +53,7 @@
   flex-shrink: 0;
   display: inline-flex !important;
   align-items: center !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
   font-weight: 400 !important;
   cursor: pointer !important;
   transition: all 0.3s !important;
@@ -223,7 +223,7 @@ body {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 16px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 14px 16px;

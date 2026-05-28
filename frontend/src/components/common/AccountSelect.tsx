@@ -17,7 +17,7 @@ interface Account {
 
 interface AccountSelectProps {
   value?: number | number[] | null;
-  onChange?: (value: number | number[] | null) => void;
+  onChange?: (value: number | number[] | null, account?: Account | Account[]) => void;
   disabled?: boolean;
   placeholder?: string;
   allowClear?: boolean;
@@ -80,10 +80,10 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
         throw error;
       });
     },
-    staleTime: 0, // 始终使用最新数据
-    gcTime: 0, // 不缓存数据（React Query v5中，之前是cacheTime）
-    refetchOnMount: 'always', // 组件挂载时总是重新查询
-    refetchOnWindowFocus: true, // 窗口聚焦时重新查询
+    staleTime: 5 * 60 * 1000, // 5分钟内数据视为新鲜，不会重新请求
+    gcTime: 10 * 60 * 1000, // 10分钟后清理缓存
+    refetchOnMount: false, // 组件挂载时不会总是重新查询
+    refetchOnWindowFocus: false, // 窗口聚焦时不重新查询
   });
 
   // 在编辑模式下，收集当前班次所有segments中的accountId，并查询这些账户
@@ -224,6 +224,28 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
 
     // 最后使用 path 或 name
     return (acc.name || acc.path || '').replace(/\s*\/\s*/g, '/');
+  };
+
+  // 处理账户选择变更
+  const handleSelectChange = (value: number | number[] | null) => {
+    if (onChange) {
+      // 如果是单选，返回选中的完整账户对象
+      if (!mode && typeof value === 'number') {
+        const account = accounts.find((acc: Account) => acc.id === value);
+        onChange(value, account);
+      }
+      // 如果是多选，返回所有选中的完整账户对象
+      else if (mode && Array.isArray(value)) {
+        const selectedAccounts = value.map((id: number) =>
+          accounts.find((acc: Account) => acc.id === id)
+        ).filter((acc: Account | undefined) => acc !== undefined);
+        onChange(value, selectedAccounts);
+      }
+      // 清空选择
+      else {
+        onChange(value, undefined);
+      }
+    }
   };
 
   // 处理创建账户
@@ -469,7 +491,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
       {!showCreateButton ? (
         <Select
           value={value}
-          onChange={onChange}
+          onChange={handleSelectChange}
           placeholder={placeholder}
           allowClear={allowClear}
           showSearch
@@ -481,12 +503,6 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           className={className}
           mode={mode}
           status={recentError ? 'error' : undefined}
-          onDropdownVisibleChange={(open) => {
-            if (open) {
-              console.log('[AccountSelect] 下拉框打开，重新获取账户列表');
-              refetchRecentAccounts();
-            }
-          }}
         >
           {accounts?.map((acc: Account) => (
             <Select.Option
@@ -503,7 +519,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
       ) : (
         <Select
           value={value}
-          onChange={onChange}
+          onChange={handleSelectChange}
           placeholder={placeholder}
           allowClear={allowClear}
           showSearch
@@ -515,12 +531,6 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           className={className}
           mode={mode}
           status={recentError ? 'error' : undefined}
-          onDropdownVisibleChange={(open) => {
-            if (open) {
-              console.log('[AccountSelect] 下拉框打开，重新获取账户列表');
-              refetchRecentAccounts();
-            }
-          }}
           dropdownRender={(menu) => (
             <>
               {menu}

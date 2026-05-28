@@ -108,8 +108,8 @@ const WorkflowDefinitionListPage: React.FC = () => {
 
   // 设计流程
   const handleDesign = (record: WorkflowDefinition) => {
-    // 导航到流程设计器页面
-    window.location.href = `/workflow/designer?category=${record.category}&id=${record.id}`;
+    // 导航到流程设计器页面（使用 embed 路径，不带主布局）
+    window.location.href = `/embed/workflow/designer?category=${record.category}&id=${record.id}`;
   };
 
   // 删除记录

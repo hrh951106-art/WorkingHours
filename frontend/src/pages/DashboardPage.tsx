@@ -29,6 +29,7 @@ import {
   FileSearchOutlined,
   FileAddOutlined,
   FundProjectionScreenOutlined,
+  TransactionOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTabsStore } from '@/stores/tabsStore';
@@ -111,7 +112,7 @@ const DashboardPage: React.FC = () => {
       color: '#00B365',
       items: [
         {
-          title: '工时明细管理',
+          title: '工时管理',
           icon: <BarChartOutlined />,
           color: '#722ed1',
           path: '/attendance/workhour-details',
@@ -125,7 +126,7 @@ const DashboardPage: React.FC = () => {
           description: '记录产量数据',
         },
         {
-          title: '分摊规则',
+          title: '分配规则',
           icon: <SettingOutlined />,
           color: '#00B365',
           path: '/allocation/config',
@@ -146,7 +147,7 @@ const DashboardPage: React.FC = () => {
           description: '维护开线计划',
         },
         {
-          title: '分摊计算',
+          title: '分配计算',
           icon: <CalculatorOutlined />,
           color: '#f5222d',
           path: '/allocation/calculate',
@@ -174,18 +175,11 @@ const DashboardPage: React.FC = () => {
           description: '提交工时报工',
         },
         {
-          title: '审批流程',
-          icon: <CheckSquareOutlined />,
-          color: '#52c41a',
-          path: '/approval/workflows',
-          description: '配置审批流程',
-        },
-        {
-          title: '我的申请',
-          icon: <FormOutlined />,
-          color: '#1890ff',
-          path: '/approval/my-requests',
-          description: '查看我的申请',
+          title: '流程管理',
+          icon: <TransactionOutlined />,
+          color: '#722ed1',
+          path: '/workflow/instances',
+          description: '查看所有流程并强制审批',
         },
       ],
     },
@@ -297,7 +291,7 @@ const DashboardPage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span
                 style={{
-                  fontSize: 18,
+                  fontSize: 22,
                   color: category.color,
                 }}
               >
@@ -305,7 +299,7 @@ const DashboardPage: React.FC = () => {
               </span>
               <span
                 style={{
-                  fontSize: 15,
+                  fontSize: 16,
                   fontWeight: 600,
                   color: 'var(--color-text-primary)',
                 }}
@@ -351,9 +345,9 @@ const DashboardPage: React.FC = () => {
                   >
                     <div
                       style={{
-                        fontSize: 32,
+                        fontSize: 40,
                         color: action.color,
-                        marginBottom: 12,
+                        marginBottom: 8,
                       }}
                     >
                       {action.icon}
@@ -361,20 +355,11 @@ const DashboardPage: React.FC = () => {
                     <div
                       style={{
                         fontWeight: 600,
-                        fontSize: 14,
-                        marginBottom: 4,
+                        fontSize: 16,
                         color: 'var(--color-text-primary)',
                       }}
                     >
                       {action.title}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--color-text-secondary)',
-                      }}
-                    >
-                      {action.description}
                     </div>
                   </div>
                 </Col>

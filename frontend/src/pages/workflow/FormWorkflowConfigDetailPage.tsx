@@ -919,6 +919,11 @@ const FormWorkflowConfigDetailPage: React.FC = () => {
               nodeData.needAllApprove = n.data.needAllApprove ?? false;
               // 将前端使用的 selectedParticipantIds 转换为后端期望的 approverStrategy
               nodeData.approverStrategy = n.data.selectedParticipantIds || [];
+              console.log(`[保存] 审批节点 ${n.id}:`, {
+                label: n.data.label,
+                selectedParticipantIds: n.data.selectedParticipantIds,
+                approverStrategy: nodeData.approverStrategy,
+              });
             }
 
             // 条件节点
@@ -1005,8 +1010,8 @@ const FormWorkflowConfigDetailPage: React.FC = () => {
                   .filter((config: any) => config.status === 'ACTIVE')
                   .map((config: any) => (
                     <Option
-                      key={config.id}
-                      value={config.id}
+                      key={config.code}
+                      value={config.code}
                       label={`${config.name} (${config.code})`}
                     >
                       <Space>

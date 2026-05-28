@@ -218,10 +218,10 @@ const NewProductionRecordPage: React.FC = () => {
 
       const payload = {
         recordDate: values.recordDate ? values.recordDate.format('YYYY-MM-DD') : currentDate.format('YYYY-MM-DD'),
-        orgId: accountId || user?.orgId || 1,
-        orgName: accountName || (user?.orgName || '默认组织'),
-        lineId: null, // 不设置产线ID，因为 ProductionLine 表为空，子劳动力账户ID不能作为 lineId
-        lineName: accountName || '',
+        orgId: accountId || null,  // 劳动力账户ID
+        orgName: accountName || '',  // 劳动力账户名称路径（如：杭州工厂/W1总装车间/W1总装L2产线//焊接）
+        lineId: null,  // 暂时不使用
+        lineName: accountName || '',  // 劳动力账户名称路径（冗余字段，与orgName相同）
         shiftId: values.shiftId || null,
         shiftName: shift?.name || '',
         productId: product?.id || values.productId,
@@ -278,14 +278,11 @@ const NewProductionRecordPage: React.FC = () => {
       const shift = shifts.find((s: any) => s.id === values.shiftId);
 
       // 获取员工信息
+      let employeeNo = '';
       let employeeName = '';
-      if (values.employeeNo) {
-        try {
-          const employee = await request.get(`/hr/employees/${values.employeeNo}`);
-          employeeName = employee.name || '';
-        } catch (error) {
-          console.error('获取员工信息失败:', error);
-        }
+      if (values.employeeObj) {
+        employeeNo = values.employeeObj.employeeNo || '';
+        employeeName = values.employeeObj.name || '';
       }
 
       // 获取产线账户信息
@@ -307,12 +304,12 @@ const NewProductionRecordPage: React.FC = () => {
 
       const payload = {
         recordDate: values.recordDate ? values.recordDate.format('YYYY-MM-DD') : currentDate.format('YYYY-MM-DD'),
-        employeeNo: values.employeeNo,
+        employeeNo: employeeNo,
         employeeName: employeeName,
-        orgId: accountId || user?.orgId || 1,
-        orgName: accountName || (user?.orgName || '默认组织'),
-        lineId: null, // 不设置产线ID，因为 ProductionLine 表为空，子劳动力账户ID不能作为 lineId
-        lineName: accountName || '',
+        orgId: accountId || null,  // 劳动力账户ID
+        orgName: accountName || '',  // 劳动力账户名称路径
+        lineId: null,  // 暂时不使用
+        lineName: accountName || '',  // 劳动力账户名称路径（冗余字段）
         shiftId: values.shiftId || null,
         shiftName: shift?.name || '',
         productId: product?.id || values.productId,
@@ -451,15 +448,34 @@ const NewProductionRecordPage: React.FC = () => {
   const handleAddPersonal = () => {
     setEditingPersonalRecord(null);
     personalForm.resetFields();
+    // 设置默认日期为当前选择的日期
+    personalForm.setFieldsValue({
+      recordDate: currentDate,
+    });
     setIsPersonalModalVisible(true);
   };
 
   // 编辑个人记录
-  const handleEditPersonal = (record: PersonalProductionRecord) => {
+  const handleEditPersonal = async (record: PersonalProductionRecord) => {
     setEditingPersonalRecord(record);
+
+    // 通过employeeNo查询员工信息，获取员工ID
+    let employeeId = null;
+    let employeeObj = null;
+    if (record.employeeNo) {
+      try {
+        const employee = await request.get(`/hr/employees/${record.employeeNo}`);
+        employeeId = employee.id;
+        employeeObj = employee;
+      } catch (error) {
+        console.error('获取员工信息失败:', error);
+      }
+    }
+
     personalForm.setFieldsValue({
       recordDate: dayjs(record.recordDate),
-      employeeNo: record.employeeNo,
+      employeeId: employeeId,
+      employeeObj: employeeObj,
       shiftId: record.shiftId,
       lineId: record.lineId || record.orgId,
       productId: record.productId,
@@ -647,14 +663,6 @@ const NewProductionRecordPage: React.FC = () => {
       render: (value: number) => (
         <span style={{ fontWeight: 500, color: '#1890ff' }}>{value}</span>
       ),
-    },
-    {
-      title: '标准工时',
-      dataIndex: 'standardHours',
-      key: 'standardHours',
-      width: 100,
-      align: 'right' as const,
-      render: (value: number) => value?.toFixed(2) || '-',
     },
     {
       title: '挣得工时',
@@ -1089,12 +1097,22 @@ const NewProductionRecordPage: React.FC = () => {
 
           <Form.Item
             label="员工"
-            name="employeeNo"
+            name="employeeId"
             rules={[{ required: true, message: '请选择员工' }]}
           >
             <EmployeeSelect
               placeholder="请选择员工"
+              onChange={(value, employee) => {
+                // 当选择员工时，更新表单的两个字段
+                personalForm.setFieldsValue({
+                  employeeId: value,
+                  employeeObj: employee,
+                });
+              }}
             />
+          </Form.Item>
+          <Form.Item name="employeeObj" hidden>
+            <input type="hidden" />
           </Form.Item>
 
           <Form.Item

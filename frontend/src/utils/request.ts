@@ -39,6 +39,11 @@ request.interceptors.response.use(
       if (data.success === false) {
         return Promise.reject(new Error(data.message || '请求失败'));
       }
+      console.log('=== Response Interceptor ===');
+      console.log('Extracting data.data from ApiResponse');
+      console.log('Original response keys:', Object.keys(data));
+      console.log('Extracted data type:', typeof data.data);
+      console.log('Extracted data keys:', Object.keys(data.data));
       return data.data;
     }
 

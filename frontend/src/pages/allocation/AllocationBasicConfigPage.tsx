@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, Form, Select, Button, message, Spin, Space, Typography, Row, Col, Empty, Tabs, Table, Tree, Modal, InputNumber, Input } from 'antd';
+import { Card, Form, Select, Button, message, Spin, Space, Typography, Row, Col, Empty, Tabs, Table, Tree, Modal, InputNumber, Input, DatePicker, Switch } from 'antd';
 import { AppstoreOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
@@ -139,12 +140,15 @@ interface ProductStandardHourConfig {
   quantity?: number; // 件数
   standardHours: number; // 总工时
   accountPath: string;
+  effectiveDate?: string; // 生效日期
+  expiryDate?: string; // 失效日期
 }
 
 const ProductStandardHoursConfig: React.FC = () => {
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null); // 选中的产品
+  const [isGlobalConfig, setIsGlobalConfig] = useState(false); // 全局配置开关
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
 
@@ -241,7 +245,26 @@ const ProductStandardHoursConfig: React.FC = () => {
       const data = result?.items || result || [];
       console.log('[产品标准配置] 获取到的数据:', data);
       console.log('[产品标准配置] 数据条数:', data.length);
-      return data;
+
+      // 排序：按账户路径升序，相同账户按生效日期降序
+      const sortedData = data.sort((a: any, b: any) => {
+        // 获取账户路径，空值或"-"视为全局配置，排在最前面
+        const accountPathA = a.accountPath || '-';
+        const accountPathB = b.accountPath || '-';
+
+        // 先按账户路径升序排序
+        if (accountPathA !== accountPathB) {
+          return accountPathA.localeCompare(accountPathB, 'zh-CN');
+        }
+
+        // 相同账户按生效日期降序排序
+        const dateA = a.effectiveDate ? new Date(a.effectiveDate).getTime() : 0;
+        const dateB = b.effectiveDate ? new Date(b.effectiveDate).getTime() : 0;
+        return dateB - dateA; // 降序
+      });
+
+      console.log('[产品标准配置] 排序后的数据:', sortedData);
+      return sortedData;
     },
   });
 
@@ -252,6 +275,7 @@ const ProductStandardHoursConfig: React.FC = () => {
       console.log('可选产品列表:', products);
       console.log('选择的层级:', selectedLevels);
       console.log('层级选项:', hierarchyLevelOptions);
+      console.log('是否全局配置:', data.isGlobalConfig);
 
       // 查找产品信息（处理类型匹配问题）
       const product = products.find((p: any) =>
@@ -264,14 +288,6 @@ const ProductStandardHoursConfig: React.FC = () => {
       if (!product) {
         throw new Error('产品不存在，请重新选择产品');
       }
-
-      // 找出有值的层级字段
-      const filledLevels = selectedLevels.filter((level: any) => {
-        const value = data[`hierarchyOption_${level.id}`];
-        return value !== undefined && value !== null && value !== '';
-      });
-
-      console.log('有值的层级:', filledLevels);
 
       if (!data.standardHours && data.standardHours !== 0) {
         throw new Error('请输入标准');
@@ -288,36 +304,50 @@ const ProductStandardHoursConfig: React.FC = () => {
       let hierarchyOptionValue = '';
       let hierarchyOptionLabel = '';
 
-      if (filledLevels.length > 0) {
-        const accountPathParts = filledLevels.map((level: any) => {
-          const optionValue = data[`hierarchyOption_${level.id}`];
-          const options = hierarchyLevelOptions[level.id] || [];
-          const option = options.find((o: any) =>
-            String(o.value) === String(optionValue) ||
-            String(o.id) === String(optionValue)
-          );
-          return option?.label || option?.optionLabel || String(optionValue);
+      // 如果是全局配置，账户路径为空
+      if (data.isGlobalConfig) {
+        accountPath = '-';
+        console.log('全局配置，账户路径为空');
+      } else {
+        // 找出有值的层级字段
+        const filledLevels = selectedLevels.filter((level: any) => {
+          const value = data[`hierarchyOption_${level.id}`];
+          return value !== undefined && value !== null && value !== '';
         });
 
-        accountPath = accountPathParts.join('/');
-        console.log('生成的账户路径:', accountPath);
+        console.log('有值的层级:', filledLevels);
 
-        // 使用第一个层级作为主要层级（用于兼容）
-        const firstLevel = filledLevels[0];
-        const firstOptionValue = data[`hierarchyOption_${firstLevel.id}`];
-        const firstOptions = hierarchyLevelOptions[firstLevel.id] || [];
-        const firstOption = firstOptions.find((o: any) =>
-          String(o.value) === String(firstOptionValue) ||
-          String(o.id) === String(firstOptionValue)
-        );
+        if (filledLevels.length > 0) {
+          const accountPathParts = filledLevels.map((level: any) => {
+            const optionValue = data[`hierarchyOption_${level.id}`];
+            const options = hierarchyLevelOptions[level.id] || [];
+            const option = options.find((o: any) =>
+              String(o.value) === String(optionValue) ||
+              String(o.id) === String(optionValue)
+            );
+            return option?.label || option?.optionLabel || String(optionValue);
+          });
 
-        hierarchyLevelId = firstLevel.id;
-        hierarchyLevelName = firstLevel.name;
-        hierarchyOptionValue = String(firstOptionValue);
-        hierarchyOptionLabel = firstOption?.label || firstOption?.optionLabel || String(firstOptionValue);
-      } else {
-        console.log('未选择任何层级，账户路径为空');
-        accountPath = '-';
+          accountPath = accountPathParts.join('/');
+          console.log('生成的账户路径:', accountPath);
+
+          // 使用第一个层级作为主要层级（用于兼容）
+          const firstLevel = filledLevels[0];
+          const firstOptionValue = data[`hierarchyOption_${firstLevel.id}`];
+          const firstOptions = hierarchyLevelOptions[firstLevel.id] || [];
+          const firstOption = firstOptions.find((o: any) =>
+            String(o.value) === String(firstOptionValue) ||
+            String(o.id) === String(firstOptionValue)
+          );
+
+          hierarchyLevelId = firstLevel.id;
+          hierarchyLevelName = firstLevel.name;
+          hierarchyOptionValue = String(firstOptionValue);
+          hierarchyOptionLabel = firstOption?.label || firstOption?.optionLabel || String(firstOptionValue);
+        } else {
+          console.log('未选择任何层级，账户路径为空');
+          accountPath = '-';
+        }
       }
 
       const payload = {
@@ -331,13 +361,21 @@ const ProductStandardHoursConfig: React.FC = () => {
         accountPath, // 添加账户路径
         standardHours: parseFloat(data.standardHours) || 0,
         quantity: data.quantity ? parseFloat(data.quantity) : null, // 添加件数字段
+        effectiveDate: data.effectiveDate ? data.effectiveDate.format('YYYY-MM-DD') : null,
+        expiryDate: data.expiryDate ? data.expiryDate.format('YYYY-MM-DD') : null,
         createdById: user?.id || 1,
         createdByName: user?.name || 'Admin',
       };
 
       console.log('保存payload:', payload);
+      console.log('编辑记录:', editingRecord);
 
-      return request.post(`/allocation/standard-hour-by-levels`, payload);
+      // 如果是编辑模式，使用 PUT 接口；否则使用 POST 接口
+      if (editingRecord && editingRecord.id) {
+        return request.put(`/allocation/standard-hour-by-levels/${editingRecord.id}`, payload);
+      } else {
+        return request.post(`/allocation/standard-hour-by-levels`, payload);
+      }
     },
     onSuccess: () => {
       message.success('保存成功');
@@ -371,10 +409,12 @@ const ProductStandardHoursConfig: React.FC = () => {
       return;
     }
     setEditingRecord(null);
+    setIsGlobalConfig(false); // 重置全局配置开关
     form.resetFields();
     // 预填充选中的产品
     form.setFieldsValue({
       productId: selectedProduct.id,
+      isGlobalConfig: false, // 默认关闭全局配置
     });
     setIsModalVisible(true);
   };
@@ -383,15 +423,22 @@ const ProductStandardHoursConfig: React.FC = () => {
     // 直接使用当前选中的记录
     setEditingRecord(record);
 
+    // 判断是否为全局配置（没有账户路径或账户路径为"-"）
+    const isGlobal = !record.accountPath || record.accountPath === '-';
+    setIsGlobalConfig(isGlobal);
+
     // 设置表单值
     const formValues: any = {
       productId: record.productId,
+      isGlobalConfig: isGlobal,
       standardHours: record.standardHours,
       quantity: record.quantity,
+      effectiveDate: record.effectiveDate ? dayjs(record.effectiveDate) : null,
+      expiryDate: record.expiryDate ? dayjs(record.expiryDate) : null,
     };
 
     // 如果有账户路径，尝试解析回层级选项
-    if (record.accountPath && record.accountPath !== '-') {
+    if (!isGlobal && record.accountPath) {
       const pathParts = record.accountPath.split('/');
       // 将路径部分按顺序匹配到层级
       selectedLevels.forEach((level: any, index: number) => {
@@ -429,6 +476,7 @@ const ProductStandardHoursConfig: React.FC = () => {
   const handleModalCancel = () => {
     setIsModalVisible(false);
     setEditingRecord(null);
+    setIsGlobalConfig(false);
     form.resetFields();
   };
 
@@ -501,8 +549,22 @@ const ProductStandardHoursConfig: React.FC = () => {
         if (accountPath && accountPath !== '-') {
           return <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{accountPath}</span>;
         }
-        return <span style={{ color: '#ccc' }}>-</span>;
+        return <span style={{ color: '#52c41a', fontWeight: 500 }}>全局配置</span>;
       },
+    },
+    {
+      title: '生效日期',
+      dataIndex: 'effectiveDate',
+      key: 'effectiveDate',
+      width: 120,
+      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
+    },
+    {
+      title: '失效日期',
+      dataIndex: 'expiryDate',
+      key: 'expiryDate',
+      width: 120,
+      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
     },
     {
       title: '标准',
@@ -555,14 +617,6 @@ const ProductStandardHoursConfig: React.FC = () => {
       ),
     },
   ];
-
-  if (selectedLevelIds.length === 0) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px' }}>
-        <Empty description="请先在工时基础配置中设置标准配置层级" />
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -714,7 +768,7 @@ const ProductStandardHoursConfig: React.FC = () => {
         onOk={handleModalSubmit}
         onCancel={handleModalCancel}
         confirmLoading={saveMutation.isPending}
-        width={500}
+        width={600}
       >
         <Form form={form} layout="vertical">
           <Form.Item
@@ -734,11 +788,25 @@ const ProductStandardHoursConfig: React.FC = () => {
             />
           </Form.Item>
 
-          {selectedLevels.map((level: any) => (
+          {selectedLevelIds.length > 0 && (
+            <Form.Item
+              label="全局配置"
+              name="isGlobalConfig"
+              valuePropName="checked"
+            >
+              <Switch
+                checked={isGlobalConfig}
+                onChange={(checked) => setIsGlobalConfig(checked)}
+              />
+            </Form.Item>
+          )}
+
+          {selectedLevelIds.length > 0 && !isGlobalConfig && selectedLevels.map((level: any) => (
             <Form.Item
               key={level.id}
               label={level.name}
               name={`hierarchyOption_${level.id}`}
+              rules={[{ required: true, message: `请选择${level.name}，此项为必填项` }]}
             >
               <Select
                 placeholder={`请选择${level.name}`}
@@ -783,6 +851,46 @@ const ProductStandardHoursConfig: React.FC = () => {
                     precision={2}
                     style={{ width: '100%' }}
                     placeholder="标准"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </Form.Item>
+
+          <Form.Item label="生效日期">
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="effectiveDate"
+                  rules={[{ required: true, message: '请选择生效日期' }]}
+                  style={{ marginBottom: 0 }}
+                >
+                  <DatePicker
+                    style={{ width: '100%' }}
+                    placeholder="请选择生效日期"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="expiryDate"
+                  style={{ marginBottom: 0 }}
+                  rules={[
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        const effectiveDate = getFieldValue('effectiveDate');
+                        if (value && effectiveDate && value.isBefore(effectiveDate, 'day')) {
+                          return Promise.reject(new Error('失效日期不能小于生效日期'));
+                        }
+                        return Promise.resolve();
+                      },
+                    }),
+                  ]}
+                >
+                  <DatePicker
+                    style={{ width: '100%' }}
+                    placeholder="请选择失效日期（可选）"
+                    allowClear
                   />
                 </Form.Item>
               </Col>
@@ -908,6 +1016,12 @@ const GeneralConfig: React.FC = () => {
           category: 'ALLOCATION',
           description: '间接工时分配后的工时代码',
         },
+        {
+          configKey: 'earnedHoursAttendanceCode',
+          configValue: values.earnedHoursAttendanceCode || '',
+          category: 'ALLOCATION',
+          description: '配置后，挣得工时计算结果存储至该代码',
+        },
       ];
 
       // 更新或创建每个配置
@@ -953,6 +1067,9 @@ const GeneralConfig: React.FC = () => {
     const indirectHoursCodeConfig = systemConfigs.find(
       (c: any) => c.configKey === 'indirectHoursAllocationCode'
     );
+    const earnedHoursCodeConfig = systemConfigs.find(
+      (c: any) => c.configKey === 'earnedHoursAttendanceCode'
+    );
 
     const propertyKeys = shiftPropertiesConfig?.configValue
       ? shiftPropertiesConfig.configValue.split(',').filter((key: string) => key)
@@ -968,6 +1085,7 @@ const GeneralConfig: React.FC = () => {
       productionLineShiftPropertyKeys: propertyKeys,
       actualHoursAllocationCode: actualHoursCodeConfig?.configValue || undefined,
       indirectHoursAllocationCode: indirectHoursCodeConfig?.configValue || undefined,
+      earnedHoursAttendanceCode: earnedHoursCodeConfig?.configValue || undefined,
     };
   };
 
@@ -1117,6 +1235,38 @@ const GeneralConfig: React.FC = () => {
           <Form.Item
             name="indirectHoursAllocationCode"
             rules={[{ required: true, message: '请选择工时代码' }]}
+            style={{ marginBottom: 0 }}
+          >
+            <Select
+              placeholder="请选择工时代码"
+              allowClear
+              showSearch
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {attendanceCodes.map((code: any) => (
+                <Select.Option
+                  key={code.code}
+                  value={code.code}
+                  label={`${code.name} (${code.code})`}
+                >
+                  {code.name}（{code.code}）
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        ),
+      },
+      {
+        key: 'earnedHoursAttendanceCode',
+        name: '挣得工时出勤代码',
+        code: 'AL1003',
+        description: '配置后，挣得工时计算结果存储至该代码',
+        renderValue: () => (
+          <Form.Item
+            name="earnedHoursAttendanceCode"
             style={{ marginBottom: 0 }}
           >
             <Select

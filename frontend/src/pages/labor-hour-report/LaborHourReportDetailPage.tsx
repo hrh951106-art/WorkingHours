@@ -12,6 +12,8 @@ import {
   Radio,
   Spin,
   Timeline,
+  Row,
+  Col,
 } from 'antd';
 import { ArrowLeftOutlined, CheckOutlined, CloseOutlined, EyeOutlined } from '@ant-design/icons';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -89,6 +91,13 @@ const LaborHourReportDetailPage: React.FC = () => {
   // 当数据加载成功后，设置selectedReport
   useEffect(() => {
     if (detail) {
+      console.log('=== LaborHourReport Detail (Component) ===');
+      console.log('detail:', detail);
+      console.log('detail keys:', Object.keys(detail));
+      console.log('detail.instance:', detail.instance);
+      console.log('detail.instance?.definition:', detail.instance?.definition);
+      console.log('detail.instance?.definition?.nodes:', detail.instance?.definition?.nodes);
+      console.log('detail.instance?.approvals:', detail.instance?.approvals);
       setSelectedReport(detail);
     }
   }, [detail]);
@@ -194,17 +203,31 @@ const LaborHourReportDetailPage: React.FC = () => {
 
   // 构建审批流程时间轴
   const buildApprovalTimeline = () => {
+    console.log('=== buildApprovalTimeline ===');
+    console.log('selectedReport:', selectedReport);
+    console.log('selectedReport?.instance:', selectedReport?.instance);
+
     if (!selectedReport?.instance) {
+      console.log('No instance, returning null');
       return null;
     }
 
+    console.log('selectedReport.instance.definition:', selectedReport.instance.definition);
+    console.log('selectedReport.instance.definition.nodes:', selectedReport.instance.definition?.nodes);
+
     if (!selectedReport.instance.definition || !selectedReport.instance.definition.nodes) {
+      console.log('No definition or nodes, returning null');
       return null;
     }
 
     const timelineItems: any[] = [];
     const workflowNodes = selectedReport.instance.definition.nodes.filter((node: any) => node.nodeType === 'approval');
     const approvals = selectedReport.instance.approvals || [];
+
+    console.log('workflowNodes:', workflowNodes);
+    console.log('workflowNodes length:', workflowNodes.length);
+    console.log('approvals:', approvals);
+    console.log('approvals length:', approvals.length);
 
     // 1. 添加申请节点
     const applicantName = selectedReport.reportMode === 'team'
@@ -361,18 +384,29 @@ const LaborHourReportDetailPage: React.FC = () => {
                 return (
                   <div key={approval.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {approvers.map((approver: any, idx: number) => {
-                      // 检查该审批人是否已审批
-                      const isDirectApprover = approval.approverId === approver.id;
-                      const hasAction = isDirectApprover && approval.action;
+                      // 检查审批记录的状态
+                      const hasAction = !!approval.action; // 审批记录是否有操作
                       const isApproved = approval.action === 'APPROVED';
                       const isRejected = approval.action === 'REJECTED';
+                      const isForced = approval.approverName && approval.approverName.includes('强制通过'); // 是否强制通过
 
+                      // 如果审批记录已操作，所有人都显示相同的状态
                       const bgColor = hasAction ? (isApproved ? '#f6ffed' : '#fff1f0') : '#e6f7ff';
                       const borderColor = hasAction ? (isApproved ? '#b7eb8f' : '#ffccc7') : '#91d5ff';
-                      const statusTag = hasAction
-                        ? (isApproved ? <Tag color="green" style={{ fontSize: 10, padding: '0 4px' }}>已通过</Tag>
-                          : <Tag color="red" style={{ fontSize: 10, padding: '0 4px' }}>已退回</Tag>)
-                        : <Tag color="blue" style={{ fontSize: 10, padding: '0 4px' }}>待审批</Tag>;
+
+                      // 状态标签
+                      let statusTag;
+                      if (hasAction) {
+                        if (isApproved) {
+                          statusTag = isForced
+                            ? <Tag color="red" style={{ fontSize: 10, padding: '0 4px' }}>强制通过</Tag>
+                            : <Tag color="green" style={{ fontSize: 10, padding: '0 4px' }}>已通过</Tag>;
+                        } else {
+                          statusTag = <Tag color="red" style={{ fontSize: 10, padding: '0 4px' }}>已退回</Tag>;
+                        }
+                      } else {
+                        statusTag = <Tag color="blue" style={{ fontSize: 10, padding: '0 4px' }}>待审批</Tag>;
+                      }
 
                       return (
                         <div
@@ -409,6 +443,9 @@ const LaborHourReportDetailPage: React.FC = () => {
                             <div style={{ fontSize: 12, fontWeight: 400, color: '#262626' }}>
                               {approver.name}
                             </div>
+                            {hasAction && isForced && (
+                              <Tag color="orange" style={{ fontSize: 9, padding: '0 4px' }}>管理员操作</Tag>
+                            )}
                           </div>
                           {statusTag}
                         </div>
@@ -430,6 +467,9 @@ const LaborHourReportDetailPage: React.FC = () => {
         ),
       });
     });
+
+    console.log('timelineItems:', timelineItems);
+    console.log('timelineItems length:', timelineItems.length);
 
     return timelineItems;
   };
@@ -456,132 +496,177 @@ const LaborHourReportDetailPage: React.FC = () => {
       <Card
         title="工时报工详情"
         extra={
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/labor-hour-report/list')}>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/workflow/instances')}>
             返回列表
           </Button>
         }
       >
+        {/* 概要信息 */}
+        <div style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          borderRadius: '8px',
+          padding: '20px 24px',
+          marginBottom: '24px',
+          color: 'white',
+        }}>
+          <Row gutter={[16, 12]}>
+            <Col span={4}>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>申请编号</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>{selectedReport.requestNo}</div>
+            </Col>
+            <Col span={4}>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>表单编号</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>
+                {selectedReport.instance?.instanceNo || selectedReport.workflowCode}
+              </div>
+            </Col>
+            <Col span={4}>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>发起人</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>{selectedReport.requesterName}</div>
+            </Col>
+            <Col span={4}>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>发起时间</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>
+                {dayjs(selectedReport.createdAt).format('YYYY-MM-DD HH:mm')}
+              </div>
+            </Col>
+            <Col span={4}>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>申请状态</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>
+                {getStatusTag(selectedReport.status)}
+              </div>
+            </Col>
+          </Row>
+        </div>
+
         <div style={{ display: 'flex', gap: '24px' }}>
           {/* 左侧：表单信息 */}
           <div style={{ flex: 1 }}>
-            <Divider orientation="left">表单信息</Divider>
-
-            {/* 基础信息 */}
-            <Descriptions bordered column={3} size="small" style={{ marginBottom: 16 }}>
-              <Descriptions.Item label="申请编号" span={1}>
-                {selectedReport.requestNo}
-              </Descriptions.Item>
-              <Descriptions.Item label="报工模式" span={1}>
+            {/* 报工模式 */}
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>报工模式</div>
                 {selectedReport.reportMode === 'personal' ? (
                   <Tag color="blue">个人报工</Tag>
                 ) : (
                   <Tag color="green">团队报工</Tag>
                 )}
-              </Descriptions.Item>
-              <Descriptions.Item label="发起人" span={1}>
-                {selectedReport.requesterName}
-              </Descriptions.Item>
-              <Descriptions.Item label="申请标题" span={1}>
-                {selectedReport.title}
-              </Descriptions.Item>
-              <Descriptions.Item label="申请时间" span={1}>
-                {dayjs(selectedReport.createdAt).format('YYYY-MM-DD HH:mm:ss')}
-              </Descriptions.Item>
-              <Descriptions.Item label="申请状态" span={1}>
-                {getStatusTag(selectedReport.status)}
-              </Descriptions.Item>
-            </Descriptions>
+              </Col>
+              <Col span={12}></Col>
+            </Row>
 
-            {/* 团队报工：显示员工列表 */}
+            {/* 团队报工：显示组织 */}
             {selectedReport.reportMode === 'team' && selectedReport.employees && selectedReport.employees.length > 0 && (
-              <>
-                <Divider orientation="left">报工人员 ({selectedReport.employees.length}人)</Divider>
+              <Row gutter={16} style={{ marginBottom: 16 }}>
+                <Col span={24}>
+                  <div style={{ fontWeight: 500, marginBottom: 8 }}>报工人员</div>
+                  <div style={{
+                    border: '1px solid #d9d9d9',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    background: '#fafafa',
+                    minHeight: '60px'
+                  }}>
+                    <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                      共 {selectedReport.employees.length} 人
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {selectedReport.employees.map((emp) => (
+                        <Tag key={emp.id} style={{ marginBottom: 0, padding: '4px 10px', fontSize: 13 }}>
+                          {emp.employeeName} ({emp.employeeNo})
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            )}
+
+            {/* 个人报工：显示员工信息 */}
+            {selectedReport.reportMode === 'personal' && (
+              <Row gutter={16} style={{ marginBottom: 16 }}>
+                <Col span={12}>
+                  <div style={{ fontWeight: 500, marginBottom: 8 }}>报工人员</div>
+                  <div>{selectedReport.employeeName}</div>
+                </Col>
+                <Col span={12}>
+                  <div style={{ fontWeight: 500, marginBottom: 8 }}>员工编号</div>
+                  <div>{selectedReport.employeeNo}</div>
+                </Col>
+              </Row>
+            )}
+
+            {/* 工时信息 */}
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>报工日期</div>
+                <div>{dayjs(selectedReport.reportDate).format('YYYY-MM-DD')}</div>
+              </Col>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>工时类型</div>
+                <div>{selectedReport.hourTypeName}</div>
+              </Col>
+            </Row>
+
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>开始时间</div>
+                <div>{selectedReport.startTime}</div>
+              </Col>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>结束时间</div>
+                <div>{selectedReport.endTime}</div>
+              </Col>
+            </Row>
+
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>工时数量</div>
+                <div>{selectedReport.value} {selectedReport.unit}</div>
+              </Col>
+              <Col span={12}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>单位</div>
+                <div>{selectedReport.unit}</div>
+              </Col>
+            </Row>
+
+            {/* 报工归属 */}
+            <Row gutter={16} style={{ marginBottom: selectedReport.description ? 16 : 0 }}>
+              <Col span={24}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>报工归属</div>
                 <div style={{
                   background: '#fafafa',
                   padding: '12px',
                   borderRadius: '6px',
-                  marginBottom: 16,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '4px'
+                  border: '1px solid #e8e8e8'
                 }}>
-                  {selectedReport.employees.map((emp) => (
-                    <Tag key={emp.id} style={{ padding: '4px 8px', fontSize: 13, marginBottom: 0 }}>
-                      {emp.employeeName} ({emp.employeeNo})
-                    </Tag>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* 个人报工：显示申请人 */}
-            {selectedReport.reportMode === 'personal' && (
-              <>
-                <Divider orientation="left">报工人员</Divider>
-                <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-                  <Descriptions.Item label="员工编号">
-                    {selectedReport.employeeNo}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="员工姓名">
-                    {selectedReport.employeeName}
-                  </Descriptions.Item>
-                </Descriptions>
-              </>
-            )}
-
-            {/* 表单详细信息 */}
-            <Card size="small" title="详细信息" bordered={false}>
-              <Descriptions bordered column={2} size="small">
-                <Descriptions.Item label="报工日期">
-                  {dayjs(selectedReport.reportDate).format('YYYY-MM-DD')}
-                </Descriptions.Item>
-                <Descriptions.Item label="工时类型">
-                  {selectedReport.hourTypeName}
-                </Descriptions.Item>
-                <Descriptions.Item label="工时代码">
-                  {selectedReport.hourType}
-                </Descriptions.Item>
-                <Descriptions.Item label="开始时间">
-                  {selectedReport.startTime}
-                </Descriptions.Item>
-                <Descriptions.Item label="结束时间">
-                  {selectedReport.endTime}
-                </Descriptions.Item>
-                <Descriptions.Item label="工时数量">
-                  {selectedReport.value} {selectedReport.unit}
-                </Descriptions.Item>
-                {selectedReport.description && (
-                  <Descriptions.Item label="详细描述" span={2}>
-                    {selectedReport.description || '-'}
-                  </Descriptions.Item>
-                )}
-              </Descriptions>
-
-              {/* 报工归属 */}
-              <Divider orientation="left" style={{ margin: '16px 0' }}>报工归属</Divider>
-              <div style={{ background: '#fafafa', padding: '12px', borderRadius: '6px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    background: '#fff',
-                    borderRadius: '4px',
-                    border: '1px solid #e8e8e8',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 500, marginBottom: 4 }}>
-                      {selectedReport.accountName}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#666' }}>
-                      代码：{selectedReport.accountCode}
-                    </div>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                    {selectedReport.accountName}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    代码：{selectedReport.accountCode}
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Col>
+            </Row>
+
+            {/* 详细描述 */}
+            {selectedReport.description && (
+              <Row gutter={16}>
+                <Col span={24}>
+                  <div style={{ fontWeight: 500, marginBottom: 8 }}>详细描述</div>
+                  <div style={{
+                    background: '#fafafa',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    border: '1px solid #e8e8e8',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {selectedReport.description}
+                  </div>
+                </Col>
+              </Row>
+            )}
           </div>
 
           {/* 右侧：审批流程 */}
@@ -590,7 +675,13 @@ const LaborHourReportDetailPage: React.FC = () => {
 
             {/* 审批流程时间轴 */}
             {selectedReport.instance ? (
-              <Timeline items={buildApprovalTimeline()} style={{ marginTop: 16 }} />
+              <Timeline mode="left" style={{ marginTop: 16, marginLeft: '-8px' }}>
+                {buildApprovalTimeline()?.map((item: any) => (
+                  <Timeline.Item key={item.key} color={item.color} dot={item.dot}>
+                    {item.title}
+                  </Timeline.Item>
+                ))}
+              </Timeline>
             ) : (
               <div style={{ padding: '16px', background: '#fafafa', borderRadius: '6px', textAlign: 'center' }}>
                 <div style={{ fontSize: 12, color: '#999' }}>无审批流程信息</div>

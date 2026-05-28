@@ -34,15 +34,9 @@ export class EarnedHoursAllocationService {
     this.logger.log(`配置: ${config.configName} (${config.code})`);
 
     // 2. 解析配置
-    const sourceConfigStr = config.sourceConfig;
-    if (!sourceConfigStr) {
-      throw new NotFoundException('配置数据源不存在');
-    }
-
-    // Parse JSON string to object
     let sourceConfig: any = {};
     try {
-      sourceConfig = JSON.parse(sourceConfigStr);
+      sourceConfig = JSON.parse(config.sourceConfig || '{}');
     } catch (e) {
       this.logger.error('解析sourceConfig失败:', e);
       sourceConfig = {};
@@ -53,19 +47,20 @@ export class EarnedHoursAllocationService {
     let workHoursFilter = { hierarchySelections: [], attendanceCodes: [] };
 
     try {
-      if (sourceConfig.productionFilter && sourceConfig.productionFilter !== '{}') {
-        employeeFilter = JSON.parse(sourceConfig.productionFilter);
+      // 修复：使用 employeeFilter 而不是 productionFilter
+      if (sourceConfig.employeeFilter && sourceConfig.employeeFilter.fieldGroups) {
+        employeeFilter = sourceConfig.employeeFilter;
       }
     } catch (e) {
       this.logger.error('解析人员筛选条件失败:', e);
     }
 
     try {
-      if (sourceConfig.accountFilter && sourceConfig.accountFilter !== '{}') {
-        const parsed = JSON.parse(sourceConfig.accountFilter);
+      // 从 accountFilter 中提取层级筛选和出勤代码
+      if (sourceConfig.accountFilter) {
         workHoursFilter = {
-          hierarchySelections: parsed.hierarchySelections || [],
-          attendanceCodes: parsed.attendanceCodes || [],
+          hierarchySelections: sourceConfig.accountFilter.hierarchySelections || [],
+          attendanceCodes: sourceConfig.attendanceCodes || [],
         };
       }
     } catch (e) {
@@ -100,12 +95,23 @@ export class EarnedHoursAllocationService {
       };
     }
 
-    // 4. 计算每条生产记录的分摊
-    let totalResults = 0;
-    const results = [];
+    // 4. 按日期+劳动力账户对生产记录进行分组
+    // 每个分组应该独立计算分摊，生成独立的批次号
+    const recordGroups = new Map<string, any[]>();
 
-    // 生成批次号
-    const batchNo = `EHA-${Date.now()}`;
+    productionRecords.forEach(record => {
+      // 日期需要转换为统一的格式（去掉时分秒）
+      const dateKey = new Date(record.recordDate).toISOString().split('T')[0];
+      const groupKey = `${dateKey}_${record.orgId}`;
+
+      if (!recordGroups.has(groupKey)) {
+        recordGroups.set(groupKey, []);
+      }
+
+      recordGroups.get(groupKey)!.push(record);
+    });
+
+    this.logger.log(`生产记录已分为 ${recordGroups.size} 个分组（按日期+劳动力账户）`);
 
     // Parse rules from JSON string
     let rules: any[] = [];
@@ -116,9 +122,39 @@ export class EarnedHoursAllocationService {
       rules = [];
     }
 
-    for (const record of productionRecords) {
+    // 5. 删除旧数据（防重复）
+    // 对每个分组，先删除已有的分摊结果，避免重复
+    // 注意：不在这里删除，而是在处理每个规则时删除该规则的旧结果
+    // 这样可以确保不同规则的结果互不影响
+
+    // 6. 对每个分组分别进行分摊计算
+    let totalResults = 0;
+    const batchResults = [];
+
+    for (const [groupKey, groupRecords] of recordGroups.entries()) {
+      // 为每个分组生成独立的批次号
+      const batchNo = `EHA-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+      this.logger.log(`处理分组 ${groupKey}，共 ${groupRecords.length} 条生产记录，批次号: ${batchNo}`);
+
+      // 合并同一分组的产量
+      let totalQty = 0;
+      let totalStdHours = 0;
+      const mergedRecord = { ...groupRecords[0] };
+
+      for (const record of groupRecords) {
+        totalQty += record.actualQty || 0;
+        totalStdHours += record.totalStdHours || 0;
+      }
+
+      mergedRecord.actualQty = totalQty;
+      mergedRecord.totalStdHours = totalStdHours;
+
+      this.logger.log(`  合并后产量: ${totalQty}，总标准工时: ${totalStdHours}`);
+
+      // 对合并后的生产记录执行分摊
       const result = await this.allocateForProductionRecord(
-        record,
+        mergedRecord,
         employeeFilter,
         workHoursFilter,
         rules,
@@ -127,19 +163,26 @@ export class EarnedHoursAllocationService {
         configId,
       );
 
-      if (result) {
-        results.push(result);
-        totalResults++;
+      if (result && result.allocationResults) {
+        batchResults.push({
+          batchNo,
+          groupKey,
+          totalQty,
+          totalStdHours,
+          employeeCount: result.employeeCount || 0,
+          result,
+        });
+        totalResults += result.allocationResults.length || 0;
       }
     }
 
-    this.logger.log(`分摊完成，共生成 ${totalResults} 条结果`);
+    this.logger.log(`分摊完成，共生成 ${totalResults} 条结果，${recordGroups.size} 个批次`);
 
     return {
       message: '分摊计算完成',
-      batchNo,
+      totalBatches: recordGroups.size,
       totalResults,
-      results,
+      batchResults,
     };
   }
 
@@ -158,71 +201,47 @@ export class EarnedHoursAllocationService {
     // 1. 计算总得工时 = (产量 / 标准件数) * 标准工时
     // 从产品标准工时配置中获取标准工时
 
-    if (!record.lineId) {
+    if (!record.orgId) {
       this.logger.warn(`生产记录 ${record.id} 没有关联劳动力账户`);
       return null;
     }
 
     // 获取劳动力账户信息
     const account = await this.prisma.laborAccount.findFirst({
-      where: { id: record.lineId },
+      where: { id: record.orgId },
     });
 
     if (!account) {
-      this.logger.warn(`生产记录 ${record.id} 的劳动力账户 ${record.lineId} 不存在`);
+      this.logger.warn(`生产记录 ${record.id} 的劳动力账户 ${record.orgId} 不存在`);
       return null;
     }
 
-    // 解析账户的层级信息，找到工序层级
-    let processLevelId: number | null = null;
-    let processOptionValue: string | null = null;
-    let processOptionLabel: string | null = null;
-
-    try {
-      const hierarchyValues = JSON.parse(account.hierarchyValues || '[]');
-      const processLevel = hierarchyValues.find((hv: any) => hv.name === '工序');
-
-      if (processLevel && processLevel.selectedValue) {
-        processLevelId = processLevel.levelId;
-        processOptionValue = processLevel.selectedValue.id;
-        processOptionLabel = processLevel.selectedValue.name;
-      }
-
-      this.logger.log(
-        `账户 ${account.code} 的工序层级: levelId=${processLevelId}, optionValue=${processOptionValue}, optionLabel=${processOptionLabel}`
-      );
-    } catch (e) {
-      this.logger.error(`解析账户 ${account.code} 的层级信息失败:`, e);
-    }
-
-    if (!processLevelId || !processOptionValue) {
-      this.logger.warn(`账户 ${account.code} 没有配置工序层级信息`);
-      return null;
-    }
-
-    // 查询产品标准工时配置
-    const standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
-      where: {
-        productId: record.productId,
-        accountLevel: String(processLevelId),
-        status: 'ACTIVE',
-      },
-    });
+    // 查询产品标准工时配置（使用与个人产量记录相同的匹配逻辑）
+    const recordDate = new Date(record.recordDate);
+    recordDate.setHours(0, 0, 0, 0);
 
     this.logger.log(
-      `查询标准工时配置: productId=${record.productId}, levelId=${processLevelId}, optionValue=${processOptionValue}`
+      `查询标准工时配置: productId=${record.productId}, orgId=${record.orgId}, orgName=${record.orgName}, recordDate=${recordDate.toISOString().substring(0, 10)}`
     );
 
-    if (!standardHourConfig) {
+    // 使用智能匹配逻辑查找标准工时配置
+    const finalConfig = await this.findMatchingStandardHourConfig(
+      record.productId,
+      record.orgId,
+      record.orgName || '',
+      recordDate
+    );
+
+    if (!finalConfig) {
       this.logger.warn(
-        `未找到产品 ${record.productName} (ID:${record.productId}) 在工序 ${processOptionLabel} (optionValue:${processOptionValue}) 下的标准工时配置`
+        `未找到产品 ${record.productName} (ID:${record.productId}) 的标准工时配置`
       );
       return null;
     }
 
     // 计算总得工时
-    const quantity = standardHourConfig.quantity || 1; // 标准件数，默认为1
-    const standardHours = standardHourConfig.standardHours; // 标准工时
+    const quantity = finalConfig.quantity || 1; // 标准件数
+    const standardHours = finalConfig.standardHours; // 标准工时
     const totalEarnedHours = (record.actualQty / quantity) * standardHours;
 
     this.logger.log(
@@ -233,15 +252,15 @@ export class EarnedHoursAllocationService {
       return null;
     }
 
-    // 2. 使用生产记录中的劳动力账户（lineId存储的就是accountId）
-    const lineAccounts = await this.getLineLaborAccounts(record.lineId);
+    // 2. 使用生产记录中的劳动力账户（orgId存储的就是劳动力账户ID）
+    const lineAccounts = await this.getLineLaborAccounts(record.orgId);
 
     if (lineAccounts.length === 0) {
-      this.logger.warn(`产线 ${record.lineName} 没有关联劳动力账户`);
+      this.logger.warn(`产线 ${record.orgName} 没有关联劳动力账户`);
       return null;
     }
 
-    // 3. 根据工时筛选条件过滤账户
+    // 3. 根据工时筛选条件过滤账户（层级筛选）
     const filteredAccounts = await this.filterAccountsByWorkHours(
       lineAccounts,
       workHoursFilter,
@@ -254,12 +273,12 @@ export class EarnedHoursAllocationService {
       return null;
     }
 
-    // 4. 获取账户下的员工及工时
+    // 4. 获取账户下的员工及工时（从WorkHourResult表获取，应用出勤代码筛选）
     const employeesWithHours = await this.getEmployeesWithHours(
       filteredAccounts.map((a) => a.id),
       workHoursFilter.attendanceCodes,
       record.recordDate,
-      record // 传入完整的生产记录，用于获取刷卡账户和日期
+      record
     );
 
     this.logger.log(`账户下有工时的员工数量: ${employeesWithHours.length}`);
@@ -299,9 +318,9 @@ export class EarnedHoursAllocationService {
       totalWorkHours,
       rules,
       record,
-      batchNo,  // 从外部传入
+      batchNo,
       configId,
-      new Date(),  // calcTime
+      new Date(),
     );
 
     return {
@@ -317,10 +336,8 @@ export class EarnedHoursAllocationService {
 
   /**
    * 获取产线关联的劳动力账户
-   * 注意：ProductionRecord 中的 lineId 字段存储的是 LaborAccount 的 ID
    */
   private async getLineLaborAccounts(lineId: number) {
-    // 直接返回指定的账户
     const account = await this.prisma.laborAccount.findFirst({
       where: {
         id: lineId,
@@ -366,74 +383,22 @@ export class EarnedHoursAllocationService {
 
   /**
    * 从 path 字符串解析出 hierarchyValues
-   * path 格式: "level1/level2/level3/level4/level5/level6/level7"
-   * 注意：保留 "-" 表示该层级存在但值为空
    */
   private parsePathToHierarchyValues(path: string): string {
     const segments = path.split('/').filter(s => s !== '');
 
-    // 确保至少有7个层级
     while (segments.length < 7) {
       segments.push('-');
     }
 
     const hierarchyValues = [
-      {
-        levelId: 4,
-        level: 1,
-        name: '工厂',
-        mappingType: 'ORG',
-        mappingValue: '02',
-        selectedValue: this.parsePathSegment(segments[0]),
-      },
-      {
-        levelId: 5,
-        level: 2,
-        name: '车间',
-        mappingType: 'ORG',
-        mappingValue: '03',
-        selectedValue: this.parsePathSegment(segments[1]),
-      },
-      {
-        levelId: 6,
-        level: 3,
-        name: '产线',
-        mappingType: 'ORG',
-        mappingValue: '04',
-        selectedValue: this.parsePathSegment(segments[2]),
-      },
-      {
-        levelId: 7,
-        level: 4,
-        name: '产品',
-        mappingType: 'FIELD_A01',
-        mappingValue: null,
-        selectedValue: this.parsePathSegment(segments[3]),
-      },
-      {
-        levelId: 8,
-        level: 5,
-        name: '工序',
-        mappingType: 'FIELD_A02',
-        mappingValue: null,
-        selectedValue: this.parsePathSegment(segments[4]),
-      },
-      {
-        levelId: 9,
-        level: 6,
-        name: '员工类型',
-        mappingType: 'FIELD_employeeType',
-        mappingValue: null,
-        selectedValue: this.parsePathSegment(segments[5]),
-      },
-      {
-        levelId: 10,
-        level: 7,
-        name: '岗位',
-        mappingType: 'FIELD_jobPost',
-        mappingValue: null,
-        selectedValue: this.parsePathSegment(segments[6]),
-      },
+      { levelId: 4, level: 1, name: '工厂', selectedValue: this.parsePathSegment(segments[0]) },
+      { levelId: 5, level: 2, name: '车间', selectedValue: this.parsePathSegment(segments[1]) },
+      { levelId: 6, level: 3, name: '产线', selectedValue: this.parsePathSegment(segments[2]) },
+      { levelId: 7, level: 4, name: '产品', selectedValue: this.parsePathSegment(segments[3]) },
+      { levelId: 8, level: 5, name: '工序', selectedValue: this.parsePathSegment(segments[4]) },
+      { levelId: 9, level: 6, name: '员工类型', selectedValue: this.parsePathSegment(segments[5]) },
+      { levelId: 10, level: 7, name: '岗位', selectedValue: this.parsePathSegment(segments[6]) },
     ];
 
     return JSON.stringify(hierarchyValues);
@@ -441,8 +406,6 @@ export class EarnedHoursAllocationService {
 
   /**
    * 解析 path 中的单个层级段
-   * "-" 表示存在但为空，返回特殊对象
-   * 其他值返回正常的 selectedValue 对象
    */
   private parsePathSegment(segment: string): any {
     if (!segment || segment === '-') {
@@ -453,11 +416,6 @@ export class EarnedHoursAllocationService {
 
   /**
    * 合并多个劳动力账户
-   *
-   * 账户合并优先级（从高到低）：
-   * 1. 刷卡账户（从设备配置获取）
-   * 2. 转移账户（从排班adjustedSegments获取）
-   * 3. 主账户（员工的主劳动力账户）
    */
   private mergeMultipleAccounts(accounts: any[]): any {
     if (accounts.length === 0) return null;
@@ -474,10 +432,6 @@ export class EarnedHoursAllocationService {
 
   /**
    * 合并两个劳动力账户
-   *
-   * 合并规则（逐层比较）：
-   * - 如果 priorityAccount（高优先级）在某层级有值，使用该值
-   * - 如果 priorityAccount（高优先级）在某层级无值，使用 secondaryAccount（低优先级）的值
    */
   private mergeAccounts(priorityAccount: any, secondaryAccount: any): any {
     const priorityValues = priorityAccount.hierarchyValues
@@ -502,15 +456,9 @@ export class EarnedHoursAllocationService {
     const mergedValues = Array.from(mergedValuesMap.values())
       .sort((a, b) => a.level - b.level);
 
-    const maxLevel = Math.max(
-      priorityValues.length > 0 ? priorityValues[priorityValues.length - 1].level : 0,
-      secondaryValues.length > 0 ? secondaryValues[secondaryValues.length - 1].level : 0
-    );
-
     return {
       id: priorityAccount.id,
       namePath: this.buildNamePath(mergedValues),
-      level: maxLevel,
       hierarchyValues: JSON.stringify(mergedValues),
     };
   }
@@ -534,40 +482,57 @@ export class EarnedHoursAllocationService {
   }
 
   /**
-   * 获取员工的合并账户（用于精益工时计算）
-   *
-   * 账户合并优先级（从高到低）：
-   * 1. 刷卡账户：从生产记录的 lineId 获取（精益工时的"刷卡"位置）
-   * 2. 转移账户：从排班数据的 adjustedSegments 获取
-   * 3. 主账户：员工的主劳动力账户
-   *
-   * @param employeeNo 员工工号
-   * @param productionRecord 生产记录
-   * @param recordDate 记录日期
-   * @returns 合并后的账户
-   */
-  /**
-   * 根据工时筛选条件过滤账户
+   * 根据工时筛选条件过滤账户（实现层级筛选）
    */
   private async filterAccountsByWorkHours(
     accounts: any[],
     workHoursFilter: any,
     calcDate: Date
   ) {
-    // TODO: 实现层级和出勤代码筛选
-    // 暂时返回所有账户
-    return accounts;
+    if (!workHoursFilter.hierarchySelections || workHoursFilter.hierarchySelections.length === 0) {
+      return accounts;
+    }
+
+    const filteredAccounts = [];
+
+    for (const account of accounts) {
+      try {
+        const hierarchyValues = JSON.parse(account.hierarchyValues || '[]');
+        const hierarchyValuesMap = new Map(
+          hierarchyValues.map((hv: any) => [hv.levelId, hv])
+        );
+
+        let match = true;
+        for (const selection of workHoursFilter.hierarchySelections) {
+          const hv: any = hierarchyValuesMap.get(selection.levelId);
+          if (!hv) {
+            match = false;
+            break;
+          }
+
+          // 优先使用 code 进行匹配（配置中存储的是 code），其次使用 id 或 value
+          const accountValueId = hv.selectedValue?.code || hv.selectedValue?.id || hv.selectedValue?.value;
+          if (!selection.valueIds.includes(accountValueId)) {
+            match = false;
+            break;
+          }
+        }
+
+        if (match) {
+          filteredAccounts.push(account);
+        }
+      } catch (error) {
+        this.logger.error(`解析账户 ${account.id} 层级信息失败:`, error);
+      }
+    }
+
+    this.logger.log(`账户层级筛选: 输入${accounts.length}个，输出${filteredAccounts.length}个`);
+    return filteredAccounts;
   }
 
   /**
-   * 获取账户下有工时的员工
-   *
-   * 注意：这里返回的员工已经包含了合并后的账户信息
-   * 合并逻辑：
-   * 1. 刷卡账户：从 PunchPair 表获取（精益摆卡结果）
-   * 2. 转移账户：从排班数据的 adjustedSegments 获取
-   * 3. 主账户：员工的主劳动力账户
-   * 合并优先级：刷卡账户 > 转移账户 > 主账户
+   * 获取账户下有工时的员工（从WorkHourResult表获取）
+   * 实现出勤代码筛选和账户路径匹配
    */
   private async getEmployeesWithHours(
     accountIds: number[],
@@ -575,145 +540,307 @@ export class EarnedHoursAllocationService {
     calcDate: Date,
     productionRecord: any
   ) {
-    // 查询这些账户下的工时记录
-    const calcResults = await this.prisma.calcResult.findMany({
+    // 获取这些账户的路径
+    const accounts = await this.prisma.laborAccount.findMany({
       where: {
-        accountId: { in: accountIds },
-        calcDate: calcDate,
+        id: { in: accountIds },
+        status: 'ACTIVE',
       },
     });
+
+    // 提取账户路径及其所有父级路径
+    const accountPaths = new Set<string>();
+    for (const account of accounts) {
+      if (account.path) {
+        accountPaths.add(account.path);
+        // 添加所有父级路径
+        const segments = account.path.split('/');
+        for (let i = 1; i < segments.length; i++) {
+          accountPaths.add(segments.slice(0, i + 1).join('/'));
+        }
+      }
+    }
+
+    // 构建查询条件
+    const where: any = {
+      workDate: calcDate,
+      status: 'ACTIVE',
+    };
+
+    // 账户路径筛选：使用 IN 匹配所有相关路径
+    if (accountPaths.size > 0) {
+      where.accountPath = { in: Array.from(accountPaths) };
+    }
+
+    // 出勤代码筛选
+    if (attendanceCodes && attendanceCodes.length > 0) {
+      where.attendanceCode = { in: attendanceCodes };
+    }
+
+    this.logger.log(`查询工时结果条件: 日期=${calcDate.toISOString().substring(0, 10)}, 账户路径数=${accountPaths.size}, 出勤代码=${attendanceCodes.join(',')}`);
+    this.logger.log(`账户路径列表: ${Array.from(accountPaths).join(', ')}`);
+
+    // 查询工时结果
+    const workHourResults = await this.prisma.workHourResult.findMany({
+      where,
+      select: {
+        employeeNo: true,
+        employeeId: true,
+        workHours: true,
+        amount: true,
+        accountId: true,
+        accountName: true,
+        accountPath: true,
+        attendanceCode: true,
+        attendanceCodeName: true,
+        shiftId: true,
+        shiftName: true,
+      },
+    });
+
+    this.logger.log(`找到 ${workHourResults.length} 条工时结果`);
 
     // 按员工分组统计工时
     const employeeHoursMap = new Map<string, any>();
 
-    for (const calc of calcResults) {
-      const key = calc.employeeNo;
+    for (const whr of workHourResults) {
+      const key = whr.employeeNo;
       if (!employeeHoursMap.has(key)) {
-        // 1. 从 PunchPair 获取刷卡账户（精益摆卡结果）
-        const punchPair = await this.prisma.punchPair.findFirst({
-          where: {
-            employeeNo: calc.employeeNo,
-            pairDate: calcDate,
-          },
-        });
-
-        if (!punchPair || !punchPair.accountId) {
-          this.logger.warn(
-            `员工 ${calc.employeeNo} 在 ${calcDate.toISOString().substring(0, 10)} 没有找到对应的 PunchPair 记录，跳过`
-          );
-          continue;
-        }
-
-        // 获取刷卡账户（从 PunchPair.accountId）
-        const punchAccount = await this.prisma.laborAccount.findFirst({
-          where: {
-            id: punchPair.accountId,
-            status: 'ACTIVE',
-          },
-        });
-
-        if (!punchAccount) {
-          this.logger.warn(`PunchPair ${punchPair.id} 的刷卡账户 ${punchPair.accountId} 不存在，跳过`);
-          continue;
-        }
-
-        this.logger.debug(`员工 ${calc.employeeNo} 刷卡账户（从PunchPair）: ${punchAccount.namePath || punchAccount.code}`);
-
-        // 2. 获取转移账户（从排班的 adjustedSegments）
-        let transferAccount = null;
+        // 获取员工的主账户
         const employee = await this.prisma.employee.findFirst({
-          where: { employeeNo: calc.employeeNo },
+          where: { employeeNo: whr.employeeNo },
           select: { id: true },
         });
 
-        if (employee) {
-          const schedule = await this.prisma.schedule.findFirst({
-            where: {
-              employeeId: employee.id,
-              scheduleDate: calcDate,
-            },
-          });
-
-          if (schedule && schedule.adjustedSegments) {
-            try {
-              const adjustedSegments = JSON.parse(schedule.adjustedSegments);
-              // 根据时间段查找对应的转移账户
-              if (adjustedSegments.length > 0) {
-                // 简化处理：如果有转移账户配置，使用第一个
-                // TODO: 根据 calc.punchInTime 和 calc.punchOutTime 匹配对应班段的转移账户
-                const segmentWithTransfer = adjustedSegments.find((seg: any) => seg.accountId);
-                if (segmentWithTransfer && segmentWithTransfer.accountId) {
-                  transferAccount = await this.prisma.laborAccount.findFirst({
-                    where: {
-                      id: segmentWithTransfer.accountId,
-                      status: 'ACTIVE',
-                    },
-                  });
-
-                  if (transferAccount) {
-                    this.logger.debug(`员工 ${calc.employeeNo} 转移账户（从排班）: ${transferAccount.namePath || transferAccount.code}`);
-                  }
-                }
-              }
-            } catch (error) {
-              this.logger.warn(`解析排班adjustedSegments失败: ${error.message}`);
-            }
-          }
-        }
-
-        // 3. 获取员工的主账户
         let mainAccount = null;
         if (employee) {
           mainAccount = await this.getEmployeeMainAccount(employee.id);
-          if (mainAccount) {
-            this.logger.debug(`员工 ${calc.employeeNo} 主账户: ${mainAccount.namePath || mainAccount.code}`);
-          }
         }
 
-        // 4. 按优先级合并三个账户：刷卡 > 转移 > 主
-        const accountsToMerge = [punchAccount];
-        if (transferAccount) {
-          accountsToMerge.push(transferAccount);
+        // 使用工时结果中的账户
+        let workHourAccount = null;
+        if (whr.accountId) {
+          workHourAccount = await this.prisma.laborAccount.findFirst({
+            where: {
+              id: whr.accountId,
+              status: 'ACTIVE',
+            },
+          });
+        }
+
+        // 合并账户
+        const accountsToMerge = [];
+        if (workHourAccount) {
+          accountsToMerge.push(workHourAccount);
         }
         if (mainAccount) {
           accountsToMerge.push(mainAccount);
         }
 
-        const mergedAccount = this.mergeMultipleAccounts(accountsToMerge);
+        const mergedAccount = accountsToMerge.length > 0
+          ? this.mergeMultipleAccounts(accountsToMerge)
+          : (workHourAccount || mainAccount || { id: whr.accountId, namePath: whr.accountName });
 
-        this.logger.log(
-          `员工 ${calc.employeeNo} 账户合并: ` +
-          `刷卡[${punchAccount.namePath}]` +
-          (transferAccount ? ` + 转移[${transferAccount.namePath}]` : '') +
+        this.logger.debug(
+          `员工 ${whr.employeeNo}: ` +
+          `工时账户[${whr.accountName || whr.accountPath}]` +
           (mainAccount ? ` + 主账户[${mainAccount.namePath}]` : '') +
-          ` = ${mergedAccount.namePath}`
+          ` = 合并账户[${mergedAccount.namePath}]`
         );
 
         employeeHoursMap.set(key, {
-          employeeNo: calc.employeeNo,
-          workHours: (calc.actualHours || 0) + (calc.standardHours || 0),
-          standardHours: (calc.standardHours || 0),
-          calcResultIds: [calc.id],
-          mergedAccount: mergedAccount, // 添加合并后的账户
+          employeeNo: whr.employeeNo,
+          employeeId: whr.employeeId,
+          workHours: whr.workHours || 0,
+          amount: whr.amount || 0,
+          attendanceCode: whr.attendanceCode,
+          attendanceCodeName: whr.attendanceCodeName,
+          shiftId: whr.shiftId,
+          shiftName: whr.shiftName,
+          workHourAccountId: whr.accountId,
+          workHourAccountPath: whr.accountPath,
+          mergedAccount: mergedAccount,
         });
       } else {
         const existing = employeeHoursMap.get(key);
-        existing.workHours += (calc.actualHours || 0) + (calc.standardHours || 0);
-        existing.standardHours += (calc.standardHours || 0);
-        existing.calcResultIds.push(calc.id);
+        existing.workHours += (whr.workHours || 0);
+        existing.amount += (whr.amount || 0);
       }
     }
 
+    this.logger.log(`统计后员工数量: ${employeeHoursMap.size}`);
     return Array.from(employeeHoursMap.values());
   }
 
   /**
-   * 根据人员筛选条件过滤员工
+   * 根据人员筛选条件过滤员工（实现人员筛选）
    */
   private async filterEmployees(employees: any[], employeeFilter: any) {
-    // TODO: 实现人员条件筛选
-    // 暂时返回所有员工
-    return employees;
+    if (!employeeFilter.fieldGroups || employeeFilter.fieldGroups.length === 0) {
+      return employees;
+    }
+
+    const filteredEmployees = [];
+
+    for (const employee of employees) {
+      try {
+        let match = true;
+
+        // 检查每个字段组（AND关系）
+        for (const fieldGroup of employeeFilter.fieldGroups) {
+          if (!fieldGroup.conditions || fieldGroup.conditions.length === 0) {
+            continue;
+          }
+
+          // 在字段组内，所有条件都要满足（AND关系）
+          for (const condition of fieldGroup.conditions) {
+            const employeeMatch = await this.checkEmployeeCondition(
+              employee,
+              condition
+            );
+
+            if (!employeeMatch) {
+              match = false;
+              break;
+            }
+          }
+
+          if (!match) break;
+        }
+
+        if (match) {
+          filteredEmployees.push(employee);
+        }
+      } catch (error) {
+        this.logger.error(`过滤员工 ${employee.employeeNo} 时出错:`, error);
+      }
+    }
+
+    this.logger.log(`人员筛选: 输入${employees.length}个，输出${filteredEmployees.length}个`);
+    return filteredEmployees;
+  }
+
+  /**
+   * 检查单个员工是否满足筛选条件
+   */
+  private async checkEmployeeCondition(employee: any, condition: any): Promise<boolean> {
+    const { fieldCode, operator, value, fieldName } = condition;
+
+    // 获取员工信息
+    const employeeInfo = await this.prisma.employee.findFirst({
+      where: { employeeNo: employee.employeeNo },
+      select: {
+        id: true,
+        employeeNo: true,
+        name: true,
+        orgId: true,
+        customFields: true,
+      },
+    });
+
+    if (!employeeInfo) {
+      return false;
+    }
+
+    // 获取字段值
+    let fieldValue: any;
+
+    // 特殊处理 position 字段（从 WorkInfoHistory 获取）
+    if (fieldCode === 'position') {
+      const workInfo = await this.prisma.workInfoHistory.findFirst({
+        where: {
+          employeeId: employeeInfo.id,
+          OR: [
+            { endDate: null },
+            { endDate: { gte: new Date() } }
+          ]
+        },
+        orderBy: {
+          effectiveDate: 'desc', // 获取最新的生效记录
+        },
+        select: {
+          position: true,
+        },
+      });
+      fieldValue = workInfo?.position;
+    }
+    // 特殊处理 organization 字段
+    else if (fieldCode === 'organization') {
+      fieldValue = employeeInfo.orgId;
+    }
+    // 从 customFields 中获取其他字段值
+    else if (employeeInfo.customFields) {
+      try {
+        const customFields = JSON.parse(employeeInfo.customFields);
+        fieldValue = customFields[fieldCode];
+      } catch (e) {
+        this.logger.warn(`解析自定义字段失败: ${fieldCode}`);
+      }
+    }
+
+    // 添加日志：显示筛选条件
+    const passes = this.compareValues(fieldValue, operator, value);
+    this.logger.log(
+      `员工筛选: ${employeeInfo.name}(${employeeInfo.employeeNo}) - ` +
+      `字段[${fieldName || fieldCode}] = ${fieldValue ?? 'undefined'}, ` +
+      `操作符[${operator}], 值[${value}], ` +
+      `结果: ${passes ? '✅通过' : '❌未通过'}`
+    );
+
+    return passes;
+  }
+
+  /**
+   * 比较值
+   *
+   * 重要：当字段值不存在（undefined/null）时的处理策略：
+   * - 对于 eq 操作符：undefined == value 返回 false（字段不存在，无法相等）
+   * - 对于 ne 操作符：undefined != value 返回 true（字段不存在，认为不等于任何明确值）
+   * - 对于 in 操作符：undefined 不在列表中，返回 false
+   * - 对于 not_in 操作符：undefined 不在列表中，返回 true
+   */
+  private compareValues(fieldValue: any, operator: string, conditionValue: any): boolean {
+    // 如果字段值不存在（undefined 或 null），采用保守策略
+    if (fieldValue === undefined || fieldValue === null) {
+      switch (operator) {
+        case 'eq':
+          // 字段不存在，无法相等
+          return false;
+        case 'ne':
+          // 字段不存在，认为"不等于"任何明确值（宽松策略：如果不知道岗位，假设其不是班组长）
+          return true;
+        case 'in':
+          // 字段不存在，不在列表中
+          return false;
+        case 'not_in':
+          // 字段不存在，不在列表中
+          return true;
+        case 'contains':
+        case 'not_contains':
+          // 字段不存在，无法进行字符串包含判断
+          return false;
+        default:
+          return false;
+      }
+    }
+
+    // 字段值存在，进行正常比较
+    switch (operator) {
+      case 'eq':
+        return fieldValue == conditionValue;
+      case 'ne':
+        return fieldValue != conditionValue;
+      case 'in':
+        return Array.isArray(conditionValue) && conditionValue.includes(fieldValue);
+      case 'not_in':
+        return Array.isArray(conditionValue) && !conditionValue.includes(fieldValue);
+      case 'contains':
+        return typeof fieldValue === 'string' && fieldValue.includes(conditionValue);
+      case 'not_contains':
+        return typeof fieldValue === 'string' && !fieldValue.includes(conditionValue);
+      default:
+        return true;
+    }
   }
 
   /**
@@ -746,6 +873,28 @@ export class EarnedHoursAllocationService {
 
     this.logger.log(`使用规则: ${rule.ruleName}, 分摊方式: ${rule.allocationBasis}`);
 
+    // 删除该配置+规则+日期+账户的旧分摊结果，保留最新一条
+    const recordDate = new Date(productionRecord.recordDate);
+    recordDate.setHours(0, 0, 0, 0);
+    const nextDate = new Date(recordDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+
+    const deletedCount = await this.prisma.earnedHoursAllocationResult.deleteMany({
+      where: {
+        recordDate: {
+          gte: recordDate,
+          lt: nextDate,
+        },
+        sourceAccountId: productionRecord.orgId,
+        configId,
+        ruleName: rule.ruleName,
+      },
+    });
+
+    if (deletedCount.count > 0) {
+      this.logger.log(`清理旧数据: configId=${configId}, rule=${rule.ruleName}, account=${productionRecord.orgId}, date=${recordDate.toISOString().substring(0,10)}, 删除 ${deletedCount.count} 条记录`);
+    }
+
     // 获取员工详细信息
     const employeeNos = employees.map(e => e.employeeNo);
     const employeeDetails = await this.prisma.employee.findMany({
@@ -762,10 +911,9 @@ export class EarnedHoursAllocationService {
         const allocatedHours = totalEarnedHours * ratio;
         const employeeName = employeeMap.get(employee.employeeNo) || 'Unknown';
 
-        // 使用合并后的账户
         const mergedAccount = employee.mergedAccount || {
-          id: productionRecord.lineId,
-          namePath: productionRecord.lineName,
+          id: productionRecord.orgId,
+          namePath: productionRecord.orgName,
         };
 
         // 保存分摊结果到数据库
@@ -773,20 +921,21 @@ export class EarnedHoursAllocationService {
           data: {
             batchNo,
             recordDate: new Date(productionRecord.recordDate),
-            calcResultId: employee.calcResultIds?.[0] || 0,
             configId,
             configVersion: 1,
+            ruleName: rule.ruleName,
             sourceEmployeeNo: employee.employeeNo,
             sourceEmployeeName: employeeName,
-            sourceAccountId: productionRecord.lineId,
-            sourceAccountName: productionRecord.lineName,
+            sourceAccountId: productionRecord.orgId,
+            sourceAccountName: productionRecord.orgName,
             sourceHours: employee.workHours,
             targetType: 'EMPLOYEE',
             targetId: 0,
             targetName: employeeName,
-            targetAccountId: mergedAccount.id, // 使用合并后的账户ID
+            targetAccountId: mergedAccount.id,
             targetAccountName: mergedAccount.namePath,
             allocatedHours,
+            allocationRatio: ratio,
             calcTime,
           },
         });
@@ -798,24 +947,30 @@ export class EarnedHoursAllocationService {
           workHours: employee.workHours,
           ratio,
           allocatedHours,
-          mergedAccountName: mergedAccount.namePath, // 添加合并后的账户名称
+          mergedAccountName: mergedAccount.namePath,
         });
 
         this.logger.log(
           `员工 ${employee.employeeNo}: 工时=${employee.workHours}, 比例=${ratio.toFixed(4)}, 分得工时=${allocatedHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`
         );
       }
-    } else if (rule.allocationBasis === 'AVERAGE') {
-      // 平均分摊
-      const perPersonHours = totalEarnedHours / employees.length;
+    } else if (rule.allocationBasis === 'ACTUAL_HOURS_COEFFICIENT') {
+      // 按实际工时系��（金额）比例分摊
+      const totalAmount = employees.reduce((sum, emp) => sum + (emp.amount || 0), 0);
+
+      if (totalAmount === 0) {
+        this.logger.warn('总金额为0，无法按实际工时系数比例分摊');
+        return [];
+      }
 
       for (const employee of employees) {
+        const ratio = (employee.amount || 0) / totalAmount;
+        const allocatedHours = totalEarnedHours * ratio;
         const employeeName = employeeMap.get(employee.employeeNo) || 'Unknown';
 
-        // 使用合并后的账户
         const mergedAccount = employee.mergedAccount || {
-          id: productionRecord.lineId,
-          namePath: productionRecord.lineName,
+          id: productionRecord.orgId,
+          namePath: productionRecord.orgName,
         };
 
         // 保存分摊结果到数据库
@@ -823,20 +978,72 @@ export class EarnedHoursAllocationService {
           data: {
             batchNo,
             recordDate: new Date(productionRecord.recordDate),
-            calcResultId: employee.calcResultIds?.[0] || 0,
             configId,
             configVersion: 1,
+            ruleName: rule.ruleName,
             sourceEmployeeNo: employee.employeeNo,
             sourceEmployeeName: employeeName,
-            sourceAccountId: productionRecord.lineId,
-            sourceAccountName: productionRecord.lineName,
+            sourceAccountId: productionRecord.orgId,
+            sourceAccountName: productionRecord.orgName,
+            sourceHours: employee.amount || 0,
+            targetType: 'EMPLOYEE',
+            targetId: 0,
+            targetName: employeeName,
+            targetAccountId: mergedAccount.id,
+            targetAccountName: mergedAccount.namePath,
+            allocatedHours,
+            allocationRatio: ratio,
+            calcTime,
+          },
+        });
+
+        results.push({
+          employeeNo: employee.employeeNo,
+          employeeName,
+          allocationBasis: 'ACTUAL_HOURS_COEFFICIENT',
+          workHours: employee.amount || 0,
+          ratio,
+          allocatedHours,
+          mergedAccountName: mergedAccount.namePath,
+        });
+
+        this.logger.log(
+          `员工 ${employee.employeeNo}: 金额=${employee.amount}, 比例=${ratio.toFixed(4)}, 分得工时=${allocatedHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`
+        );
+      }
+    } else if (rule.allocationBasis === 'AVERAGE') {
+      // 平均分摊
+      const perPersonHours = totalEarnedHours / employees.length;
+      const avgRatio = 1 / employees.length;
+
+      for (const employee of employees) {
+        const employeeName = employeeMap.get(employee.employeeNo) || 'Unknown';
+
+        const mergedAccount = employee.mergedAccount || {
+          id: productionRecord.orgId,
+          namePath: productionRecord.orgName,
+        };
+
+        // 保存分摊结果到数据库
+        await this.prisma.earnedHoursAllocationResult.create({
+          data: {
+            batchNo,
+            recordDate: new Date(productionRecord.recordDate),
+            configId,
+            configVersion: 1,
+            ruleName: rule.ruleName,
+            sourceEmployeeNo: employee.employeeNo,
+            sourceEmployeeName: employeeName,
+            sourceAccountId: productionRecord.orgId,
+            sourceAccountName: productionRecord.orgName,
             sourceHours: employee.workHours,
             targetType: 'EMPLOYEE',
             targetId: 0,
             targetName: employeeName,
-            targetAccountId: mergedAccount.id, // 使用合并后的账户ID
+            targetAccountId: mergedAccount.id,
             targetAccountName: mergedAccount.namePath,
             allocatedHours: perPersonHours,
+            allocationRatio: avgRatio,
             calcTime,
           },
         });
@@ -848,7 +1055,7 @@ export class EarnedHoursAllocationService {
           workHours: employee.workHours,
           ratio: 1 / employees.length,
           allocatedHours: perPersonHours,
-          mergedAccountName: mergedAccount.namePath, // 添加合并后的账户名称
+          mergedAccountName: mergedAccount.namePath,
         });
 
         this.logger.log(
@@ -864,9 +1071,31 @@ export class EarnedHoursAllocationService {
    * 获取挣得工时分摊结果列表
    */
   async getEarnedHoursResults(query: any) {
-    const { page = 1, pageSize = 10, batchNo, startDate, endDate, targetName } = query;
-    const skip = (Number(page) - 1) * Number(pageSize);
-    const take = Number(pageSize);
+    // 明确区分 undefined 和字符串 'undefined'
+    const pageParam = query.page;
+    const pageSizeParam = query.pageSize;
+    const batchNo = query.batchNo;
+    const startDate = query.startDate;
+    const endDate = query.endDate;
+    const targetName = query.targetName;
+
+    // 对于挣得工时查询，如果不传 page 参数（undefined），则返回所有数据（不分页）
+    // 如果传了 page 参数（即使是 'undefined' 字符串），则使用分页
+    const usePagination = pageParam !== undefined && pageParam !== null;
+
+    let skip = 0;
+    let take: number | undefined = undefined;
+    let page = 1;
+    let pageSize = 10;
+
+    if (usePagination) {
+      page = Number(pageParam) || 1;
+      pageSize = Number(pageSizeParam) || 10;
+      skip = (page - 1) * pageSize;
+      take = pageSize;
+    }
+
+    this.logger.log(`[挣得工时查询] usePagination=${usePagination}, skip=${skip}, take=${take === undefined ? 'undefined(获取全部)' : take}`);
 
     const where: any = {};
 
@@ -888,8 +1117,87 @@ export class EarnedHoursAllocationService {
       this.prisma.earnedHoursAllocationResult.count({ where }),
     ]);
 
+    // 计算每个批次的总挣得工时（通过 SUM(allocatedHours)）
+    const batchNoList = [...new Set(list.map(item => item.batchNo))];
+    const batchTotalEarnedHours = new Map<string, number>();
+
+    await Promise.all(
+      batchNoList.map(async (batchNo) => {
+        const result = await this.prisma.earnedHoursAllocationResult.aggregate({
+          where: { batchNo },
+          _sum: {
+            allocatedHours: true,
+          },
+        });
+        batchTotalEarnedHours.set(batchNo, result._sum.allocatedHours || 0);
+      })
+    );
+
+    // 关联生产记录和配置信息
+    const enrichedList = await Promise.all(
+      list.map(async (item) => {
+        // 查找对应的生产记录（通过批次号和日期）
+        const productionRecord = await this.prisma.productionRecord.findFirst({
+          where: {
+            recordDate: item.recordDate,
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        // 获取配置和规则信息
+        const config = await this.prisma.earnedHoursAllocationConfig.findUnique({
+          where: { id: item.configId },
+        });
+
+        let ruleName = '-';
+        let allocationBasis = '-';
+        if (config) {
+          try {
+            const rules = JSON.parse(config.rules || '[]');
+            if (rules.length > 0) {
+              ruleName = rules[0].ruleName || '-';
+              allocationBasis = rules[0].allocationBasis || '-';
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+
+        // 获取该批次的总挣得工时
+        const totalEarnedHours = batchTotalEarnedHours.get(item.batchNo) || 0;
+
+        return {
+          ...item,
+          totalEarnedHours, // 添加总挣得工时字段
+          allocationBasis, // 添加分摊方式字段
+          productionRecord: productionRecord ? {
+            productName: productionRecord.productName,
+            productCode: productionRecord.productCode,
+            actualQty: productionRecord.actualQty,
+            totalStdHours: productionRecord.totalStdHours > 0 ? productionRecord.totalStdHours : totalEarnedHours,
+            lineName: productionRecord.lineName,
+            shiftName: productionRecord.shiftName,
+          } : {
+            // 如果找不到生产记录，使用总挣得工时
+            productName: '未知产品',
+            productCode: '-',
+            actualQty: 0,
+            totalStdHours: totalEarnedHours,
+            lineName: null,
+            shiftName: null,
+          },
+          config: config ? {
+            configCode: config.code,
+            configName: config.configName || config.name,
+          } : null,
+          ruleName,
+        };
+      })
+    );
+
     return {
-      items: list,
+      items: enrichedList,
       total,
       page: Number(page),
       pageSize: Number(pageSize),
@@ -918,46 +1226,233 @@ export class EarnedHoursAllocationService {
     const totalAllocatedHours = results.reduce((sum, r) => sum + r.allocatedHours, 0);
     const totalRecords = results.length;
 
-    // 按产品汇总
-    const byProduct = this.groupBy(results, 'sourceProductName', ['allocatedHours']);
-
-    // 按员工汇总
-    const byEmployee = this.groupBy(results, 'targetName', ['allocatedHours']);
-
     return {
       total: {
         totalAllocatedHours,
         totalRecords,
       },
-      byProduct,
-      byEmployee,
     };
   }
 
   /**
-   * 分组汇总辅助方法
+   * 从账户路径中提取匹配值
+   * @param namePath 账户名称路径，如 "杭州工厂/W1总装车间/W1总装L1产线/焊接"
+   * @param hierarchyLevelsToExtract 要提取的层级配置，如 "产品,工序" 或 "4,5"
+   * @returns 提取的值数组，如 ["焊接"] 或 ["W1总装L1产线", "焊接"]
    */
-  private groupBy(data: any[], key: string, sumFields: string[]) {
-    const map = new Map();
-
-    for (const item of data) {
-      const groupKey = item[key];
-      if (!map.has(groupKey)) {
-        map.set(groupKey, {
-          [key]: groupKey,
-          _count: 0,
-          _sum: {} as any,
-        });
-        sumFields.forEach(field => map.get(groupKey)._sum[field] = 0);
-      }
-
-      const group = map.get(groupKey);
-      group._count++;
-      sumFields.forEach(field => {
-        group._sum[field] += item[field] || 0;
-      });
+  private extractMatchValues(namePath: string, hierarchyLevelsToExtract: string): string[] {
+    if (!namePath || !hierarchyLevelsToExtract) {
+      return [];
     }
 
-    return Array.from(map.values());
+    // 解析层级配置（支持 "产品,工序" 或 "4,5" 或 "6,8" 格式）
+    const levelsToExtract = hierarchyLevelsToExtract.split(',').map(l => l.trim());
+
+    // 将层级名称转换为层级编号（序号）
+    const levelNameMap: Record<string, number> = {
+      '工厂': 1,
+      '车间': 2,
+      '产线': 3,
+      '产品': 4,
+      '工序': 5,
+    };
+
+    // levelId到层级序号的映射关系（根据系统的层级配置）
+    const levelIdToLevelNumberMap: Record<number, number> = {
+      4: 1,  // levelId 4 -> 第1层 (工厂)
+      5: 2,  // levelId 5 -> 第2层 (车间)
+      6: 3,  // levelId 6 -> 第3层 (产线)
+      7: 4,  // levelId 7 -> 第4层 (产品)
+      8: 5,  // levelId 8 -> 第5层 (工序)
+    };
+
+    const levelsToExtractNumbers = levelsToExtract.map(l => {
+      const num = parseInt(l);
+      if (isNaN(num)) {
+        // 如果不是数字，尝试从层级名称映射
+        return levelNameMap[l] || 0;
+      }
+      // 如果是数字，检查是否为 levelId，如果是则转换为层级序号
+      if (levelIdToLevelNumberMap[num]) {
+        return levelIdToLevelNumberMap[num];
+      }
+      return num;
+    }).filter(n => n > 0);
+
+    if (levelsToExtractNumbers.length === 0) {
+      return [];
+    }
+
+    // 将路径字符串分割成数组
+    const pathSegments = namePath.split('/').filter(s => s.trim() !== '');
+
+    this.logger.log(`[标准工时匹配] 账户路径: "${namePath}" 分割后: [${pathSegments.join(', ')}]`);
+    this.logger.log(`[标准工时匹配] 要提取的层级序号: [${levelsToExtractNumbers.join(', ')}]`);
+
+    // 按层级序号提取对应的值（序号从1开始）
+    const extractedValues = levelsToExtractNumbers
+      .map(levelNum => {
+        const index = levelNum - 1;  // 转换为数组索引（从0开始）
+        if (index >= 0 && index < pathSegments.length) {
+          const value = pathSegments[index];
+          this.logger.log(`[标准工时匹配] 提取层级${levelNum}(索引${index}): "${value}"`);
+          return value;
+        }
+        this.logger.log(`[标准工时匹配] 层级${levelNum}(索引${index})超出范围，返回null`);
+        return null;
+      })
+      .filter(v => v !== null) as string[];
+
+    this.logger.log(`[标准工时匹配] 最终提取的值: [${extractedValues.join(', ')}]`);
+
+    return extractedValues;
+  }
+
+  /**
+   * 生成路径组合（从精确到粗粒度）
+   * @param values 提取的值数组，如 ["W1总装L1产线", "焊接"]
+   * @returns 路径组合数组，如 ["W1总装L1产线/焊接", "W1总装L1产线", "焊接"]
+   */
+  private generatePathCombinations(values: string[]): string[] {
+    const combinations: string[] = [];
+    const n = values.length;
+
+    // 从最精确（所有层级）到最粗粒度（单个层级）
+    // 按层数从大到小生成组合
+    for (let len = n; len >= 1; len--) {
+      if (len === 1) {
+        // 单个层级，直接添加所有值
+        combinations.push(...values);
+      } else {
+        // 多个层级，生成所有连续的组合
+        // 例如: values=[A,B,C], len=2 -> [A/B, B/C]
+        for (let i = 0; i <= n - len; i++) {
+          const combination = values.slice(i, i + len).join('/');
+          combinations.push(combination);
+        }
+      }
+    }
+
+    return combinations;
+  }
+
+  /**
+   * 查找匹配的产品标准工时配置
+   * @param productId 产品ID
+   * @param orgId 劳动力账户ID
+   * @param orgName 劳动力账户名称路径
+   * @param targetDate 目标日期
+   * @returns 匹配的标准工时配置，如果没有匹配则返回 null
+   */
+  private async findMatchingStandardHourConfig(
+    productId: number,
+    orgId: number,
+    orgName: string,
+    targetDate: Date
+  ) {
+    // 1. 获取配置的提取层级
+    const hierarchyConfig = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'standardHoursHierarchyLevels' },
+    });
+
+    const hierarchyLevelsToExtract = hierarchyConfig?.configValue || '';
+    this.logger.log(`[标准工时匹配] 配置的提取层级: ${hierarchyLevelsToExtract || '(无配置)'}`);
+
+    // 2. 提取匹配值（返回数组）
+    const extractedValues = this.extractMatchValues(orgName, hierarchyLevelsToExtract);
+
+    if (extractedValues.length === 0) {
+      this.logger.log(`[标准工时匹配] 提取的值为空，跳过匹配`);
+      return null;
+    }
+
+    // 3. 生成所有可能的路径组合（从精确到粗粒度）
+    const pathCombinations = this.generatePathCombinations(extractedValues);
+    this.logger.log(`[标准工时匹配] 生成的路径组合: [${pathCombinations.join(', ')}]`);
+
+    // 4. 按优先级匹配：先查询有明确日期区间的标准配置
+    for (const path of pathCombinations) {
+      const standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+        where: {
+          productId,
+          deletedAt: null,
+          status: 'ACTIVE',
+          effectiveDate: { lte: targetDate },
+          expiryDate: { gte: targetDate },
+          accountPath: path,
+        },
+      });
+
+      if (standardHourConfig) {
+        this.logger.log(`[标准工时匹配] ✓ 找到匹配的标准配置 (有日期区间): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`);
+        return standardHourConfig;
+      }
+    }
+
+    // 5. 如果没有找到有日期区间的配置，查询永久标准
+    for (const path of pathCombinations) {
+      const standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+        where: {
+          productId,
+          deletedAt: null,
+          status: 'ACTIVE',
+          effectiveDate: { lte: targetDate },
+          expiryDate: null,
+          accountPath: path,
+        },
+      });
+
+      if (standardHourConfig) {
+        this.logger.log(`[标准工时匹配] ✓ 找到匹配的标准配置 (永久): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`);
+        return standardHourConfig;
+      }
+    }
+
+    // 6. 如果没有匹配到指定层级的标准，查找全局配置标准（accountPath 为空、"-" 或 null）
+    this.logger.log(`[标准工时匹配] 未找到匹配的标准配置，查找全局配置标准...`);
+
+    let standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+      where: {
+        productId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        effectiveDate: { lte: targetDate },
+        expiryDate: { gte: targetDate },
+        OR: [
+          { accountPath: '' },
+          { accountPath: null },
+          { accountPath: '-' },
+        ],
+      },
+    });
+
+    if (standardHourConfig) {
+      this.logger.log(`[标准工时匹配] ✓ 找到全局配置标准 (有日期区间): standardHours=${standardHourConfig.standardHours}`);
+      return standardHourConfig;
+    }
+
+    // 7. 最后查找全局配置的永久标准
+    standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+      where: {
+        productId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        effectiveDate: { lte: targetDate },
+        expiryDate: null,
+        OR: [
+          { accountPath: '' },
+          { accountPath: null },
+          { accountPath: '-' },
+        ],
+      },
+    });
+
+    if (standardHourConfig) {
+      this.logger.log(`[标准工时匹配] ✓ 找到全局配置标准 (永久): standardHours=${standardHourConfig.standardHours}`);
+      return standardHourConfig;
+    }
+
+    this.logger.log(`[标准工时匹配] ✗ 未找到任何标准配置`);
+    return null;
   }
 }

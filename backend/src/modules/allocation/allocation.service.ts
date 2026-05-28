@@ -5,6 +5,243 @@ import { PrismaService } from '../../database/prisma.service';
 export class AllocationService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * 根据劳动力账户路径和配置的层级，生成匹配用的路径
+   * @param namePath 劳动力账户的名称路径（如 "///大桶/焊接"）
+   * @param hierarchyLevelsToRemove 要踢除的层级配置（如 "产品,工序" 或 "4,5"）
+   * @returns 踢除指定层级后的路径（如 "///" 或 ""��
+   */
+  /**
+   * 根据劳动力账户路径和配置的层级，提取出指定层级的值（返回数组）
+   * @param namePath 劳动力账户的名称路径（如 "///大桶/焊接"）
+   * @param hierarchyLevelsToExtract 要提取的层级配置（支持多种格式）
+   *   - levelId格式: "6,8" (表示提取levelId为6和8的层级)
+   *   - 层级名称格式: "产线,工序" (表示提取产线和工序层级)
+   *   - 层级序号格式: "3,5" (表示提取第3层和第5层)
+   * @returns 提取出来的层级值数组（如 ["大桶", "焊接"]）
+   */
+  private extractMatchValues(namePath: string, hierarchyLevelsToExtract: string): string[] {
+    if (!namePath || !hierarchyLevelsToExtract) {
+      return [];
+    }
+
+    // 解析层级配置（支持 "产品,工序" 或 "4,5" 或 "6,8" 格式）
+    const levelsToExtract = hierarchyLevelsToExtract.split(',').map(l => l.trim());
+
+    // 将层级名称转换为层级编号（序号）
+    const levelNameMap: Record<string, number> = {
+      '工厂': 1,
+      '车间': 2,
+      '产线': 3,
+      '产品': 4,
+      '工序': 5,
+    };
+
+    // levelId到层级序号的映射关系（根据系统的层级配置）
+    const levelIdToLevelNumberMap: Record<number, number> = {
+      4: 1,  // levelId 4 -> 第1层 (工厂)
+      5: 2,  // levelId 5 -> 第2层 (车间)
+      6: 3,  // levelId 6 -> 第3层 (产线)
+      7: 4,  // levelId 7 -> 第4层 (产品)
+      8: 5,  // levelId 8 -> 第5层 (工序)
+    };
+
+    const levelsToExtractNumbers = levelsToExtract.map(l => {
+      const num = parseInt(l);
+      if (isNaN(num)) {
+        // 如果不是数字，尝试从层级名称映射
+        return levelNameMap[l] || 0;
+      } else {
+        // 如果是数字，检查是否为levelId（4-8范围）
+        if (num >= 4 && num <= 8) {
+          // 这是levelId，需要转换为层级序号
+          return levelIdToLevelNumberMap[num] || 0;
+        } else {
+          // 这是层级序号，直接使用
+          return num;
+        }
+      }
+    }).filter(n => n > 0).sort((a, b) => a - b); // 升序排序
+
+    console.log(`[标准工时匹配] 原始路径: ${namePath}`);
+    console.log(`[标准工时匹配] 提取层级配置: ${hierarchyLevelsToExtract}`);
+    console.log(`[标准工时匹配] 转换后的层级序号: [${levelsToExtractNumbers.join(', ')}]`);
+
+    // 将路径按 "/" 分割
+    const pathParts = namePath.split('/');
+
+    // 提取指定层级的值
+    const extractedValues: string[] = [];
+    for (const levelNum of levelsToExtractNumbers) {
+      // 层级编号从1开始，数组索引从0开始
+      const indexToExtract = levelNum - 1;
+      if (indexToExtract >= 0 && indexToExtract < pathParts.length) {
+        const value = pathParts[indexToExtract];
+        if (value && value.trim()) {
+          extractedValues.push(value.trim());
+        }
+      }
+    }
+
+    console.log(`[标准工时匹配] 提取的值: [${extractedValues.join(', ')}]`);
+
+    return extractedValues;
+  }
+
+
+  /**
+   * 生成所有可能的路径组合（用于标准工时匹配）
+   * 按照从精确到粗粒度的顺序生成组合路径
+   * @param values 提取的层级值数组
+   * @returns 所有可能的路径组合，按优先级排序
+   * @example
+   * 输入: ["A", "B", "C"]
+   * 输出: ["A/B/C", "A/B", "B/C", "A", "B", "C"]
+   */
+  private generatePathCombinations(values: string[]): string[] {
+    const combinations: string[] = [];
+    const n = values.length;
+
+    // 从最精确（所有层级）到最粗粒度（单个层级）
+    // 按层数从大到小生成组合
+    for (let len = n; len >= 1; len--) {
+      if (len === 1) {
+        // 单个层级，直接添加所有值
+        combinations.push(...values);
+      } else {
+        // 多个层级，生成所有连续的组合
+        // 例如: values=[A,B,C], len=2 -> [A/B, B/C]
+        for (let i = 0; i <= n - len; i++) {
+          const combination = values.slice(i, i + len).join('/');
+          combinations.push(combination);
+        }
+      }
+    }
+
+    return combinations;
+  }
+
+
+  /**
+   * 查找匹配的产品标准工时配置
+   * @param productId 产品ID
+   * @param orgId 劳动力账户ID
+   * @param orgName 劳动力账户名称路径
+   * @param targetDate 目标日期
+   * @returns 匹配的标准工时配置，如果没有匹配则返回 null
+   */
+  private async findMatchingStandardHourConfig(
+    productId: number,
+    orgId: number,
+    orgName: string,
+    targetDate: Date
+  ) {
+    // 1. 获取配置的提取层级
+    const hierarchyConfig = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'standardHoursHierarchyLevels' },
+    });
+
+    const hierarchyLevelsToExtract = hierarchyConfig?.configValue || '';
+    console.log(`[标准工时匹配] 配置的提取层级: ${hierarchyLevelsToExtract || '(无配置)'}`);
+
+    // 2. 提取匹配值（返回数组）
+    const extractedValues = this.extractMatchValues(orgName, hierarchyLevelsToExtract);
+
+    if (extractedValues.length === 0) {
+      console.log(`[标准工时匹配] 提取的值为空，跳过匹配`);
+      return null;
+    }
+
+    // 3. 生成所有可能的路径组合（从精确到粗粒度）
+    const pathCombinations = this.generatePathCombinations(extractedValues);
+    console.log(`[标准工时匹配] 生成的路径组合: [${pathCombinations.join(', ')}]`);
+
+    // 4. 按优先级匹配：先查询有明确日期区间的标准配置
+    for (const path of pathCombinations) {
+      const standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+        where: {
+          productId,
+          deletedAt: null,
+          status: 'ACTIVE',
+          effectiveDate: { lte: targetDate },
+          expiryDate: { gte: targetDate },
+          accountPath: path,
+        },
+      });
+
+      if (standardHourConfig) {
+        console.log(`[标准工时匹配] ✓ 找到匹配的标准配置 (有日期区间): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`);
+        return standardHourConfig;
+      }
+    }
+
+    // 5. 如果没有找到有日期区间的配置，查询永久标准
+    for (const path of pathCombinations) {
+      const standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+        where: {
+          productId,
+          deletedAt: null,
+          status: 'ACTIVE',
+          effectiveDate: { lte: targetDate },
+          expiryDate: null,
+          accountPath: path,
+        },
+      });
+
+      if (standardHourConfig) {
+        console.log(`[标准工时匹配] ✓ 找到匹配的标准配置 (永久): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`);
+        return standardHourConfig;
+      }
+    }
+
+    // 5. 如果没有匹配到指定层级的标准，查找全局配置标准（accountPath 为空、"-" 或 null）
+    console.log(`[标准工时匹配] 未找到匹配的标准配置，查找全局配置标准...`);
+
+    let standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+      where: {
+        productId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        effectiveDate: { lte: targetDate },
+        expiryDate: { gte: targetDate },
+        OR: [
+          { accountPath: '' },
+          { accountPath: null },
+          { accountPath: '-' },
+        ],
+      },
+    });
+
+    if (standardHourConfig) {
+      console.log(`[标准工时匹配] ✓ 找到全局配置标准 (有日期区间): standardHours=${standardHourConfig.standardHours}`);
+      return standardHourConfig;
+    }
+
+    // 6. 最后查找全局配置的永久标准
+    standardHourConfig = await this.prisma.productStandardHourByLevel.findFirst({
+      where: {
+        productId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        effectiveDate: { lte: targetDate },
+        expiryDate: null,
+        OR: [
+          { accountPath: '' },
+          { accountPath: null },
+          { accountPath: '-' },
+        ],
+      },
+    });
+
+    if (standardHourConfig) {
+      console.log(`[标准工时匹配] ✓ 找到全局配置标准 (永久): standardHours=${standardHourConfig.standardHours}`);
+      return standardHourConfig;
+    }
+
+    console.log(`[标准工时匹配] ✗ 未找到任何标准配置`);
+    return null;
+  }
+
   // ============ 产品管理 ============
 
   async getProducts(query: any) {
@@ -1505,6 +1742,24 @@ export class AllocationService {
     }
 
     console.log(`[分摊计算] 找到配置: ${config.configName} (${config.configCode}), 状态: ${config.status}`);
+    console.log(`[分摊计算] 配置详情:`);
+    console.log(`  - 配置ID: ${config.id}`);
+    console.log(`  - 配置代码: ${config.configCode}`);
+    console.log(`  - 配置名称: ${config.configName}`);
+    console.log(`  - 组织ID: ${config.orgId}`);
+    console.log(`  - 生效时间: ${config.effectiveStartTime} ~ ${config.effectiveEndTime || '无限期'}`);
+    console.log(`  - 规则数量: ${config.rules?.length || 0}`);
+    console.log(`  - 执行日期范围: ${startDate} ~ ${endDate}`);
+
+    // 记录每个规则的配置信息
+    if (config.rules && config.rules.length > 0) {
+      config.rules.forEach((rule: any, index: number) => {
+        console.log(`[分摊计算] 规则${index + 1}: ${rule.ruleName} (ID: ${rule.id})`);
+        console.log(`  - 分摊依据: ${rule.allocationBasis}`);
+        console.log(`  - 分摊范围ID: ${rule.allocationScopeId}`);
+        console.log(`  - 出勤代码过滤: ${rule.allocationAttendanceCodes || '无'}`);
+      });
+    }
 
     if (config.status !== 'ACTIVE') {
       console.error(`[分摊计算] 配置状态不是ACTIVE，当前状态: ${config.status}`);
@@ -1854,6 +2109,24 @@ export class AllocationService {
             });
             resultCount += standardHoursResult;
           }
+          else if (rule.allocationBasis === 'PRODUCTION_LINE_AVERAGE') {
+            // 按产线平均分摊
+            const averageResult = await this.executeProductionLineAverageAllocation({
+              batchNo,
+              config,
+              rule,
+              calcResult: aggregatedResult,
+              calcDate,
+              shiftId: aggregatedResult.shiftId,
+              shiftName: aggregatedResult.shiftName,
+              indirectHoursAttendanceCodeId,
+              indirectHoursAttendanceCodeStr,
+              calcTime,
+              executeById,
+              executeByName,
+            });
+            resultCount += averageResult;
+          }
         }
       }
     }
@@ -1911,35 +2184,31 @@ export class AllocationService {
     // 获取分摊范围配置，确定层级索引
     // allocationScopeId 指向 Organization 表，代表某个层级的组织
     // 我们需要根据这个组织的层级来确定 accountPath 中的索引
-    const scopeOrg = await this.prisma.organization.findUnique({
+    const scopeLevelConfig = await this.prisma.accountHierarchyConfig.findUnique({
       where: { id: rule.allocationScopeId },
-      select: { id: true, code: true, name: true, type: true, parentId: true }
+      select: { id: true, code: true, name: true, level: true }
     });
 
-    if (!scopeOrg) {
-      console.log(`❌ 分摊范围配置不存在 (ID=${rule.allocationScopeId})，跳过分摊`);
+    if (!scopeLevelConfig) {
+      console.log(`❌ 分摊范围层级配置不存在 (ID=${rule.allocationScopeId})，跳过分摊`);
       return 0;
     }
 
-    console.log(`  分摊范围组织: ${scopeOrg.name} (代码: ${scopeOrg.code}, 类型: ${scopeOrg.type})`);
+    console.log(`  分摊范围层级: ${scopeLevelConfig.name} (ID: ${scopeLevelConfig.id}, Level: ${scopeLevelConfig.level})`);
 
-    // 根据组织��型确定层级索引
-    // 账户路径结构: DH/DH01/DH01001/A01/-/FULL_TIME/FINANCE
-    // 索引0: DH(工厂), 索引1: DH01(车间), 索引2: DH01001(产线), 索引3: A01(产品)
-    const typeLevelMap: Record<string, number> = {
-      '02': 0, // 工厂
-      '03': 1, // 车间
-      '04': 2, // 产线
-    };
 
-    const scopeLevelIndex = typeLevelMap[scopeOrg.type];
-    if (scopeLevelIndex === undefined) {
-      console.log(`❌ 未知的组织类型: ${scopeOrg.type}，跳过分摊`);
+    // ✅ 使用���级 level 字段确定 accountPath 中的索引
+    // 账户路径结构: DH/DH01/DH01001/A01
+    // 索引0: DH(工厂,level=1), 索引1: DH01(车间,level=2), 索引2: DH0101(产线,level=3), 索引3: A01(产品,level=4)
+    const scopeLevelIndex = scopeLevelConfig.level - 1; // level从1开始，数组索引从0开始
+
+    if (scopeLevelIndex < 0 || scopeLevelIndex >= pathParts.length) {
+      console.log(`❌ 层级索引 ${scopeLevelIndex} 超出路径范围，跳过分摊`);
       return 0;
     }
 
     const scopeValue = pathParts[scopeLevelIndex];
-    console.log(`  分摊范围层级: ${scopeLevelIndex} (类型${scopeOrg.type})`);
+    console.log(`  分摊范围层级索引: ${scopeLevelIndex}`);
     console.log(`  提取的层级值: ${scopeValue}`);
 
     // ✅ 步骤2: 用日期+班次匹配开线计划表
@@ -2978,6 +3247,213 @@ export class AllocationService {
     }
 
     return directHoursByTarget;
+  }
+
+  /**
+   * 按产线平均分摊
+   * 将待分摊工时平均分配到分摊范围内的所有产线
+   *
+   * 分摊公式：每条产线分摊工时 = 待分摊工时总数 / 产线总数
+   *
+   * 例如：车间内有3条产线，待分摊工时=9小时，每条产线分摊=9/3=3小时
+   */
+  private async executeProductionLineAverageAllocation(params: any): Promise<number> {
+    const {
+      batchNo,
+      config,
+      rule,
+      calcResult,
+      calcDate,
+      shiftId,
+      shiftName,
+      indirectHoursAttendanceCodeId,
+      indirectHoursAttendanceCodeStr,
+      calcTime,
+      executeById,
+      executeByName,
+    } = params;
+
+    let resultCount = 0;
+
+    console.log(`\n[分摊计算] 开始按产线平均分摊`);
+    console.log(`  规则ID: ${rule.id}`);
+    console.log(`  分摊依据: ${rule.allocationBasis}`);
+    console.log(`  分摊范围ID: ${rule.allocationScopeId}`);
+    console.log(`  待分摊工时: ${calcResult.actualHours}小时`);
+
+    // ✅ 步骤1: 获取分摊范围配置
+    const scopeLevelConfig = await this.prisma.accountHierarchyConfig.findUnique({
+      where: { id: rule.allocationScopeId },
+      select: { id: true, code: true, name: true, level: true }
+    });
+
+    if (!scopeLevelConfig) {
+      console.log(`❌ 分摊范围层级配置不存在 (ID=${rule.allocationScopeId})，跳过分摊`);
+      return 0;
+    }
+
+    console.log(`  分摊范围层级: ${scopeLevelConfig.name} (ID: ${scopeLevelConfig.id}, Level: ${scopeLevelConfig.level})`);
+
+    // ✅ 步骤2: 从待分摊数据的 accountPath 中提取分摊范围的值
+    if (!calcResult.accountPath) {
+      console.log(`❌ 待分摊数据没有 accountPath，跳过分摊`);
+      return 0;
+    }
+
+    const sourceAccountPath = calcResult.accountPath;
+    const pathParts = sourceAccountPath.split('/').filter(p => p);
+    console.log(`  源账户路径: ${sourceAccountPath}`);
+    console.log(`  路径分段: [${pathParts.join(', ')}]`);
+
+    // 提取分摊范围的值
+    const scopeLevelIndex = scopeLevelConfig.level - 1;
+    if (scopeLevelIndex < 0 || scopeLevelIndex >= pathParts.length) {
+      console.log(`❌ 层级索引 ${scopeLevelIndex} 超出路径范围，跳过分摊`);
+      return 0;
+    }
+
+    const scopeValue = pathParts[scopeLevelIndex];
+    console.log(`  分摊范围值: ${scopeValue} (层级索引: ${scopeLevelIndex})`);
+
+    // ✅ 步骤3: 查询分摊范围内的所有产线
+    // 产线层级固定为 level=3
+    const productionLineLevel = 3;
+    const productionLineConfig = await this.prisma.accountHierarchyConfig.findFirst({
+      where: { level: productionLineLevel, status: 'ACTIVE' },
+      select: { id: true, level: true, name: true }
+    });
+
+    if (!productionLineConfig) {
+      console.log(`❌ 未找到产线层级配置，跳过分摊`);
+      return 0;
+    }
+
+    console.log(`  产线层级: ${productionLineConfig.name} (Level: ${productionLineConfig.level})`);
+
+    // 查询分摊范围内的所有产线
+    // scopeValue 是分摊范围的值（如车间代码 DH01）
+    // 需要找到所有路径中包含该值的产线
+    const allLines = await this.prisma.organization.findMany({
+      where: {
+        type: 'TEAM', // 产线类型
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        parentId: true,
+      }
+    });
+
+    // 筛选出分摊范围内的产线
+    // 例如：分摊范围是车间 DH01，则筛选出 parentId 指向 DH01 的产线
+    const scopeOrg = await this.prisma.organization.findFirst({
+      where: { code: scopeValue },
+      select: { id: true, code: true, name: true }
+    });
+
+    if (!scopeOrg) {
+      console.log(`❌ 未找到分摊范围组织 (code=${scopeValue})，跳过分摊`);
+      return 0;
+    }
+
+    const targetLines = allLines.filter(line => line.parentId === scopeOrg.id);
+    console.log(`  找到 ${targetLines.length} 条产线在分摊范围内 (${scopeOrg.name})`);
+
+    if (targetLines.length === 0) {
+      console.log(`❌ 分摊范围内没有产线，跳过分摊`);
+      return 0;
+    }
+
+    // ✅ 步骤4: 计算每条产线应分摊的工时
+    const totalHours = calcResult.actualHours || 0;
+    const hoursPerLine = totalHours / targetLines.length;
+
+    console.log(`\n[分摊计算] 分摊计算:`);
+    console.log(`  待分摊总工时: ${totalHours}小时`);
+    console.log(`  产线数量: ${targetLines.length}`);
+    console.log(`  每条产线分摊: ${hoursPerLine.toFixed(2)}小时`);
+
+    // ✅ 步骤5: 为每条产线创建间接工时记录
+    for (const line of targetLines) {
+      console.log(`\n[分摊计算] 处理产线: ${line.name} (${line.code})`);
+
+      // ✅ 使用 getLineIndirectAccount 方法获取或创建产线的间接工时账户
+      // 该方法会逐层合并源账户路径和目标产线��息
+      const lineAccount = await this.getLineIndirectAccount(
+        {
+          orgId: line.id,
+          orgName: line.name
+        },
+        calcResult.accountPath,
+        calcResult.accountId
+      );
+
+      console.log(`  目标账户: ${lineAccount.name} (路径: ${lineAccount.path})`);
+
+      if (!lineAccount) {
+        console.log(`  ✗ 无法创建产线账户，跳过该产线`);
+        continue;
+      }
+
+      // 创建或更新间接工时记录
+      try {
+        await this.createOrUpdateAllocationWorkHour({
+          employeeNo: calcResult.employeeNo,
+          calcDate,
+          shiftId,
+          shiftName,
+          definitionAttendanceCodeId: indirectHoursAttendanceCodeId,
+          definitionAttendanceCodeStr: indirectHoursAttendanceCodeStr,
+          workHours: hoursPerLine,
+          accountId: lineAccount.id,
+          accountName: lineAccount.name,
+          accountPath: lineAccount.path,
+          ruleId: rule.id,
+          batchNo,
+        });
+
+        console.log(`  ✓ 创建间接工时记录: 员工=${calcResult.employeeNo}, 产线=${line.name}, 工时=${hoursPerLine.toFixed(2)}小时`);
+
+        // 创建分摊结果记录
+        await this.prisma.allocationResult.create({
+          data: {
+            batchNo,
+            recordDate: calcDate,
+            calcResultId: calcResult.id,
+            configId: config.id,
+            configVersion: config.version,
+            ruleId: rule.id,
+            sourceEmployeeNo: calcResult.employeeNo,
+            sourceEmployeeName: calcResult.employeeName || calcResult.employee?.name || 'N/A',
+            sourceAccountId: calcResult.accountId,
+            sourceAccountName: calcResult.accountName || 'N/A',
+            attendanceCodeId: calcResult.definitionAttendanceCodeId,
+            attendanceCode: calcResult.definitionAttendanceCodeStr || 'N/A',
+            sourceHours: totalHours,
+            targetType: 'LINE',
+            targetId: line.id,
+            targetName: line.name,
+            targetAccountId: lineAccount.id,
+            allocationBasis: rule.allocationBasis,
+            basisValue: 1, // ✅ 分摊依据固定为1
+            weightValue: targetLines.length, // ✅ 权重值为产线数量
+            allocationRatio: 1 / targetLines.length,
+            allocatedHours: hoursPerLine,
+            calcTime,
+          },
+        } as any);
+
+        resultCount++;
+      } catch (error: any) {
+        console.error(`  ✗ 创建分摊记录失败: ${error.message}`);
+      }
+    }
+
+    console.log(`\n[分摊计算] 按产线平均分摊完成，生成 ${resultCount} 条记录`);
+
+    return resultCount;
   }
 
   /**
@@ -4191,6 +4667,12 @@ export class AllocationService {
   private async getFilteredCalcResults(params: any): Promise<any[]> {
     const { startDate, endDate, employeeFilter, accountFilter, attendanceCodeIds } = params;
 
+    console.log(`\n[分摊计算] ========== 开始查询待分摊工时记录 ==========`);
+    console.log(`  日期范围: ${startDate} ~ ${endDate}`);
+    console.log(`  出勤代码IDs: ${attendanceCodeIds?.join(', ') || '无'}`);
+    console.log(`  员工筛选: ${JSON.stringify(employeeFilter)}`);
+    console.log(`  账户筛选: ${JSON.stringify(accountFilter)}`);
+
     const nextDate = new Date(endDate);
     nextDate.setDate(nextDate.getDate() + 1);
 
@@ -4204,6 +4686,7 @@ export class AllocationService {
     // 出勤代码筛选（使用definitionAttendanceCodeId）
     if (attendanceCodeIds && attendanceCodeIds.length > 0) {
       where.definitionAttendanceCodeId = { in: attendanceCodeIds };
+      console.log(`  应用出勤代码筛选: ${attendanceCodeIds.join(', ')}`);
     }
 
     // 劳动力账户筛选
@@ -4302,6 +4785,22 @@ export class AllocationService {
     } else {
       filteredResults = results;
     }
+
+    console.log(`[分摊计算] ========== 查询完成 ==========`);
+    console.log(`  最终符合条件的工时记录数量: ${filteredResults.length}`);
+    if (filteredResults.length > 0) {
+      console.log(`  员工列表: ${[...new Set(filteredResults.map(r => r.employeeNo))].join(', ')}`);
+      console.log(`  出勤代码列表: ${[...new Set(filteredResults.map(r => r.definitionAttendanceCodeStr))].join(', ')}`);
+      console.log(`  总工时: ${filteredResults.reduce((sum, r) => sum + (r.workHours || 0), 0).toFixed(2)}小时`);
+    } else {
+      console.log(`  ⚠️ 没有找到符合条件的工时记录！`);
+      console.log(`  可能的原因:`);
+      console.log(`    1. 指定日期范围内没有工时记录`);
+      console.log(`    2. 出勤代码筛选不匹配（需要: ${attendanceCodeIds?.join(', ') || '无'}）`);
+      console.log(`    3. 员工筛选条件过严（${Object.keys(employeeFilter || {}).length > 0 ? JSON.stringify(employeeFilter) : '无'}）`);
+      console.log(`    4. 账户筛选条件过严（${Object.keys(accountFilter || {}).length > 0 ? JSON.stringify(accountFilter) : '无'}）`);
+    }
+    console.log(`[分摊计算] ========================================\n`);
 
     return filteredResults;
   }
@@ -4574,9 +5073,15 @@ export class AllocationService {
       },
       select: {
         id: true,
+        employeeNo: true,
         shiftId: true,
         shiftName: true,
         calcDate: true,
+        employee: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
@@ -4719,6 +5224,8 @@ export class AllocationService {
         id: true,
         code: true,
         name: true,
+        path: true,
+        namePath: true,
         hierarchyValues: true,
       },
     });
@@ -4730,12 +5237,95 @@ export class AllocationService {
 
     for (const account of allAccounts) {
       try {
-        const hierarchyValues = JSON.parse(account.hierarchyValues || '[]');
+        let hierarchyValues: any[] = [];
 
-        // 检查hierarchyValues是否是数组
-        if (!Array.isArray(hierarchyValues)) {
-          console.log(`[层级筛选] 跳过账户 ${account.name} (${account.code}): hierarchyValues不是数组`);
-          continue;
+        // 尝试从 hierarchyValues 字段解析
+        if (account.hierarchyValues) {
+          try {
+            const parsed = JSON.parse(account.hierarchyValues);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              hierarchyValues = parsed;
+            }
+          } catch (e) {
+            console.log(`[层级筛选] 账户 ${account.code} 的 hierarchyValues 解析失败，尝试从path解析`);
+          }
+        }
+
+        // 如果 hierarchyValues 为空，尝试从 path 字段解析
+        if (hierarchyValues.length === 0 && account.path) {
+          const pathParts = account.path.split('/').filter(p => p);
+
+          // 从 path 构建层级信息
+          // path 格式：DH/DH01/DH0101/A02
+          // 索引0: 工厂(工厂级组织levelId=4)
+          // 索引1: 车间(车间级组织levelId=5)
+          // 索引2: 产线(产线级组织levelId=6)
+          // 索引3: 产品(产品级levelId=7)
+
+          if (pathParts.length > 0) {
+            // 查找工厂级组织
+            const factoryOrg = await this.prisma.organization.findFirst({
+              where: { code: pathParts[0] },
+              select: { id: true, code: true, name: true, type: true }
+            });
+            if (factoryOrg) {
+              hierarchyValues.push({
+                levelId: 4,
+                level: 1,
+                name: '工厂',
+                selectedValue: {
+                  id: factoryOrg.id,
+                  code: factoryOrg.code,
+                  name: factoryOrg.name,
+                  type: factoryOrg.type
+                }
+              });
+            }
+          }
+
+          if (pathParts.length > 1) {
+            // 查找车间级组织
+            const workshopOrg = await this.prisma.organization.findFirst({
+              where: { code: pathParts[1] },
+              select: { id: true, code: true, name: true, type: true }
+            });
+            if (workshopOrg) {
+              hierarchyValues.push({
+                levelId: 5,
+                level: 2,
+                name: '车间',
+                selectedValue: {
+                  id: workshopOrg.id,
+                  code: workshopOrg.code,
+                  name: workshopOrg.name,
+                  type: workshopOrg.type
+                }
+              });
+            }
+          }
+
+          if (pathParts.length > 2) {
+            // 查找产线级组织
+            const lineOrg = await this.prisma.organization.findFirst({
+              where: { code: pathParts[2] },
+              select: { id: true, code: true, name: true, type: true }
+            });
+            if (lineOrg) {
+              hierarchyValues.push({
+                levelId: 6,
+                level: 3,
+                name: '产线',
+                selectedValue: {
+                  id: lineOrg.id,
+                  code: lineOrg.code,
+                  name: lineOrg.name,
+                  type: lineOrg.type
+                }
+              });
+            }
+          }
+
+          console.log(`[层级筛选] 从path解析出 ${hierarchyValues.length} 个层级`);
         }
 
         // 检查账户是否满足所有层级筛选条件
@@ -4752,21 +5342,30 @@ export class AllocationService {
             break;
           }
 
-          // ✅ 支持使用 code 匹配（优先）或 ID 匹配
+          // ✅ 优先使用 code 匹配，兼容 ID 匹配
           const accountValueCode = levelValue.selectedValue.code;
           const accountValueId = levelValue.selectedValue.id;
 
           // 检查账户的层级值是否在筛选条件中
-          // 支持 code 匹配或 ID 匹配
-          const matchesByCode = accountValueCode && valueIds.includes(accountValueCode);
-          const matchesById = valueIds.includes(accountValueId) || valueIds.includes(String(accountValueId));
+          // 优先使用 code 匹配（更稳定），如果 code 不在 valueIds 中，尝试 ID 匹配
+          let matched = false;
+          let matchMethod = '';
 
-          if (!matchesByCode && !matchesById) {
+          if (accountValueCode && valueIds.includes(accountValueCode)) {
+            matched = true;
+            matchMethod = 'code';
+          } else if (valueIds.includes(accountValueId) || valueIds.includes(String(accountValueId))) {
+            matched = true;
+            matchMethod = 'id';
+          }
+
+          if (!matched) {
             matchesAll = false;
+            console.log(`[层级筛选] ✗ 层级 ${levelName} (${levelId}): 账户值=code(${accountValueCode}), id(${accountValueId}), 筛选值=[${valueIds.join(', ')}], 不匹配`);
             break;
           }
 
-          console.log(`[层级筛选]   层级 ${levelName} (${levelId}): 账户值=code(${accountValueCode}), id(${accountValueId}), 匹配方式=${matchesByCode ? 'code' : 'id'}`);
+          console.log(`[层级筛选] ✓ 层级 ${levelName} (${levelId}): 账户值=code(${accountValueCode}), id(${accountValueId}), 匹配方式=${matchMethod}`);
         }
 
         if (matchesAll) {
@@ -4852,44 +5451,564 @@ export class AllocationService {
     }
   }
 
-  // ============ Product Standard Hours (Not Implemented) ============
+  // ============ Product Standard Hours ============
 
   async getProductStandardHours(productId: number) {
-    throw new BadRequestException('Product standard hours feature not implemented');
+    return this.prisma.productStandardHours.findMany({
+      where: {
+        productId,
+        deletedAt: null,
+      },
+      orderBy: [
+        { effectiveDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
+    });
   }
 
   async createProductStandardHours(productId: number, dto: any) {
-    throw new BadRequestException('Product standard hours feature not implemented');
+    const {
+      processId,
+      processName,
+      standardHours,
+      quantity,
+      effectiveDate,
+      expiryDate,
+      status,
+      description,
+      createdById,
+      createdByName,
+    } = dto;
+
+    // 验证必填字段
+    if (!standardHours) {
+      throw new BadRequestException('标准工时不能为空');
+    }
+
+    if (!effectiveDate) {
+      throw new BadRequestException('生效日期不能为空');
+    }
+
+    // 解析日期
+    const effective = new Date(effectiveDate);
+    effective.setHours(0, 0, 0, 0);
+
+    let expiry: Date | null = null;
+    if (expiryDate) {
+      expiry = new Date(expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+
+      // 验证：失效日期不能小于生效日期
+      if (expiry < effective) {
+        throw new BadRequestException('失效日期不能小于生效日期');
+      }
+    }
+
+    // 查询条件：相同产品和工序（如果指定了工序）
+    const where: any = {
+      productId,
+      deletedAt: null,
+      status: 'ACTIVE',
+    };
+
+    if (processId) {
+      where.processId = parseInt(processId);
+    } else {
+      where.processId = null;
+    }
+
+    // 检查日期区间是否与现有记录冲突
+    const existingRecords = await this.prisma.productStandardHours.findMany({
+      where,
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    for (const record of existingRecords) {
+      const recordEffective = new Date(record.effectiveDate);
+      recordEffective.setHours(0, 0, 0, 0);
+
+      const recordExpiry = record.expiryDate ? new Date(record.expiryDate) : null;
+      if (recordExpiry) {
+        recordExpiry.setHours(0, 0, 0, 0);
+      }
+
+      // 检查区间是否重叠（两个区间有交集）
+      // 区间1: [effective, expiry] (expiry为null表示无限大)
+      // 区间2: [recordEffective, recordExpiry] (recordExpiry为null表示无限大)
+      // 两个区间相交的条件: effective < recordExpiry AND recordEffective < expiry
+      // 特殊情况: null表示无限大，所以null < 永远是false
+
+      const effectiveLessThanRecordExpiry = !recordExpiry || effective < recordExpiry;
+      const recordEffectiveLessThanExpiry = !expiry || recordEffective < expiry;
+
+      // 两个区间有交集
+      if (effectiveLessThanRecordExpiry && recordEffectiveLessThanExpiry) {
+        throw new BadRequestException(
+          `日期区间 ${effectiveDate.toISOString().substring(0, 10)} - ${expiry ? expiry.toISOString().substring(0, 10) : '永久'} 与现有配置 ${recordEffective.toISOString().substring(0, 10)} - ${recordExpiry ? recordExpiry.toISOString().substring(0, 10) : '永久'} 冲突`
+        );
+      }
+    }
+
+    // 如果存在没有失效日期的前一条记录，自动更新其失效日期
+    if (existingRecords.length > 0) {
+      const latestRecord = existingRecords[0];
+      if (!latestRecord.expiryDate) {
+        // 前一条记录没有失效日期，设置其失效日期为新生效日期 - 1天
+        const previousDay = new Date(effective);
+        previousDay.setDate(previousDay.getDate() - 1);
+        previousDay.setHours(0, 0, 0, 0);
+
+        await this.prisma.productStandardHours.update({
+          where: { id: latestRecord.id },
+          data: { expiryDate: previousDay },
+        });
+      }
+    }
+
+    // 创建新记录
+    const result = await this.prisma.productStandardHours.create({
+      data: {
+        productId: productId,
+        productName: dto.productName || '',
+        processId: processId ? parseInt(processId) : null,
+        processName: processName || null,
+        standardHours: parseFloat(standardHours),
+        effectiveDate: effective,
+        expiryDate: expiry,
+        status: status || 'ACTIVE',
+        description: description || null,
+        createdById: createdById || 1,
+        createdByName: createdByName || 'System',
+      },
+    });
+
+    return result;
   }
 
   async updateProductStandardHours(id: number, dto: any) {
-    throw new BadRequestException('Product standard hours feature not implemented');
+    const existing = await this.prisma.productStandardHours.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+    });
+
+    if (!existing) {
+      throw new BadRequestException('配置不存在');
+    }
+
+    const {
+      productId,
+      processId,
+      standardHours,
+      quantity,
+      effectiveDate,
+      expiryDate,
+      status,
+      description,
+    } = dto;
+
+    // 解析日期
+    const effective = new Date(effectiveDate);
+    effective.setHours(0, 0, 0, 0);
+
+    let expiry: Date | null = null;
+    if (expiryDate) {
+      expiry = new Date(expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+
+      // 验证：失效日期不能小于生效日期
+      if (expiry < effective) {
+        throw new BadRequestException('失效日期不能小于生效日期');
+      }
+    }
+
+    // 查询其他记录以检查日期冲突（排除当前记录）
+    const where: any = {
+      productId: existing.productId,
+      deletedAt: null,
+      id: { not: id },
+      status: 'ACTIVE',
+    };
+
+    if (existing.processId) {
+      where.processId = existing.processId;
+    } else {
+      where.processId = null;
+    }
+
+    const otherRecords = await this.prisma.productStandardHours.findMany({
+      where,
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    for (const record of otherRecords) {
+      const recordEffective = new Date(record.effectiveDate);
+      recordEffective.setHours(0, 0, 0, 0);
+
+      const recordExpiry = record.expiryDate ? new Date(record.expiryDate) : null;
+      if (recordExpiry) {
+        recordExpiry.setHours(0, 0, 0, 0);
+      }
+
+      // 检查区间是否重叠（两个区间有交集）
+      // 区间1: [effective, expiry] (expiry为null表示无限大)
+      // 区间2: [recordEffective, recordExpiry] (recordExpiry为null表示无限大)
+      // 两个区间相交的条件: effective <= recordExpiry AND recordEffective <= expiry
+      // 特殊情况: null表示无限大，所以null <= 总是true，null >= 总是false
+
+      const effectiveLessThanRecordExpiry = !recordExpiry || effective < recordExpiry;
+      const recordEffectiveLessThanExpiry = !expiry || recordEffective < expiry;
+
+      // 两个区间有交集
+      if (effectiveLessThanRecordExpiry && recordEffectiveLessThanExpiry) {
+        throw new BadRequestException(
+          `日期区间 ${effectiveDate.toISOString().substring(0, 10)} - ${expiry ? expiry.toISOString().substring(0, 10) : '永久'} 与现有配置 ${recordEffective.toISOString().substring(0, 10)} - ${recordExpiry ? recordExpiry.toISOString().substring(0, 10) : '永久'} 冲突`
+        );
+      }
+
+      if (effective <= recordEffective && (!expiry || !recordExpiry || expiry >= recordExpiry)) {
+        throw new BadRequestException(
+          `日期区间 ${effectiveDate.toISOString().substring(0, 10)} - ${expiry ? expiry.toISOString().substring(0, 10) : '永久'} 与现有配置 ${recordEffective.toISOString().substring(0, 10)} - ${recordExpiry ? recordExpiry.toISOString().substring(0, 10) : '永久'} 冲突`
+        );
+      }
+    }
+
+    // 更新记录
+    const result = await this.prisma.productStandardHours.update({
+      where: { id },
+      data: {
+        standardHours: standardHours ? parseFloat(standardHours) : existing.standardHours,
+        effectiveDate: effective,
+        expiryDate: expiry,
+        status: status || existing.status,
+        description: description !== undefined ? description : existing.description,
+      },
+    });
+
+    return result;
   }
 
   async deleteProductStandardHours(id: number) {
-    throw new BadRequestException('Product standard hours feature not implemented');
+    const existing = await this.prisma.productStandardHours.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+    });
+
+    if (!existing) {
+      throw new BadRequestException('配置不存在');
+    }
+
+    // 软删除
+    await this.prisma.productStandardHours.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    return { success: true };
   }
 
   // ============ Product Standard Hour By Levels (Not Implemented) ============
 
   async getProductStandardHourByLevels(productId: number) {
-    throw new BadRequestException('Product standard hour by levels feature not implemented');
+    return this.prisma.productStandardHourByLevel.findMany({
+      where: {
+        productId,
+        deletedAt: null,
+      },
+      orderBy: [
+        { effectiveDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
+    });
   }
 
   async getAllProductStandardHourByLevels(query: any) {
-    throw new BadRequestException('Product standard hour by levels feature not implemented');
+    const { page = 1, pageSize = 10, productId, accountPath } = query;
+
+    const where: any = {
+      deletedAt: null,
+    };
+
+    if (productId) {
+      where.productId = parseInt(productId);
+    }
+
+    if (accountPath) {
+      where.accountPath = {
+        contains: accountPath,
+      };
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.productStandardHourByLevel.findMany({
+        where,
+        orderBy: {
+          effectiveDate: 'desc',
+        },
+        take: parseInt(pageSize),
+        skip: (parseInt(page) - 1) * parseInt(pageSize),
+      }),
+      this.prisma.productStandardHourByLevel.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: parseInt(page),
+      pageSize: parseInt(pageSize),
+    };
   }
 
   async createProductStandardHourByLevel(dto: any) {
-    throw new BadRequestException('Product standard hour by levels feature not implemented');
+    const {
+      productId,
+      productCode,
+      productName,
+      hierarchyLevelId,
+      hierarchyLevelName,
+      hierarchyOptionValue,
+      hierarchyOptionLabel,
+      accountPath,
+      standardHours,
+      quantity,
+      effectiveDate,
+      expiryDate,
+      status,
+      description,
+      createdById,
+      createdByName,
+    } = dto;
+
+    // 验证必填字段
+    if (!productId || !standardHours) {
+      throw new BadRequestException('productId and standardHours are required');
+    }
+
+    if (!effectiveDate) {
+      throw new BadRequestException('生效日期不能为空');
+    }
+
+    // 解析日期
+    const effective = new Date(effectiveDate);
+    effective.setHours(0, 0, 0, 0);
+
+    let expiry: Date | null = null;
+    if (expiryDate) {
+      expiry = new Date(expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+
+      // 验证：失效日期不能小于生效日期
+      if (expiry < effective) {
+        throw new BadRequestException('失效日期不能小于生效日期');
+      }
+    }
+
+    // 查询相同产品和账户路径的现有记录
+    const where: any = {
+      productId: parseInt(productId),
+      accountPath: accountPath || null,
+      deletedAt: null,
+      status: 'ACTIVE',
+    };
+
+    const existingRecords = await this.prisma.productStandardHourByLevel.findMany({
+      where,
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    // 检查日期区间是否与现有记录冲突
+    for (const record of existingRecords) {
+      const recordEffective = new Date(record.effectiveDate);
+      recordEffective.setHours(0, 0, 0, 0);
+
+      const recordExpiry = record.expiryDate ? new Date(record.expiryDate) : null;
+      if (recordExpiry) {
+        recordExpiry.setHours(0, 0, 0, 0);
+      }
+
+      // 检查区间是否重叠（两个区间有交集）
+      // 区间1: [effective, expiry] (expiry为null表示无限大)
+      // 区间2: [recordEffective, recordExpiry] (recordExpiry为null表示无限大)
+      // 两个区间相交的条件: effective <= recordExpiry AND recordEffective <= expiry
+      // 特殊情况: null表示无限大，所以null <= 永远是true，永远不是false
+
+      const effectiveLessThanRecordExpiry = !recordExpiry || effective <= recordExpiry;
+      const recordEffectiveLessThanExpiry = !expiry || recordEffective <= expiry;
+
+      // 两个区间有交集
+      if (effectiveLessThanRecordExpiry && recordEffectiveLessThanExpiry) {
+        throw new BadRequestException(
+          `日期区间 ${effective.toISOString().substring(0, 10)} - ${expiry ? expiry.toISOString().substring(0, 10) : '永久'} 与现有配置 ${recordEffective.toISOString().substring(0, 10)} - ${recordExpiry ? recordExpiry.toISOString().substring(0, 10) : '永久'} 冲突`
+        );
+      }
+    }
+
+    // 如果存在没有失效日期的前一条记录，自动更新其失效日期
+    if (existingRecords.length > 0) {
+      const latestRecord = existingRecords[0];
+      if (!latestRecord.expiryDate) {
+        // 前一条记录没有失效日期，设置其失效日期为新生效日期 - 1天
+        const previousDay = new Date(effective);
+        previousDay.setDate(previousDay.getDate() - 1);
+        previousDay.setHours(0, 0, 0, 0);
+
+        await this.prisma.productStandardHourByLevel.update({
+          where: { id: latestRecord.id },
+          data: { expiryDate: previousDay },
+        });
+      }
+    }
+
+    // 创建配置
+    const result = await this.prisma.productStandardHourByLevel.create({
+      data: {
+        productId: parseInt(productId),
+        productName: productName || '',
+        accountLevel: dto.accountLevel || hierarchyLevelName || '',
+        accountPath: accountPath || null,
+        standardHours: parseFloat(standardHours) || 0,
+        quantity: quantity ? parseFloat(quantity) : null,
+        effectiveDate: effective,
+        expiryDate: expiry,
+        status: status || 'ACTIVE',
+        description: description || null,
+        createdById: createdById || 1,
+        createdByName: createdByName || 'System',
+      },
+    });
+
+    return result;
   }
 
   async updateProductStandardHourByLevel(id: number, dto: any) {
-    throw new BadRequestException('Product standard hour by levels feature not implemented');
+    const existing = await this.prisma.productStandardHourByLevel.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+    });
+
+    if (!existing) {
+      throw new BadRequestException('配置不存在');
+    }
+
+    const {
+      productId,
+      productName,
+      hierarchyLevelName,
+      accountPath,
+      standardHours,
+      quantity,
+      effectiveDate,
+      expiryDate,
+      status,
+      description,
+    } = dto;
+
+    // 验证必填字段
+    if (!effectiveDate) {
+      throw new BadRequestException('生效日期不能为空');
+    }
+
+    // 解析日期
+    const effective = new Date(effectiveDate);
+    effective.setHours(0, 0, 0, 0);
+
+    let expiry: Date | null = null;
+    if (expiryDate) {
+      expiry = new Date(expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+
+      // 验证：失效日期不能小于生效日期
+      if (expiry < effective) {
+        throw new BadRequestException('失效日期不能小于生效日期');
+      }
+    }
+
+    // 查询其他记录以检查日期冲突（排除当前记录）
+    const where: any = {
+      productId: existing.productId,
+      accountPath: existing.accountPath,
+      deletedAt: null,
+      id: { not: id },
+      status: 'ACTIVE',
+    };
+
+    const otherRecords = await this.prisma.productStandardHourByLevel.findMany({
+      where,
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    // 检查日期区间是否与现有记录冲突
+    for (const record of otherRecords) {
+      const recordEffective = new Date(record.effectiveDate);
+      recordEffective.setHours(0, 0, 0, 0);
+
+      const recordExpiry = record.expiryDate ? new Date(record.expiryDate) : null;
+      if (recordExpiry) {
+        recordExpiry.setHours(0, 0, 0, 0);
+      }
+
+      // 检查区间是否重叠（两个区间有交集）
+      // 区间1: [effective, expiry] (expiry为null表示无限大)
+      // 区间2: [recordEffective, recordExpiry] (recordExpiry为null表示无限大)
+      // 两个区间相交的条件: effective <= recordExpiry AND recordEffective <= expiry
+      // 特殊情况: null表示无限大，所以null <= 永远是true，永远不是false
+
+      const effectiveLessThanRecordExpiry = !recordExpiry || effective <= recordExpiry;
+      const recordEffectiveLessThanExpiry = !expiry || recordEffective <= expiry;
+
+      // 两个区间有交集
+      if (effectiveLessThanRecordExpiry && recordEffectiveLessThanExpiry) {
+        throw new BadRequestException(
+          `日期区间 ${effective.toISOString().substring(0, 10)} - ${expiry ? expiry.toISOString().substring(0, 10) : '永久'} 与现有配置 ${recordEffective.toISOString().substring(0, 10)} - ${recordExpiry ? recordExpiry.toISOString().substring(0, 10) : '永久'} 冲突`
+        );
+      }
+    }
+
+    const result = await this.prisma.productStandardHourByLevel.update({
+      where: { id },
+      data: {
+        productId: productId ? parseInt(productId) : existing.productId,
+        productName: productName || existing.productName,
+        accountLevel: hierarchyLevelName || existing.accountLevel,
+        accountPath: accountPath !== undefined ? accountPath : existing.accountPath,
+        standardHours: standardHours ? parseFloat(standardHours) : existing.standardHours,
+        quantity: quantity !== undefined ? (quantity ? parseFloat(quantity) : null) : existing.quantity,
+        effectiveDate: effective,
+        expiryDate: expiry,
+        status: status || existing.status,
+        description: description !== undefined ? description : existing.description,
+      },
+    });
+
+    return result;
   }
 
   async deleteProductStandardHourByLevel(id: number) {
-    throw new BadRequestException('Product standard hour by levels feature not implemented');
+    const existing = await this.prisma.productStandardHourByLevel.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+      },
+    });
+
+    if (!existing) {
+      throw new BadRequestException('配置不存在');
+    }
+
+    // 软删除
+    await this.prisma.productStandardHourByLevel.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+
+    return { success: true };
   }
 
   // ============ Product Processes (Not Implemented) ============
@@ -4910,42 +6029,401 @@ export class AllocationService {
     throw new BadRequestException('Product processes feature not implemented');
   }
 
-  // ============ Earned Hours Configs (Not Implemented) ============
+  // ============ Earned Hours Configs ============
 
   async getEarnedHoursConfigs(query: any) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const { page = 1, pageSize = 10, keyword, status } = query;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { deletedAt: null };
+    if (status) where.status = status;
+    if (keyword) {
+      where.OR = [
+        { code: { contains: keyword } },
+        { name: { contains: keyword } },
+        { configName: { contains: keyword } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.earnedHoursAllocationConfig.findMany({
+        where,
+        skip,
+        take: +pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: { results: true },
+          },
+        },
+      }),
+      this.prisma.earnedHoursAllocationConfig.count({ where }),
+    ]);
+
+    console.log('=== getEarnedHoursConfigs ===');
+    console.log('Raw items from DB:', items.map((item: any) => ({ id: item.id, code: item.code, name: item.name })));
+
+    // 解析 rules 和 sourceConfig JSON 字符串，并转换数据结构
+    const itemsWithParsed = items.map((item: any) => {
+      const rules = item.rules ? JSON.parse(item.rules) : [];
+      let sourceConfig = item.sourceConfig ? JSON.parse(item.sourceConfig) : null;
+
+      // 转换 sourceConfig 为前端期望的 filterGroups 结构
+      if (sourceConfig) {
+        sourceConfig = {
+          filterGroups: [
+            {
+              id: 'default_group',
+              employeeFilter: sourceConfig.employeeFilter || { fieldGroups: [] },
+              workHoursFilter: {
+                hierarchySelections: sourceConfig.accountFilter?.hierarchySelections || [],
+                attendanceCodes: sourceConfig.attendanceCodes || [],
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        ...item,
+        configCode: item.code, // 映射 code 为 configCode
+        rules,
+        sourceConfig,
+        _count: {
+          rules: rules.length,
+          results: item._count.results,
+        },
+      };
+    });
+
+    console.log('Parsed items with configCode:', itemsWithParsed.map((item: any) => ({ id: item.id, configCode: item.configCode, name: item.name })));
+
+    return {
+      items: itemsWithParsed,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / +pageSize),
+    };
   }
 
   async getEarnedHoursConfig(id: number) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const config = await this.prisma.earnedHoursAllocationConfig.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { results: true },
+        },
+      },
+    });
+
+    if (!config) {
+      throw new NotFoundException('配置不存在');
+    }
+
+    // 解析 rules 和 sourceConfig JSON 字符串
+    const rules = config.rules ? JSON.parse(config.rules) : [];
+    let sourceConfig = config.sourceConfig ? JSON.parse(config.sourceConfig) : null;
+
+    // 转换 sourceConfig 为前端期望的 filterGroups 结构
+    if (sourceConfig) {
+      sourceConfig = {
+        filterGroups: [
+          {
+            id: 'default_group',
+            employeeFilter: sourceConfig.employeeFilter || { fieldGroups: [] },
+            workHoursFilter: {
+              hierarchySelections: sourceConfig.accountFilter?.hierarchySelections || [],
+              attendanceCodes: sourceConfig.attendanceCodes || [],
+            },
+          },
+        ],
+      };
+    }
+
+    return {
+      ...config,
+      configCode: config.code, // 映射 code 为 configCode
+      rules,
+      sourceConfig,
+      _count: {
+        rules: rules.length,
+        results: config._count.results,
+      },
+    };
   }
 
   async createEarnedHoursConfig(dto: any) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    try {
+      const {
+        configCode,
+        configName,
+        description,
+        orgId,
+        orgName,
+        orgPath,
+        effectiveStartTime,
+        effectiveEndTime,
+        sourceConfig,
+        rules,
+        createdById,
+        createdByName,
+      } = dto;
+
+      // 检查编码是否已存在
+      const existing = await this.prisma.earnedHoursAllocationConfig.findUnique({
+        where: { code: configCode },
+      });
+
+      if (existing) {
+        throw new BadRequestException('配置编码已存在');
+      }
+
+      // 创建配置
+      const config = await this.prisma.earnedHoursAllocationConfig.create({
+        data: {
+          code: configCode,
+          name: configName,
+          configName: configName,
+          description: description || '',
+          orgId: orgId || 1,
+          orgPath: orgPath || '/',
+          effectiveStartTime: new Date(effectiveStartTime),
+          effectiveEndTime: effectiveEndTime ? new Date(effectiveEndTime) : null,
+          status: 'DRAFT',
+          createdById: createdById || 1,
+          createdByName: createdByName || 'System',
+          sourceConfig: sourceConfig ? JSON.stringify(sourceConfig) : '{}',
+          rules: rules ? JSON.stringify(rules) : '[]',
+        },
+      });
+
+      // 解析返回数据
+      const parsedRules = config.rules ? JSON.parse(config.rules) : [];
+      let parsedSourceConfig = config.sourceConfig ? JSON.parse(config.sourceConfig) : null;
+
+      // 转换 sourceConfig 为前端期望的 filterGroups 结构
+      if (parsedSourceConfig) {
+        parsedSourceConfig = {
+          filterGroups: [
+            {
+              id: 'default_group',
+              employeeFilter: parsedSourceConfig.employeeFilter || { fieldGroups: [] },
+              workHoursFilter: {
+                hierarchySelections: parsedSourceConfig.accountFilter?.hierarchySelections || [],
+                attendanceCodes: parsedSourceConfig.attendanceCodes || [],
+              },
+            },
+          ],
+        };
+      }
+
+      // 返回解析后的数据
+      return {
+        ...config,
+        configCode: config.code, // 映射 code 为 configCode
+        rules: parsedRules,
+        sourceConfig: parsedSourceConfig,
+      };
+    } catch (error: any) {
+      console.error('创建挣得工时配置失败:', error);
+      throw new BadRequestException(error.message || '创建失败');
+    }
   }
 
   async updateEarnedHoursConfig(id: number, dto: any) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    try {
+      const existing = await this.prisma.earnedHoursAllocationConfig.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('配置不存在');
+      }
+
+      const {
+        configCode,
+        configName,
+        description,
+        sourceConfig,
+        rules,
+        updatedById,
+        updatedByName,
+      } = dto;
+
+      // 如果启用了配置，不允许修改数据源
+      if (existing.status === 'ACTIVE' && sourceConfig) {
+        throw new BadRequestException('配置已启用，不允许修改数据源');
+      }
+
+      const config = await this.prisma.earnedHoursAllocationConfig.update({
+        where: { id },
+        data: {
+          ...(configName && { name: configName, configName: configName }),
+          ...(description !== undefined && { description }),
+          ...(sourceConfig && { sourceConfig: JSON.stringify(sourceConfig) }),
+          ...(rules && { rules: JSON.stringify(rules) }),
+          ...(updatedById && { updatedById }),
+          ...(updatedByName && { updatedByName }),
+        },
+      });
+
+      // 解析返回数据
+      const parsedRules = config.rules ? JSON.parse(config.rules) : [];
+      let parsedSourceConfig = config.sourceConfig ? JSON.parse(config.sourceConfig) : null;
+
+      // 转换 sourceConfig 为前端期望的 filterGroups 结构
+      if (parsedSourceConfig) {
+        parsedSourceConfig = {
+          filterGroups: [
+            {
+              id: 'default_group',
+              employeeFilter: parsedSourceConfig.employeeFilter || { fieldGroups: [] },
+              workHoursFilter: {
+                hierarchySelections: parsedSourceConfig.accountFilter?.hierarchySelections || [],
+                attendanceCodes: parsedSourceConfig.attendanceCodes || [],
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        ...config,
+        configCode: config.code, // 映射 code 为 configCode
+        rules: parsedRules,
+        sourceConfig: parsedSourceConfig,
+      };
+    } catch (error: any) {
+      console.error('更新挣得工时配置失败:', error);
+      throw new BadRequestException(error.message || '更新失败');
+    }
   }
 
   async deleteEarnedHoursConfig(id: number) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const config = await this.prisma.earnedHoursAllocationConfig.findUnique({
+      where: { id },
+    });
+
+    if (!config) {
+      throw new NotFoundException('配置不存在');
+    }
+
+    if (config.status !== 'DRAFT') {
+      throw new BadRequestException('只能删除草稿状态的配置');
+    }
+
+    await this.prisma.earnedHoursAllocationConfig.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    return { message: '删除成功' };
   }
 
   async activateEarnedHoursConfig(id: number, dto: any) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const config = await this.prisma.earnedHoursAllocationConfig.findUnique({
+      where: { id },
+    });
+
+    if (!config) {
+      throw new NotFoundException('配置不存在');
+    }
+
+    if (config.status !== 'DRAFT') {
+      throw new BadRequestException('只能启用草稿状态的配置');
+    }
+
+    await this.prisma.earnedHoursAllocationConfig.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        approvedById: dto.approvedById,
+        approvedByName: dto.approvedByName,
+        approvedAt: new Date(),
+      },
+    });
+
+    return { message: '启用成功' };
   }
 
   async deactivateEarnedHoursConfig(id: number, dto: any) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const config = await this.prisma.earnedHoursAllocationConfig.findUnique({
+      where: { id },
+    });
+
+    if (!config) {
+      throw new NotFoundException('配置不存在');
+    }
+
+    if (config.status !== 'ACTIVE') {
+      throw new BadRequestException('只能停用启用状态的配置');
+    }
+
+    await this.prisma.earnedHoursAllocationConfig.update({
+      where: { id },
+      data: {
+        status: 'INACTIVE',
+        updatedById: dto.deactivatedById,
+        updatedByName: dto.deactivatedByName,
+      },
+    });
+
+    return { message: '停用成功' };
   }
 
   async copyEarnedHoursConfig(id: number, dto: any) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const original = await this.prisma.earnedHoursAllocationConfig.findUnique({
+      where: { id },
+    });
+
+    if (!original) {
+      throw new NotFoundException('配置不存在');
+    }
+
+    const newConfig = await this.prisma.earnedHoursAllocationConfig.create({
+      data: {
+        code: dto.configCode || `${original.code}_COPY`,
+        name: dto.configName || `${original.name}_副本`,
+        configName: dto.configName || `${original.configName}_副本`,
+        description: original.description,
+        orgId: original.orgId,
+        orgPath: original.orgPath,
+        effectiveStartTime: new Date(),
+        effectiveEndTime: null,
+        status: 'DRAFT',
+        createdById: dto.createdById || 1,
+        createdByName: dto.createdByName || 'System',
+        sourceConfig: original.sourceConfig,
+        rules: original.rules,
+      },
+    });
+
+    return {
+      ...newConfig,
+      configCode: newConfig.code, // 映射 code 为 configCode
+      rules: newConfig.rules ? JSON.parse(newConfig.rules) : [],
+      sourceConfig: newConfig.sourceConfig ? JSON.parse(newConfig.sourceConfig) : null,
+    };
   }
 
   async archiveEarnedHoursConfig(id: number) {
-    throw new BadRequestException('Earned hours configs feature not implemented');
+    const config = await this.prisma.earnedHoursAllocationConfig.findUnique({
+      where: { id },
+    });
+
+    if (!config) {
+      throw new NotFoundException('配置不存在');
+    }
+
+    await this.prisma.earnedHoursAllocationConfig.update({
+      where: { id },
+      data: {
+        status: 'INACTIVE',
+      },
+    });
+
+    return { message: '归档成功' };
   }
 
   // ============ Earned Hours Rules (Not Implemented) ============
@@ -5077,29 +6555,63 @@ export class AllocationService {
       throw new BadRequestException('员工不存在');
     }
 
-    // 查询产品信息获取标准工时
-    const product = await this.prisma.product.findUnique({
+    // productId 实际上是数据源选项的ID，需要先查找数据源选项
+    const dataSourceOption = await this.prisma.dataSourceOption.findUnique({
       where: { id: productId },
     });
 
-    if (!product) {
-      throw new BadRequestException('产品不存在');
+    if (!dataSourceOption) {
+      throw new BadRequestException('产品数据源选项不存在');
     }
 
-    const productStandardHours = product.standardHours || standardHours || 0;
+    // 直接使用数据源选项中的数据（label作为产品名称，value作为产品编码）
+    const finalProductCode = dataSourceOption.value;
+    const finalProductName = dataSourceOption.label;
 
-    // 检查是否已存在相同记录
+    // 从产品标准配置中查找标准工时（如果前端没有传递）
+    let productStandardHours = standardHours || 0;
+
+    if (productStandardHours === 0 && orgId) {
+      // 根据记录日期匹配对应的标准配置
+      const targetDate = new Date(recordDate);
+      targetDate.setHours(0, 0, 0, 0);
+
+      // 使用新的匹配逻辑查找标准配置
+      const standardHourConfig = await this.findMatchingStandardHourConfig(
+        productId,
+        orgId,
+        orgName || '',
+        targetDate
+      );
+
+      if (standardHourConfig) {
+        // 找到标准工时配置，计算标准工时
+        if (standardHourConfig.quantity && standardHourConfig.quantity > 0) {
+          // 配置的是：X件 = Y标准工时
+          // 需要计算：实际产量对应的标准工时
+          productStandardHours = standardHourConfig.standardHours / standardHourConfig.quantity;
+        } else {
+          // 配置的是：1件 = X标准工时
+          productStandardHours = standardHourConfig.standardHours;
+        }
+      } else {
+        console.log(`[个人产量] 未找到标准配置，使用默认值 0`);
+      }
+    }
+
+    // 检查是否已存在相同记录（按日期、员工、班次、劳动力账户验证唯一性）
     const existing = await this.prisma.personalProductionRecord.findFirst({
       where: {
         recordDate: new Date(recordDate),
         employeeNo,
-        productId,
+        shiftId: shiftId || null, // 班次
+        orgId: orgId || null, // 劳动力账户
         deletedAt: null,
       },
     });
 
     if (existing) {
-      throw new BadRequestException('该员工该日期该产品的产量记录已存在');
+      throw new BadRequestException('该员工在该日期、班次、劳动力账户下的产量记录已存在');
     }
 
     // 计算挣得工时 = 实际产量 * 标准工时
@@ -5117,9 +6629,9 @@ export class AllocationService {
         lineName,
         shiftId,
         shiftName,
-        productId,
-        productCode,
-        productName,
+        productId: productId, // 使用数据源选项ID
+        productCode: finalProductCode,
+        productName: finalProductName,
         actualQty: actualQty || 0,
         standardHours: productStandardHours,
         earnedHours,
@@ -5130,39 +6642,116 @@ export class AllocationService {
       },
     });
 
-    // 往CalcResult表插入挣得工时记录
-    // 首先需要查找是否有对应的AttendanceCode
-    const attendanceCode = await this.prisma.attendanceCode.findFirst({
-      where: { code: 'EARNED_HOURS' },
+    // 往WorkHourResult表插入挣得工时记录
+    // 1. 从系统配置中获取挣得工时出勤代码
+    const earnedHoursConfig = await this.prisma.systemConfig.findUnique({
+      where: { configKey: 'earnedHoursAttendanceCode' },
     });
 
-    // 创建或更新CalcResult记录
-    const calcDate = new Date(recordDate);
-    calcDate.setHours(0, 0, 0, 0);
+    const earnedHoursAttendanceCode = earnedHoursConfig?.configValue || 'EARNED_HOURS';
+    console.log(`[挣得工时] 配置的出勤代码: ${earnedHoursAttendanceCode}`);
 
-    await this.prisma.calcResult.create({
-      data: {
+    // 2. 查找对应的DefinitionAttendanceCode（挣得工时配置使用DefinitionAttendanceCode）
+    const attendanceCode = await this.prisma.definitionAttendanceCode.findFirst({
+      where: { code: earnedHoursAttendanceCode },
+    });
+
+    console.log(`[挣得工时] 找到的出勤代码: ${attendanceCode ? `${attendanceCode.code} - ${attendanceCode.name} (id: ${attendanceCode.id})` : 'null'}`);
+
+    // 3. 创建或更新WorkHourResult记录
+    const workDate = new Date(recordDate);
+    workDate.setHours(0, 0, 0, 0);
+
+    // 4. 先删除当天该员工的所有挣得工时记录（全量更新）
+    if (attendanceCode) {
+      await this.prisma.workHourResult.deleteMany({
+        where: {
+          employeeNo,
+          workDate,
+          definitionAttendanceCodeId: attendanceCode.id,
+          sourceType: 'PERSONAL_PRODUCTION',
+        },
+      });
+    }
+
+    // 5. 查询当天该员工的所有个人产量记录
+    const personalRecords = await this.prisma.personalProductionRecord.findMany({
+      where: {
         employeeNo,
-        calcDate,
-        shiftId: shiftId || null,
-        shiftName: shiftName || null,
-        attendanceCodeId: attendanceCode?.id || null,
-        standardHours: 0,
-        actualHours: 0,
-        overtimeHours: 0,
-        leaveHours: 0,
-        absenceHours: 0,
-        accountHours: JSON.stringify([
-          {
-            accountId: lineId || orgId,
-            accountName: lineName || orgName,
-            hours: earnedHours,
-            type: 'EARNED_HOURS',
-          }
-        ]),
-        status: 'COMPLETED',
+        recordDate: new Date(recordDate),
+        deletedAt: null,
       },
     });
+
+    // 6. 按劳动力账户(orgId)分组汇总挣得工时
+    const earnedHoursByOrg = new Map<number, { orgName: string; hours: number }>();
+    for (const record of personalRecords) {
+      const orgId = record.orgId;
+      const orgName = record.orgName;
+      const hours = record.earnedHours || 0;
+
+      if (orgId) {
+        const current = earnedHoursByOrg.get(orgId) || { orgName, hours: 0 };
+        current.hours += hours;
+        earnedHoursByOrg.set(orgId, current);
+      }
+    }
+
+    // 7. 为每个劳动力账户创建一条WorkHourResult记录
+    if (attendanceCode) {
+      console.log(`[挣得工时] 开始创建 WorkHourResult，共 ${earnedHoursByOrg.size} 个劳动力账户`);
+
+      // 批量查询所有涉及的 LaborAccount，获取 accountPath
+      const orgIds = Array.from(earnedHoursByOrg.keys());
+      const laborAccounts = await this.prisma.laborAccount.findMany({
+        where: {
+          id: { in: orgIds },
+        },
+        select: {
+          id: true,
+          path: true,
+          accountPath: true,
+        },
+      });
+
+      // 创建映射: orgId -> path
+      const accountPathMap = new Map<number, string>();
+      laborAccounts.forEach((account) => {
+        accountPathMap.set(account.id, account.path || account.accountPath || '');
+      });
+
+      for (const [orgId, data] of earnedHoursByOrg.entries()) {
+        console.log(`[挣得工时] 创建记录: employeeNo=${employeeNo}, workDate=${workDate.toISOString()}, workHours=${data.hours}, accountId=${orgId}`);
+        try {
+          const result = await this.prisma.workHourResult.create({
+            data: {
+              employeeNo,
+              workDate,
+              calcDate: new Date(),
+              shiftId: shiftId || null,
+              shiftName: shiftName || null,
+              definitionAttendanceCodeId: attendanceCode.id,
+              definitionAttendanceCodeStr: attendanceCode.code, // ✅ 存储代码而非名称
+              attendanceCode: earnedHoursAttendanceCode,
+              attendanceCodeName: attendanceCode.name || '挣得工时',
+              workHours: data.hours,
+              accountId: orgId,
+              accountName: data.orgName,
+              accountPath: accountPathMap.get(orgId) || '', // ✅ 添加账户路径
+              orgId,
+              sourceType: 'PERSONAL_PRODUCTION', // 标识来源为个人产量
+              source: '个人产量',
+              status: 'COMPLETED',
+            },
+          });
+          console.log(`[挣得工时] 创建成功: id=${result.id}`);
+        } catch (error) {
+          console.error(`[挣得工时] 创建失败:`, error);
+        }
+      }
+    } else {
+      console.log(`[挣得工时] attendanceCode 为 null，跳过创建 WorkHourResult`);
+    }
 
     return record;
   }

@@ -151,7 +151,13 @@ export class AmountCalculateService {
         policyAttendanceCodes = [];
       }
 
+      console.log(`[金额政策匹配] 检查政策: ${policy.name} (${policy.code})`);
+      console.log(`  政策出勤代码:`, policyAttendanceCodes);
+      console.log(`  实际出勤代码: ${attendanceCode}`);
+      console.log(`  出勤代码匹配: ${policyAttendanceCodes.includes(attendanceCode)}`);
+
       if (!policyAttendanceCodes.includes(attendanceCode)) {
+        console.log(`  ❌ 出勤代码不匹配，跳过`);
         continue;
       }
 
@@ -162,14 +168,22 @@ export class AmountCalculateService {
         policy.accountPathMatch || 'EXACT'
       );
 
+      console.log(`  政策账户路径: ${policy.accountPath}`);
+      console.log(`  实际账户路径: ${accountPath}`);
+      console.log(`  匹配类型: ${policy.accountPathMatch || 'EXACT'}`);
+      console.log(`  账户路径匹配: ${isAccountMatch}`);
+
       if (!isAccountMatch) {
+        console.log(`  ❌ 账户路径不匹配，跳过`);
         continue;
       }
 
       // 找到匹配的政策
+      console.log(`  ✅ 找到匹配的政策: ${policy.name}`);
       return policy;
     }
 
+    console.log(`[金额政策匹配] ❌ 没有找到匹配的政策`);
     return null;
   }
 
@@ -193,6 +207,12 @@ export class AmountCalculateService {
       return actualPath === policyPath;
     } else if (matchType === 'PREFIX') {
       return actualPath.startsWith(policyPath);
+    } else if (matchType === 'LEVEL') {
+      // LEVEL 匹配：检查账户路径的层级是否匹配
+      // 例如：DH/DH01/DH0101//A02 应该匹配 DH/DH01/DH0101/A02
+      // 处理 // 的情况
+      const normalizePath = (path: string) => path.replace(/\/\//g, '/');
+      return normalizePath(actualPath) === normalizePath(policyPath);
     }
 
     return false;

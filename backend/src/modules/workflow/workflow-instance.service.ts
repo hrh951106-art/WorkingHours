@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateWorkflowInstanceDto, SubmitApprovalDto, GetInstancesDto, ForceApprovalDto, InstanceStatus } from './dto/workflow-instance.dto';
+import { AmountCalculateService } from '../amount/amount-calculate.service';
 
 @Injectable()
 export class WorkflowInstanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly amountCalculateService: AmountCalculateService,
+  ) {}
 
   /**
    * 生成实例编号
@@ -1203,20 +1207,82 @@ export class WorkflowInstanceService {
       calcAttendanceCode: definitionAttendanceCode.calcAttendanceCode,
     });
 
+    // ✅ 从账户表查询正确的代码路径
+    const account = await tx.laborAccount.findUnique({
+      where: { id: report.accountId },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        path: true, // ✅ 代码路径
+        namePath: true, // ✅ 名称路径
+      },
+    });
+
+    if (!account) {
+      console.error(`[createWorkHourResult] 账户 ID ${report.accountId} 不存在`);
+      throw new Error(`账户 ID ${report.accountId} 不存在`);
+    }
+
+    console.log(`[createWorkHourResult] 查询到的账户信息:`, {
+      accountId: account.id,
+      code: account.code,
+      name: account.name,
+      path: account.path,
+      namePath: account.namePath,
+    });
+
     // 构建工作时间（使用本地时间）
     const workDate = new Date(report.reportDate);
-    const [startHour, startMinute] = report.startTime.split(':');
-    const [endHour, endMinute] = report.endTime.split(':');
 
-    // 创建本地时间的Date对象（会按照本地时区解释）
-    const startTime = new Date(workDate);
-    startTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
-    const endTime = new Date(workDate);
-    endTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
+    // ✅ 检查 startTime 和 endTime 是否存在
+    let startTime = null;
+    let endTime = null;
+    let localStartTimeStr = null;
+    let localEndTimeStr = null;
 
-    // 保存原始的本地时间字符串，方便后续使用
-    const localStartTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.startTime}`;
-    const localEndTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.endTime}`;
+    if (report.startTime && report.endTime) {
+      const [startHour, startMinute] = report.startTime.split(':');
+      const [endHour, endMinute] = report.endTime.split(':');
+
+      // 创建本地时间的Date对象（会按照本地时区解释）
+      startTime = new Date(workDate);
+      startTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
+      endTime = new Date(workDate);
+      endTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
+
+      // 保存原始的本地时间字符串，方便后续使用
+      localStartTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.startTime}`;
+      localEndTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.endTime}`;
+    }
+
+    // ✅ 计算金额
+    let amount = 0;
+    const calcAttendanceCode = definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code;
+
+    try {
+      console.log('[createWorkHourResult] 开始计算金额');
+      console.log('  员工:', employeeNo);
+      console.log('  计算代码:', calcAttendanceCode);
+      console.log('  工时数:', report.value);
+      console.log('  账户路径:', account.path);
+      console.log('  计算日期:', workDate);
+
+      // 调用金额计算服务
+      amount = await this.amountCalculateService.calculateAmountByNo({
+        employeeNo: employeeNo || '',
+        workHours: report.value,
+        attendanceCode: calcAttendanceCode,
+        accountPath: account.path,
+        calcDate: workDate,
+      });
+
+      console.log('[createWorkHourResult] 金额计算成功，金额:', amount);
+    } catch (error) {
+      console.error('[createWorkHourResult] 金额计算失败:', error);
+      // 金额计算失败时，设置为0并继续处理
+      amount = 0;
+    }
 
     // 写入工时结果表
     await tx.workHourResult.create({
@@ -1226,14 +1292,16 @@ export class WorkflowInstanceService {
         workDate: workDate,
         calcDate: workDate, // ✅ 修复：使用 workDate 而不是 new Date()
         definitionAttendanceCodeId: definitionAttendanceCode.id, // ✅ 添加新字段
-        definitionAttendanceCodeStr: definitionAttendanceCode.name, // ✅ 添加新字段
-        calcAttendanceCode: definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code, // ✅ 添加新字段
+        definitionAttendanceCodeStr: definitionAttendanceCode.code, // ✅ 修复：存储代码而非名称
+        calcAttendanceCode: calcAttendanceCode, // ✅ 添加新字段
         attendanceCode: report.hourType, // 保留旧字段以兼容
         attendanceCodeName: report.hourTypeName, // 保留旧字段以兼容
         workHours: report.value,
+        amount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
+        calculateAmount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
         accountId: report.accountId,
-        accountName: report.accountName,
-        accountPath: report.accountCode,
+        accountName: account.namePath || account.name, // ✅ 修复：使用名称路径或名称
+        accountPath: account.path, // ✅ 修复：使用代码路径
         sourceType: 'LABOR_HOUR_REPORT', // 标记为工时报工填报数据
         sourceId: report.id,
         source: `工时报表申请: ${report.title}`,

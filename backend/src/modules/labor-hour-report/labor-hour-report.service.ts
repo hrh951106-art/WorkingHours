@@ -4,12 +4,14 @@ import { CreateLaborHourReportRequestDto } from './dto/create-request.dto';
 import { ApproveLaborHourReportRequestDto } from './dto/approve-request.dto';
 import { WorkflowInstanceService } from '../workflow/workflow-instance.service';
 import { ApiResponse } from '../../common/dto/response.dto';
+import { AmountCalculateService } from '../amount/amount-calculate.service';
 
 @Injectable()
 export class LaborHourReportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflowInstanceService: WorkflowInstanceService,
+    private readonly amountCalculateService: AmountCalculateService,
   ) {}
 
   /**
@@ -316,7 +318,10 @@ export class LaborHourReportService {
     }
 
     // ✅ 转换时间字符串 (HH:mm) 为完整的 DateTime 对象
-    const parseTime = (timeStr: string, date: Date) => {
+    const parseTime = (timeStr: string | null | undefined, date: Date) => {
+      if (!timeStr) {
+        return null; // 如果没有时间，返回 null
+      }
       const [hours, minutes] = timeStr.split(':').map(Number);
       const result = new Date(date);
       result.setHours(hours, minutes, 0, 0);
@@ -340,7 +345,31 @@ export class LaborHourReportService {
         },
       });
 
-      // 2. 确定要创建工时结果的员工列表
+      // 2. 从账户表查询正确的代码路径
+      const account = await tx.laborAccount.findUnique({
+        where: { id: request.accountId },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          path: true, // ✅ 代码路径
+          namePath: true, // ✅ 名称路径
+        },
+      });
+
+      if (!account) {
+        throw new BadRequestException(`账户 ID ${request.accountId} 不存在`);
+      }
+
+      console.log('查询到的账户信息:', {
+        accountId: account.id,
+        code: account.code,
+        name: account.name,
+        path: account.path,
+        namePath: account.namePath,
+      });
+
+      // 3. 确定要创建工时结果的员工列表
       let employeesToCreate: Array<{ employeeId: number; employeeNo: string; employeeName: string }> = [];
 
       if (request.reportMode === 'team' && request.employees && request.employees.length > 0) {
@@ -359,38 +388,70 @@ export class LaborHourReportService {
         }];
       }
 
-      // 3. 为每个员工创建工时结果记录
+      // 4. 为每个员工创建工时结果记录
       for (const employee of employeesToCreate) {
         console.log('创建工时结果记录，员工:', employee.employeeNo);
         console.log('definitionAttendanceCodeId:', definitionAttendanceCode.id);
-        console.log('definitionAttendanceCodeStr:', definitionAttendanceCode.name);
+        console.log('definitionAttendanceCodeStr (code):', definitionAttendanceCode.code);
         console.log('calcAttendanceCode:', definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code);
+        console.log('accountPath (代码路径):', account.path);
+
+        // ✅ 计算金额
+        // 根据申报时选择的出勤代码（hourType）到 DefinitionAttendanceCode 表找到对应的计算代码
+        // 结合个人的金额规则计算出金额
+        let amount = 0;
+        const calcAttendanceCode = definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code;
+
+        try {
+          console.log('开始计算金额，员工:', employee.employeeNo);
+          console.log('计算出勤代码:', calcAttendanceCode);
+          console.log('工时数:', request.value);
+          console.log('账户路径:', account.path);
+          console.log('计算日期:', request.reportDate);
+
+          // 调用金额计算服务
+          amount = await this.amountCalculateService.calculateAmountByNo({
+            employeeNo: employee.employeeNo,
+            workHours: request.value,
+            attendanceCode: calcAttendanceCode, // 使用计算代码
+            accountPath: account.path,
+            calcDate: request.reportDate,
+          });
+
+          console.log('金额计算成功，金额:', amount);
+        } catch (error) {
+          console.error('金额计算失败:', error);
+          // 金额计算失败时，设置为0并继续处理
+          amount = 0;
+        }
 
         const workHourResult = await tx.workHourResult.create({
           data: {
             employeeId: employee.employeeId,
             employeeNo: employee.employeeNo,
             accountId: request.accountId,
-            accountName: request.accountName,
-            accountPath: request.accountCode, // 暂时使用accountCode作为path
+            accountName: account.namePath || account.name, // ✅ 使用名称路径或名称
+            accountPath: account.path, // ✅ 使用代码路径
             workDate: request.reportDate,
             calcDate: request.reportDate, // ✅ 添加 calcDate 字段
             startTime: startTime, // ✅ 添加 startTime 字段
             endTime: endTime, // ✅ 添加 endTime 字段
             definitionAttendanceCodeId: definitionAttendanceCode.id, // ✅ 使用新字段
-            definitionAttendanceCodeStr: definitionAttendanceCode.name, // ✅ 使用新字段
-            calcAttendanceCode: definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code, // ✅ 添加 calcAttendanceCode
+            definitionAttendanceCodeStr: definitionAttendanceCode.code, // ✅ 修复：存储代码而非名称
+            calcAttendanceCode: calcAttendanceCode, // ✅ 添加 calcAttendanceCode
             attendanceCode: request.hourType, // 保留旧字段以兼容
             attendanceCodeName: request.hourTypeName, // 保留旧字段以兼容
             workHours: request.value,
+            amount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
+            calculateAmount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
             sourceType: 'LABOR_HOUR_REPORT',
             sourceId: request.id,
-            source: `工时报表申请: ${request.title}`,
+            source: `工时报表申请: ${request.employeeName || request.employeeNo} - ${request.hourTypeName} - ${new Date(request.reportDate).toLocaleDateString('zh-CN')}`, // ✅ 动态生成描述
             status: 'ACTIVE',
           },
         });
 
-        console.log('工时结果记录创建成功，ID:', workHourResult.id);
+        console.log('工时结果记录创建成功，ID:', workHourResult.id, '金额:', amount);
       }
     });
 

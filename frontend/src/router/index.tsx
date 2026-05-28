@@ -108,6 +108,471 @@ const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
+    path: '/embed',
+    element: (
+      <ProtectedRoute>
+        <SuspenseWrapper>
+          <Outlet />
+        </SuspenseWrapper>
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="/embed/hr/data-source-management" replace /> },
+      {
+        path: 'hr',
+        children: [
+          {
+            path: 'data-source-management',
+            element: (
+              <SuspenseWrapper>
+                <DataSourceManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'custom-field-config',
+            element: (
+              <SuspenseWrapper>
+                <CustomFieldConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'employee-info-config',
+            element: (
+              <SuspenseWrapper>
+                <EmployeeInfoConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'search-conditions-config',
+            element: (
+              <SuspenseWrapper>
+                <SearchConditionsConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'unified-search-condition-configs',
+            element: (
+              <SuspenseWrapper>
+                <UnifiedSearchConditionConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'account',
+        element: (
+          <SuspenseWrapper>
+            <AccountPage />
+          </SuspenseWrapper>
+        ),
+      },
+      {
+        path: 'punch',
+        children: [
+          {
+            path: 'devices',
+            element: (
+              <SuspenseWrapper>
+                <DeviceManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'records',
+            element: (
+              <SuspenseWrapper>
+                <PunchRecordPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'device-groups',
+            element: (
+              <SuspenseWrapper>
+                <DeviceGroupPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'shift',
+        children: [
+          {
+            path: 'shifts',
+            element: (
+              <SuspenseWrapper>
+                <ShiftPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'shifts/:id',
+            element: (
+              <SuspenseWrapper>
+                <ShiftEditPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'property-config',
+            element: (
+              <SuspenseWrapper>
+                <ShiftPropertyConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'schedules',
+            element: (
+              <SuspenseWrapper>
+                <SchedulePage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'calculate',
+        children: [
+          {
+            path: 'results',
+            element: (
+              <SuspenseWrapper>
+                <CalculateResultPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'pairing-results',
+            element: (
+              <SuspenseWrapper>
+                <PunchPairResultPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'work-hour-results',
+            element: (
+              <SuspenseWrapper>
+                <WorkHourResultPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'config/punch-rules',
+            element: (
+              <SuspenseWrapper>
+                <PunchRulesPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'config/attendance-codes',
+            element: (
+              <SuspenseWrapper>
+                <AttendanceCodePage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'config/amount-policies',
+            element: (
+              <SuspenseWrapper>
+                <AmountPolicyPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'config/attendance-rule-groups',
+            element: (
+              <SuspenseWrapper>
+                <AttendanceRuleGroupPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'attendance-code-definition',
+            element: (
+              <SuspenseWrapper>
+                <AttendanceCodeDefinitionPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'attendance',
+        children: [
+          {
+            path: 'dashboard',
+            element: (
+              <SuspenseWrapper>
+                <AttendanceDashboardPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'workhour-details',
+            element: (
+              <SuspenseWrapper>
+                <WorkHourDetailPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'allocation',
+        children: [
+          {
+            path: 'line-maintenance',
+            element: (
+              <SuspenseWrapper>
+                <LineMaintenancePage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'new-production-records',
+            element: (
+              <SuspenseWrapper>
+                <NewProductionRecordPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'config',
+            element: (
+              <SuspenseWrapper>
+                <AllocationConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'calculate',
+            element: (
+              <SuspenseWrapper>
+                <AllocationCalculatePage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'results',
+            element: (
+              <SuspenseWrapper>
+                <AllocationResultPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'basic-config',
+            element: (
+              <SuspenseWrapper>
+                <AllocationBasicConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'approval',
+        children: [
+          {
+            path: 'pending',
+            element: (
+              <SuspenseWrapper>
+                <PendingApprovalPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'my-applications',
+            element: (
+              <SuspenseWrapper>
+                <MyApplicationsPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'support',
+        children: [
+          {
+            path: 'list',
+            element: (
+              <SuspenseWrapper>
+                <SupportRequestListPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'create',
+            element: (
+              <SuspenseWrapper>
+                <SupportRequestCreatePage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'detail/:id',
+            element: (
+              <SuspenseWrapper>
+                <SupportRequestDetailPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'report',
+        children: [
+          {
+            path: 'list',
+            element: (
+              <SuspenseWrapper>
+                <ProductionReportListPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'create',
+            element: (
+              <SuspenseWrapper>
+                <ProductionReportCreatePage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'labor-hour-report',
+        children: [
+          {
+            path: 'list',
+            element: (
+              <SuspenseWrapper>
+                <LaborHourReportListPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'create',
+            element: (
+              <SuspenseWrapper>
+                <LaborHourReportCreatePage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: ':id',
+            element: (
+              <SuspenseWrapper>
+                <LaborHourReportDetailPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'system',
+        children: [
+          {
+            path: 'users',
+            element: (
+              <SuspenseWrapper>
+                <SystemPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'roles',
+            element: (
+              <SuspenseWrapper>
+                <RoleManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+      {
+        path: 'workflow',
+        children: [
+          {
+            path: 'form-config',
+            element: (
+              <SuspenseWrapper>
+                <FormWorkflowConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'form-config/:formKey',
+            element: (
+              <SuspenseWrapper>
+                <FormWorkflowConfigDetailPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'definitions',
+            element: (
+              <SuspenseWrapper>
+                <WorkflowDefinitionListPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'designer',
+            element: (
+              <SuspenseWrapper>
+                <WorkflowDesignerPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'instances',
+            element: (
+              <SuspenseWrapper>
+                <WorkflowInstanceListPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'participants',
+            element: (
+              <SuspenseWrapper>
+                <WorkflowParticipantListPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'participants/create',
+            element: (
+              <SuspenseWrapper>
+                <WorkflowParticipantFormPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'participants/:id/edit',
+            element: (
+              <SuspenseWrapper>
+                <WorkflowParticipantFormPage />
+              </SuspenseWrapper>
+            ),
+          },
+        ],
+      },
+    ],
+  },
+  {
     path: '/',
     element: (
       <ProtectedRoute>
@@ -531,26 +996,10 @@ const router = createBrowserRouter([
             ),
           },
           {
-            path: 'form-config/:formKey',
-            element: (
-              <SuspenseWrapper>
-                <FormWorkflowConfigDetailPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
             path: 'definitions',
             element: (
               <SuspenseWrapper>
                 <WorkflowDefinitionListPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'designer',
-            element: (
-              <SuspenseWrapper>
-                <WorkflowDesignerPage />
               </SuspenseWrapper>
             ),
           },
@@ -781,402 +1230,6 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <BiReportDesignerPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-    ],
-  },
-  {
-    path: '/embed',
-    element: (
-      <ProtectedRoute>
-        <SuspenseWrapper>
-          <Outlet />
-        </SuspenseWrapper>
-      </ProtectedRoute>
-    ),
-    children: [
-      { index: true, element: <Navigate to="/embed/hr/data-source-management" replace /> },
-      {
-        path: 'hr',
-        children: [
-          {
-            path: 'data-source-management',
-            element: (
-              <SuspenseWrapper>
-                <DataSourceManagementPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'custom-field-config',
-            element: (
-              <SuspenseWrapper>
-                <CustomFieldConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'employee-info-config',
-            element: (
-              <SuspenseWrapper>
-                <EmployeeInfoConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'search-conditions-config',
-            element: (
-              <SuspenseWrapper>
-                <SearchConditionsConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'unified-search-condition-configs',
-            element: (
-              <SuspenseWrapper>
-                <UnifiedSearchConditionConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'account',
-        element: (
-          <SuspenseWrapper>
-            <AccountPage />
-          </SuspenseWrapper>
-        ),
-      },
-      {
-        path: 'punch',
-        children: [
-          {
-            path: 'devices',
-            element: (
-              <SuspenseWrapper>
-                <DeviceManagementPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'records',
-            element: (
-              <SuspenseWrapper>
-                <PunchRecordPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'device-groups',
-            element: (
-              <SuspenseWrapper>
-                <DeviceGroupPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'shift',
-        children: [
-          {
-            path: 'shifts',
-            element: (
-              <SuspenseWrapper>
-                <ShiftPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'shifts/:id',
-            element: (
-              <SuspenseWrapper>
-                <ShiftEditPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'property-config',
-            element: (
-              <SuspenseWrapper>
-                <ShiftPropertyConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'schedules',
-            element: (
-              <SuspenseWrapper>
-                <SchedulePage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'calculate',
-        children: [
-          {
-            path: 'results',
-            element: (
-              <SuspenseWrapper>
-                <CalculateResultPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'pairing-results',
-            element: (
-              <SuspenseWrapper>
-                <PunchPairResultPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'work-hour-results',
-            element: (
-              <SuspenseWrapper>
-                <WorkHourResultPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'config/punch-rules',
-            element: (
-              <SuspenseWrapper>
-                <PunchRulesPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'config/attendance-codes',
-            element: (
-              <SuspenseWrapper>
-                <AttendanceCodePage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'config/amount-policies',
-            element: (
-              <SuspenseWrapper>
-                <AmountPolicyPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'config/attendance-rule-groups',
-            element: (
-              <SuspenseWrapper>
-                <AttendanceRuleGroupPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'attendance-code-definition',
-            element: (
-              <SuspenseWrapper>
-                <AttendanceCodeDefinitionPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'attendance',
-        children: [
-          {
-            path: 'dashboard',
-            element: (
-              <SuspenseWrapper>
-                <AttendanceDashboardPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'workhour-details',
-            element: (
-              <SuspenseWrapper>
-                <WorkHourDetailPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'allocation',
-        children: [
-          {
-            path: 'line-maintenance',
-            element: (
-              <SuspenseWrapper>
-                <LineMaintenancePage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'new-production-records',
-            element: (
-              <SuspenseWrapper>
-                <NewProductionRecordPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'config',
-            element: (
-              <SuspenseWrapper>
-                <AllocationConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'calculate',
-            element: (
-              <SuspenseWrapper>
-                <AllocationCalculatePage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'results',
-            element: (
-              <SuspenseWrapper>
-                <AllocationResultPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'basic-config',
-            element: (
-              <SuspenseWrapper>
-                <AllocationBasicConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'approval',
-        children: [
-          {
-            path: 'pending',
-            element: (
-              <SuspenseWrapper>
-                <PendingApprovalPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'my-applications',
-            element: (
-              <SuspenseWrapper>
-                <MyApplicationsPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'support',
-        children: [
-          {
-            path: 'list',
-            element: (
-              <SuspenseWrapper>
-                <SupportRequestListPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'create',
-            element: (
-              <SuspenseWrapper>
-                <SupportRequestCreatePage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'detail/:id',
-            element: (
-              <SuspenseWrapper>
-                <SupportRequestDetailPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'report',
-        children: [
-          {
-            path: 'list',
-            element: (
-              <SuspenseWrapper>
-                <ProductionReportListPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'create',
-            element: (
-              <SuspenseWrapper>
-                <ProductionReportCreatePage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'labor-hour-report',
-        children: [
-          {
-            path: 'list',
-            element: (
-              <SuspenseWrapper>
-                <LaborHourReportListPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'create',
-            element: (
-              <SuspenseWrapper>
-                <LaborHourReportCreatePage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: ':id',
-            element: (
-              <SuspenseWrapper>
-                <LaborHourReportDetailPage />
-              </SuspenseWrapper>
-            ),
-          },
-        ],
-      },
-      {
-        path: 'system',
-        children: [
-          {
-            path: 'users',
-            element: (
-              <SuspenseWrapper>
-                <SystemPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'roles',
-            element: (
-              <SuspenseWrapper>
-                <RoleManagementPage />
               </SuspenseWrapper>
             ),
           },

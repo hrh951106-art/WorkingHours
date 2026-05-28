@@ -1244,13 +1244,14 @@ model LaborHourReportRequest {
   employeeName      String?
   hourType          String
   hourTypeName      String
-  startTime         String               // 格式: HH:mm
-  endTime           String               // 格式: HH:mm
+  startTime         String?              // 格式: HH:mm，可选
+  endTime           String?              // 格式: HH:mm，可选
   value             Float
   unit              String               @default("小时")
   description       String?
   accountId         Int
   accountCode        String
+  accountPath       String               @default("")
   accountName       String
   status            String               @default("PENDING")  // PENDING, APPROVED, REJECTED
   requesterId       Int
@@ -1665,6 +1666,7 @@ model EarnedHoursAllocationResult {
   recordDate            DateTime
   configId              Int
   configVersion         Int
+  ruleName              String?
   sourceEmployeeNo      String?
   sourceEmployeeName    String?
   sourceAccountId       Int?
@@ -1676,6 +1678,7 @@ model EarnedHoursAllocationResult {
   targetAccountName     String?
   sourceHours           Float
   allocatedHours        Float
+  allocationRatio       Float?
   calcResultId          Int?
   calcTime              DateTime
   createdAt             DateTime                 @default(now())
@@ -1685,6 +1688,7 @@ model EarnedHoursAllocationResult {
   @@index([batchNo])
   @@index([recordDate])
   @@index([configId])
+  @@index([ruleName])
   @@index([sourceEmployeeNo])
   @@index([calcTime])
   @@index([deletedAt])

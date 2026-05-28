@@ -119,19 +119,22 @@ export class AttendanceRuleGroupService {
       createdByName: string;
     },
   ) {
-    let {
-      code,
+    const {
+      code: originalCode,
       name,
       description,
       isDefault,
-      attendanceCodeIds,
-      amountPolicyIds,
+      attendanceCodeIds: originalAttendanceCodeIds,
+      amountPolicyIds: rawAmountPolicyIds,
       amountPolicyGroupIds,
       attendancePunchRuleId,
       leanPunchRuleId,
       createdById,
       createdByName,
     } = data;
+
+    // 处理最终的金额政策ID列表
+    let amountPolicyIds = rawAmountPolicyIds;
 
     // 如果提供了 amountPolicyGroupIds，获取这些组中的所有金额政策ID
     if (amountPolicyGroupIds && amountPolicyGroupIds.length > 0) {
@@ -148,11 +151,12 @@ export class AttendanceRuleGroupService {
       });
 
       // 合并 amountPolicyIds 和从组中提取的 IDs
-      amountPolicyIds = [...new Set([...(amountPolicyIds || []), ...groupPolicyIds])];
+      amountPolicyIds = [...new Set([...(rawAmountPolicyIds || []), ...groupPolicyIds])];
     }
 
     // 确保数组不为 undefined
-    attendanceCodeIds = attendanceCodeIds || [];
+    let attendanceCodeIds = originalAttendanceCodeIds || [];
+    let code = originalCode;
     amountPolicyIds = amountPolicyIds || [];
 
     // 如果没有提供code，自动生成序号编码
@@ -217,28 +221,69 @@ export class AttendanceRuleGroupService {
       isDefault?: boolean;
       attendanceCodeIds?: number[];
       amountPolicyIds?: number[];
+      amountPolicyGroupIds?: number[];
       attendancePunchRuleId?: number;
       leanPunchRuleId?: number;
       status?: string;
     },
   ) {
+    console.log('🔧 Service 层开始更新考勤规则组:');
+    console.log('  id:', id);
+    console.log('  接收到的 data:', JSON.stringify(data, null, 2));
+
     const existing = await this.prisma.attendanceRuleGroup.findUnique({
       where: { id },
       include: { details: true },
     });
 
     if (!existing) {
+      console.error('❌ 考勤规则组不存在:', id);
       throw new NotFoundException('考勤规则组不存在');
     }
+
+    console.log('✅ 找到现有规则组:', existing.name);
+    console.log('  现有明细数量:', existing.details?.length || 0);
 
     const {
       isDefault,
       attendanceCodeIds,
-      amountPolicyIds,
+      amountPolicyIds: rawAmountPolicyIds,
+      amountPolicyGroupIds,
       attendancePunchRuleId,
       leanPunchRuleId,
       ...rest
     } = data;
+
+    console.log('📋 解构后的字段:');
+    console.log('  isDefault:', isDefault);
+    console.log('  attendanceCodeIds:', attendanceCodeIds);
+    console.log('  rawAmountPolicyIds:', rawAmountPolicyIds);
+    console.log('  amountPolicyGroupIds:', amountPolicyGroupIds);
+    console.log('  attendancePunchRuleId:', attendancePunchRuleId);
+    console.log('  leanPunchRuleId:', leanPunchRuleId);
+    console.log('  rest:', rest);
+
+    // 处理最终的金额政策ID列表
+    let finalAmountPolicyIds = rawAmountPolicyIds;
+
+    // 如果提供了 amountPolicyGroupIds，获取这些组中的所有金额政策ID
+    if (amountPolicyGroupIds && amountPolicyGroupIds.length > 0) {
+      const policyGroups = await this.prisma.amountPolicyGroup.findMany({
+        where: { id: { in: amountPolicyGroupIds } },
+      });
+
+      const groupPolicyIds = policyGroups.flatMap((group) => {
+        try {
+          return JSON.parse(group.policyIds || '[]');
+        } catch {
+          return [];
+        }
+      });
+
+      // 合并 amountPolicyIds 和从组中提取的 IDs
+      finalAmountPolicyIds = [...new Set([...(rawAmountPolicyIds || []), ...groupPolicyIds])];
+      console.log('  合并后的 finalAmountPolicyIds:', finalAmountPolicyIds);
+    }
 
     // 如果设置为默认规则组，需要取消其他默认规则组
     if (isDefault) {
@@ -259,7 +304,7 @@ export class AttendanceRuleGroupService {
       // 如果有明细相关字段更新，更新明细
       if (
         attendanceCodeIds ||
-        amountPolicyIds ||
+        finalAmountPolicyIds ||
         attendancePunchRuleId !== undefined ||
         leanPunchRuleId !== undefined
       ) {
@@ -288,7 +333,7 @@ export class AttendanceRuleGroupService {
                 JSON.parse(existing.details[0]?.attendanceCodeIds || '[]'),
             ),
             amountPolicyIds: JSON.stringify(
-              amountPolicyIds ||
+              finalAmountPolicyIds ||
                 JSON.parse(existing.details[0]?.amountPolicyIds || '[]'),
             ),
           },

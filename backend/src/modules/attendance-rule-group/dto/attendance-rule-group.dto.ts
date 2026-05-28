@@ -63,6 +63,11 @@ export class UpdateAttendanceRuleGroupDto {
   amountPolicyIds?: number[];
 
   @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  amountPolicyGroupIds?: number[];
+
+  @IsOptional()
   @IsNumber()
   attendancePunchRuleId?: number;
 
