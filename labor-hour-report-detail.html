@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工时报工详情 | 盖雅WFM</title>
+<style>
+:root {
+  --color-primary: #00B365;
+  --color-primary-hover: #00994F;
+  --color-primary-light: rgba(0,179,101,0.08);
+  --color-nav-bg: #00B365;
+  --color-nav-text: rgba(255,255,255,0.65);
+  --color-nav-text-active: #FFFFFF;
+  --color-nav-item-active-bg: rgba(255,255,255,0.2);
+  --color-success: #00B365; --color-info: #1890FF; --color-warning: #FAAD14; --color-error: #F5222D;
+  --color-text-primary: #1F2F4D; --color-text-secondary: #5A6A87; --color-text-tertiary: #8C96A8; --color-text-disabled: #BCC4D0;
+  --color-border-1: #E5E8ED; --color-border-2: #D0D5DD;
+  --color-bg-white: #FFFFFF; --color-bg-light: #F7F8FA; --color-bg-dark: #F0F2F5; --color-bg-disabled: #F5F5F5;
+  --shadow-s1: 0 1px 5px rgba(31,47,77,0.1);
+  --font-family: 'PingFang SC','Heiti SC','Microsoft YaHei',Roboto,Helvetica,Arial,sans-serif;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-default: 16px; --space-lg: 20px; --space-xl: 24px;
+  --radius-sm: 2px; --radius-md: 4px; --radius-lg: 8px;
+  --divider-color: #E5E8ED; --divider-size: 1px;
+  --duration-fast: 0.15s; --duration-normal: 0.2s;
+  --ease-out: cubic-bezier(0.25,0.8,0.25,1); --ease-in-out: cubic-bezier(0.4,0,0.2,1);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:var(--font-family);font-size:12px;color:var(--color-text-primary);background:var(--color-bg-dark);line-height:1.5;}
+
+/* === 顶部导航（Tab式） === */
+.top-nav{height:48px;background:var(--color-nav-bg);display:flex;align-items:center;padding:0 var(--space-lg);color:#fff;position:fixed;top:0;left:0;right:0;z-index:100;}
+.logo{width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:var(--space-sm);}
+.nav-tabs{display:flex;align-items:stretch;height:48px;gap:0;flex:1;}
+.nav-tab{display:flex;align-items:center;padding:0 var(--space-default);font-size:14px;color:var(--color-nav-text);cursor:pointer;transition:all var(--duration-fast) var(--ease-out);white-space:nowrap;}
+.nav-tab:hover{color:var(--color-nav-text-active);}
+.nav-tab.active{color:var(--color-primary);background:var(--color-bg-white);border-radius:var(--radius-md) var(--radius-md) 0 0;font-weight:500;}
+.nav-tab-dropdown{font-size:13px;}
+.nav-right{display:flex;align-items:center;gap:var(--space-md);}
+.nav-search{height:28px;width:140px;border-radius:14px;border:none;background:rgba(255,255,255,0.15);color:#fff;padding:0 var(--space-md);font-size:12px;outline:none;font-family:inherit;}
+.nav-search::placeholder{color:rgba(255,255,255,0.4);}
+.nav-icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:var(--radius-md);color:rgba(255,255,255,0.65);}
+.nav-icon:hover{color:#fff;background:rgba(255,255,255,0.1);}
+.nav-user{display:flex;align-items:center;gap:var(--space-sm);cursor:pointer;color:rgba(255,255,255,0.85);font-size:12px;white-space:nowrap;}
+.nav-user-avatar{width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;flex-shrink:0;}
+
+/* === 全局侧边栏 === */
+.sidebar{width:200px;background:var(--color-bg-white);border-right:var(--divider-size) solid var(--divider-color);padding:var(--space-sm) 0;position:fixed;top:48px;bottom:0;overflow-y:auto;overflow-x:hidden;transition:width var(--duration-normal) var(--ease-in-out);display:flex;flex-direction:column;}
+.sidebar.collapsed{width:64px;}
+.sidebar-content{flex:1;overflow-y:auto;overflow-x:hidden;}
+.menu-label{padding:var(--space-sm) var(--space-lg) var(--space-xs);font-size:10px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;overflow:hidden;transition:opacity var(--duration-normal) var(--ease-in-out);}
+.sidebar.collapsed .menu-label{opacity:0;height:0;padding:0;margin:0;}
+.menu-item{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-sm) var(--space-lg);cursor:pointer;color:var(--color-text-secondary);font-size:14px;transition:all var(--duration-fast) var(--ease-out);border-right:2px solid transparent;white-space:nowrap;overflow:hidden;}
+.menu-item:hover{background:var(--color-primary-light);color:var(--color-primary);}
+.menu-item.active{background:var(--color-primary-light);color:var(--color-primary);font-weight:500;border-right-color:var(--color-primary);}
+.menu-icon{width:16px;height:16px;flex-shrink:0;opacity:.7;}
+.menu-item.active .menu-icon,.menu-item:hover .menu-icon{opacity:1;}
+.menu-item-text{transition:opacity var(--duration-normal) var(--ease-in-out);overflow:hidden;}
+.sidebar.collapsed .menu-item{justify-content:center;padding:var(--space-sm) 0;}
+.sidebar.collapsed .menu-item-text{opacity:0;width:0;}
+.sidebar.collapsed .menu-item{border-right:none;}
+.collapse-btn{display:flex;align-items:center;justify-content:center;padding:var(--space-md) 0;border-top:var(--divider-size) solid var(--divider-color);cursor:pointer;color:var(--color-text-tertiary);transition:color var(--duration-fast) var(--ease-out);flex-shrink:0;}
+.collapse-btn:hover{color:var(--color-primary);background:var(--color-primary-light);}
+
+/* === 主内容区 === */
+.main{margin-left:200px;margin-top:48px;padding:var(--space-lg);transition:margin-left var(--duration-normal) var(--ease-in-out);}
+.main.sidebar-collapsed{margin-left:64px;}
+.main.full-width{margin-left:0;}
+
+/* 面包屑 */
+.breadcrumb{font-size:12px;color:var(--color-text-tertiary);margin-bottom:var(--space-xs);}
+.breadcrumb a{color:var(--color-text-tertiary);text-decoration:none;}
+.breadcrumb a:hover{color:var(--color-primary);}
+.breadcrumb .sep{margin:0 var(--space-xs);}
+.breadcrumb .current{color:var(--color-text-secondary);}
+
+/* 页面标题 */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-lg);}
+.page-header-left{display:flex;align-items:center;gap:var(--space-sm);}
+.back-icon{cursor:pointer;color:var(--color-text-secondary);transition:color var(--duration-fast) var(--ease-out);}
+.back-icon:hover{color:var(--color-primary);}
+.page-title{font-size:20px;font-weight:500;color:var(--color-text-primary);}
+.header-actions{display:flex;gap:var(--space-sm);}
+.btn{height:32px;padding:0 var(--space-md);border-radius:var(--radius-md);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:var(--space-xs);border:var(--divider-size) solid transparent;transition:all var(--duration-fast) var(--ease-out);font-family:inherit;white-space:nowrap;}
+.btn-default{background:var(--color-bg-white);color:var(--color-text-primary);border-color:var(--color-border-2);}
+.btn-default:hover{color:var(--color-primary);border-color:var(--color-primary);}
+.btn-primary{background:var(--color-primary);color:#fff;border-color:var(--color-primary);}
+.btn-primary:hover{background:var(--color-primary-hover);}
+
+/* === 详情内容（全宽布局） === */
+.detail-content{width:100%;}
+
+/* 大卡片：一整块白色卡片包裹一组字段 */
+.info-card{background:var(--color-bg-white);border-radius:var(--radius-lg);border:var(--divider-size) solid var(--color-border-1);margin-bottom:var(--space-lg);overflow:hidden;}
+.info-card-header{display:flex;align-items:center;justify-content:space-between;padding:var(--space-lg) var(--space-xl);border-bottom:var(--divider-size) solid var(--divider-color);}
+.info-card-title{font-size:16px;font-weight:500;color:var(--color-text-primary);}
+.info-card-body{padding:var(--space-xl) var(--space-xl);}
+
+/* 字段网格（双列，在大卡片内部）- 增加行距 */
+.field-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--space-lg) var(--space-xl);margin-bottom:var(--space-default);}
+.field-grid:last-child{margin-bottom:0;}
+.field-item{display:flex;flex-direction:column;gap:var(--space-xs);}
+.field-item.full-width{grid-column:1/-1;}
+.fi-label{font-size:12px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:2px;line-height:20px;}
+.fi-label .required{color:var(--color-error);}
+.fi-value{font-size:14px;color:var(--color-text-primary);min-height:24px;line-height:24px;}
+.fi-value.empty{color:var(--color-text-disabled);}
+.fi-value.link{color:var(--color-primary);cursor:pointer;}
+.fi-value.link:hover{color:var(--color-primary-hover);}
+.fi-value.hidden-val{display:flex;align-items:center;gap:var(--space-xs);}
+
+/* 表单概要卡片 - 紧凑布局 */
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-xl) var(--space-xl);margin-bottom:var(--space-default);}
+.summary-item{display:flex;flex-direction:column;gap:var(--space-xs);}
+.si-label{font-size:12px;color:var(--color-text-tertiary);line-height:20px;}
+.si-value{font-size:14px;color:var(--color-text-primary);font-weight:500;line-height:24px;}
+
+/* 状态标签 */
+.tag{display:inline-flex;align-items:center;height:22px;padding:0 var(--space-sm);border-radius:var(--radius-sm);font-size:12px;white-space:nowrap;}
+.tag-success{background:rgba(0,179,101,0.1);color:#00B365;}
+.tag-info{background:rgba(24,144,255,0.1);color:#1890FF;}
+.tag-warning{background:rgba(250,173,20,0.1);color:#FAAD14;}
+.tag-error{background:rgba(245,34,45,0.1);color:#F5222D;}
+</style>
+</head>
+<body>
+
+<!--
+  ============================================
+  盖雅 WFM 工时报工表单详情页
+  ============================================
+  布局：全局侧边栏(200px) | 全宽内容区
+  内容：表单概要 + 表单详细信息
+  使用说明：
+  1. 全局侧边栏与列表页一致，保留折叠功能
+  2. 移除人员面板，使用全宽布局
+  3. 表单概要使用紧凑的4列网格布局
+  4. 表单信息使用双列字段网格，增加行距（gap: 24px）
+   ============================================
+-->
+
+<!-- 顶部导航 -->
+<header class="top-nav">
+  <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3C8 3 5 6 5 10c0 2 .8 3.8 2.2 5.2L12 20l4.8-4.8C18.2 13.8 19 12 19 10c0-4-3-7-7-7z" fill="#fff"/><path d="M12 6v11M12 7.5L9 10.5M12 7.5l3 3M12 10.5L9.5 13M12 10.5l2.5 2.5" stroke="var(--color-primary)" stroke-width="1" stroke-linecap="round"/><path d="M12 20v2" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+  <div class="nav-tabs">
+    <div class="nav-tab nav-tab-dropdown">首页 ▾</div>
+    <div class="nav-tab">主页</div>
+    <div class="nav-tab">工作台</div>
+    <div class="nav-tab active">工时管理 ×</div>
+  </div>
+  <div class="nav-right">
+    <input class="nav-search" type="text" placeholder="搜索">
+    <div class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg></div>
+    <div class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></div>
+    <div class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
+    <div class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15-.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></div>
+    <div class="nav-user"><div class="nav-user-avatar">彭</div>彭小景 ▾</div>
+  </div>
+</header>
+
+<!-- 全局侧边栏 -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-content">
+    <div>
+      <div class="menu-label">工时管理</div>
+      <div class="menu-item"><svg class="menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 2"/></svg><span class="menu-item-text">工时记录</span></div>
+      <div class="menu-item"><svg class="menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h8M2 12h10"/></svg><span class="menu-item-text">加班申请</span></div>
+      <div class="menu-item active"><svg class="menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M6 3v10"/></svg><span class="menu-item-text">工时报工</span></div>
+      <div class="menu-item"><svg class="menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="12" height="9" rx="1"/><path d="M6 3v18"/></svg><span class="menu-item-text">工时分摊</span></div>
+    </div>
+    <div>
+      <div class="menu-label">劳动力管理</div>
+      <div class="menu-item"><svg class="menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 2"/></svg><span class="menu-item-text">产量记录</span></div>
+      <div class="menu-item"><svg class="menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/></svg><span class="menu-item-text">开线计划</span></div>
+    </div>
+  </div>
+  <div class="collapse-btn" id="collapseBtn" title="收起导航">
+    <svg id="collapseIcon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16"><path d="M10 3L5 8l5 5"/></svg>
+  </div>
+</aside>
+
+<!-- 主内容区 -->
+<div class="main">
+  <div class="breadcrumb">
+    <a href="#">首页</a><span class="sep">&gt;</span>
+    <a href="#">工时管理</a><span class="sep">&gt;</span>
+    <a href="#">工时报工</a><span class="sep">&gt;</span>
+    <span class="current">工时报工详情</span>
+  </div>
+
+  <div class="page-header">
+    <div class="page-header-left">
+      <svg class="back-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16"><path d="M10 3L5 8l5 5"/></svg>
+      <div class="page-title">工时报工详情</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-default">撤回申请</button>
+      <button class="btn btn-default">编辑</button>
+    </div>
+  </div>
+
+  <!-- 详情内容 -->
+  <div class="detail-content">
+
+    <!-- 表单概要卡片 -->
+    <div class="info-card">
+      <div class="info-card-header">
+        <div class="info-card-title">表单概要</div>
+      </div>
+      <div class="info-card-body">
+        <div class="summary-grid">
+          <div class="summary-item">
+            <div class="si-label">申请编号</div>
+            <div class="si-value">LABOR20260527001</div>
+          </div>
+          <div class="summary-item">
+            <div class="si-label">发起人</div>
+            <div class="si-value">彭小景</div>
+          </div>
+          <div class="summary-item">
+            <div class="si-label">申请状态</div>
+            <div class="si-value"><span class="tag tag-success">审批中</span></div>
+          </div>
+          <div class="summary-item">
+            <div class="si-label">申请时间</div>
+            <div class="si-value">2026-05-27 14:30</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 表单基本信息卡片 -->
+    <div class="info-card">
+      <div class="info-card-header">
+        <div class="info-card-title">表单信息</div>
+      </div>
+      <div class="info-card-body">
+        <div class="field-grid">
+          <div class="field-item">
+            <div class="fi-label">报工模式</div>
+            <div class="fi-value">团队报工（6人）</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">工时类型</div>
+            <div class="fi-value">作业工时</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">报工日期</div>
+            <div class="fi-value">2026-05-27</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">班次</div>
+            <div class="fi-value">长白班</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">开始时间</div>
+            <div class="fi-value">08:00</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">结束时间</div>
+            <div class="fi-value">17:00</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">工时数量</div>
+            <div class="fi-value">54 小时</div>
+          </div>
+          <div class="field-item">
+            <div class="fi-label">报工归属</div>
+            <div class="fi-value">生产一部-装配线</div>
+          </div>
+        </div>
+
+        <!-- 报工人员列表（独占一行） -->
+        <div class="field-grid" style="margin-top: var(--space-xl);">
+          <div class="field-item full-width">
+            <div class="fi-label">报工人员（6人）</div>
+            <div class="fi-value">
+              <div style="display:flex;flex-wrap:wrap;gap:var(--space-sm);">
+                <span class="tag tag-info">彭小景（A001）</span>
+                <span class="tag tag-info">张三（A002）</span>
+                <span class="tag tag-info">李四（A003）</span>
+                <span class="tag tag-info">王五（A004）</span>
+                <span class="tag tag-info">赵六（A005）</span>
+                <span class="tag tag-info">孙七（A006）</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 备注（独占一行） -->
+        <div class="field-grid" style="margin-top: var(--space-lg);">
+          <div class="field-item full-width">
+            <div class="fi-label">备注说明</div>
+            <div class="fi-value">本次团队报工共6人，总工时54小时，用于装配线产品A的生产作业。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 审批历史卡片 -->
+    <div class="info-card">
+      <div class="info-card-header">
+        <div class="info-card-title">审批历史</div>
+      </div>
+      <div class="info-card-body">
+        <table class="sub-table" style="width:100%;">
+          <thead>
+            <tr>
+              <th>审批节点</th>
+              <th>审批人</th>
+              <th>审批时间</th>
+              <th>审批意见</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>审批</td>
+              <td>系统管理员</td>
+              <td>2026-05-27 14:31</td>
+              <td>同意</td>
+              <td><span class="tag tag-success">已通过</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.getElementById('collapseBtn').addEventListener('click', function() {
+  var sidebar = document.getElementById('sidebar');
+  var main = document.querySelector('.main');
+  var icon = document.getElementById('collapseIcon');
+  sidebar.classList.toggle('collapsed');
+  main.classList.toggle('sidebar-collapsed');
+  icon.innerHTML = sidebar.classList.contains('collapsed') ? '<path d="M6 3l5 5-5 5"/>' : '<path d="M10 3L5 8l5 5"/>';
+  this.title = sidebar.classList.contains('collapsed') ? '展开导航' : '收起导航';
+});
+</script>
+</body>
+</html>

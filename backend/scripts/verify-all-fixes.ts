@@ -1,60 +1,118 @@
 import { PrismaClient } from '@prisma/client';
+
 const prisma = new PrismaClient();
 
-async function verifyAllFixes() {
+async function main() {
   console.log('=== 验证所有修复 ===\n');
 
-  const criticalFields = [
-    'position',      // 职位 - WorkInfoHistory 表字段
-    'jobLevel',      // 职级 - WorkInfoHistory 表字段
-    'employeeType',  // 员工类型 - WorkInfoHistory 表字段
-    'nation',        // 民族 - Employee 表字段
-    'educationLevel',// 学历层次 - EmployeeEducation 表字段
-    'educationType', // 学历类型 - EmployeeEducation 表字段
-    'gender',        // 性别 - Employee 表字段
-    'maritalStatus', // 婚姻状况 - Employee 表字段
-  ];
+  // 1. 验证 PERSONAL_PRODUCTION 类型
+  console.log('1. 验证 PERSONAL_PRODUCTION 类型:\n');
 
-  console.log('关键字段类型验证:');
-  console.log('========================================\n');
+  const personalProductionResults = await prisma.workHourResult.findMany({
+    where: { sourceType: 'PERSONAL_PRODUCTION' },
+    select: {
+      id: true,
+      employeeNo: true,
+      definitionAttendanceCodeId: true,
+      definitionAttendanceCodeStr: true,
+      accountId: true,
+      accountName: true,
+      accountPath: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+  });
 
-  let allCorrect = true;
+  console.log(\);
 
-  for (const fieldCode of criticalFields) {
-    const field = await prisma.employeeInfoTabField.findFirst({
-      where: { fieldCode },
-      select: { fieldCode: true, fieldType: true, fieldName: true }
+  if (personalProductionResults.length > 0) {
+    const defCodes = await prisma.definitionAttendanceCode.findMany({
+      where: {
+        id: { in: personalProductionResults.map(r => r.definitionAttendanceCodeId).filter((id): id is number => id !== null) },
+      },
+      select: { id: true, code: true, name: true },
     });
 
-    if (!field) {
-      console.log(`⚠️  ${fieldCode}: 未找到配置`);
-      allCorrect = false;
-      continue;
-    }
+    let correctCodeCount = 0;
+    let correctPathCount = 0;
 
-    const isCorrect = field.fieldType === 'SYSTEM';
-    const status = isCorrect ? '✓' : '✗';
+    personalProductionResults.forEach(result => {
+      const defCode = defCodes.find(d => d.id === result.definitionAttendanceCodeId);
+      const isCodeFormat = defCode && result.definitionAttendanceCodeStr === defCode.code;
+      const hasPath = result.accountPath && result.accountPath.length > 0;
 
-    console.log(`${status} ${field.fieldCode}: fieldType = "${field.fieldType}" (${field.fieldName})`);
+      if (isCodeFormat) correctCodeCount++;
+      if (hasPath) correctPathCount++;
 
-    if (!isCorrect) {
-      allCorrect = false;
-    }
+      console.log(`ID: ${result.id}`);
+      console.log(`  definitionAttendanceCodeStr: "${result.definitionAttendanceCodeStr}" ${isCodeFormat ? '✓ 代码格式' : '✗ 非代码格式'}`);
+      console.log(`  accountPath: "${result.accountPath || 'null'}" ${hasPath ? '✓ 有路径' : '✗ 缺少路径'}`);
+      console.log('');
+    });
+
+    console.log(`统计:`);
+    console.log(`  definitionAttendanceCodeStr 正确率: ${correctCodeCount}/${personalProductionResults.length}`);
+    console.log(`  accountPath 有值率: ${correctPathCount}/${personalProductionResults.length}`);
   }
 
-  console.log('\n========================================');
-  if (allCorrect) {
-    console.log('✓ 所有关键字段的 fieldType 都已正确设置为 SYSTEM');
-    console.log('\n修复效果:');
-    console.log('1. 基本信息页签的数据将正确显示');
-    console.log('2. 工作信息页签的数据将正确显示');
-    console.log('3. 学历信息页签的数据将正确显示');
-    console.log('4. 下拉字段将显示标签而不是原始值');
-  } else {
-    console.log('✗ 仍有部分字段需要修复');
+  // 2. 验证 LABOR_HOUR_REPORT 类型
+  console.log('\n2. 验证 LABOR_HOUR_REPORT 类型:\n');
+
+  const laborReportResults = await prisma.workHourResult.findMany({
+    where: { sourceType: 'LABOR_HOUR_REPORT' },
+    select: {
+      id: true,
+      employeeNo: true,
+      definitionAttendanceCodeId: true,
+      definitionAttendanceCodeStr: true,
+      accountPath: true,
+      source: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  console.log(\);
+
+  if (laborReportResults.length > 0) {
+    const defCodes = await prisma.definitionAttendanceCode.findMany({
+      where: {
+        id: { in: laborReportResults.map(r => r.definitionAttendanceCodeId).filter((id): id is number => id !== null) },
+      },
+      select: { id: true, code: true, name: true },
+    });
+
+    let correctCodeCount = 0;
+    let correctPathCount = 0;
+    let correctSourceCount = 0;
+
+    laborReportResults.forEach(result => {
+      const defCode = defCodes.find(d => d.id === result.definitionAttendanceCodeId);
+      const isCodeFormat = defCode && result.definitionAttendanceCodeStr === defCode.code;
+      const isPathFormat = result.accountPath && result.accountPath.includes('/');
+      const isSimpleSource = result.source === '工时报工';
+
+      if (isCodeFormat) correctCodeCount++;
+      if (isPathFormat) correctPathCount++;
+      if (isSimpleSource) correctSourceCount++;
+
+      console.log(`ID: ${result.id}`);
+      console.log(`  definitionAttendanceCodeStr: "${result.definitionAttendanceCodeStr}" ${isCodeFormat ? '✓' : '✗'}`);
+      console.log(`  accountPath: "${result.accountPath}" ${isPathFormat ? '✓' : '✗'}`);
+      console.log(`  source: "${result.source}" ${isSimpleSource ? '✓' : '✗'}`);
+      console.log('');
+    });
+
+    console.log(`统计:`);
+    console.log(`  definitionAttendanceCodeStr 正确率: ${correctCodeCount}/${laborReportResults.length}`);
+    console.log(`  accountPath 正确率: ${correctPathCount}/${laborReportResults.length}`);
+    console.log(`  source 正确率: ${correctSourceCount}/${laborReportResults.length}`);
   }
 
-  await prisma.$disconnect();
+  console.log('\n=== 验证完成 ===');
 }
 
-verifyAllFixes().catch(console.error);
+main()
+  .then(() => process.exit(0))
+  .catch((error) => { console.error('验证失败:', error); process.exit(1); })
+  .finally(async () => await prisma.());
