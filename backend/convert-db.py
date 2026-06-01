@@ -7,7 +7,7 @@ SQLite到PostgreSQL转换工具
 import sqlite3
 import os
 import re
-from datetime import datetime
+from datetime import datetime as dt
 
 def convert_sqlite_to_postgres():
     db_path = 'prisma/dev.db'
@@ -41,7 +41,7 @@ def convert_sqlite_to_postgres():
     with open(schema_file, 'w', encoding='utf-8') as f:
         f.write("-- =====================================================\n")
         f.write("-- PostgreSQL Schema Export (表结构定义)\n")
-        f.write(f"-- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"-- 生成时间: {dt.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("-- =====================================================\n\n")
         f.write("SET client_encoding = 'UTF8';\n")
         f.write("SET standard_conforming_strings = on;\n\n")
@@ -149,7 +149,7 @@ def convert_sqlite_to_postgres():
     with open(data_file, 'w', encoding='utf-8') as f:
         f.write("-- =====================================================\n")
         f.write("-- PostgreSQL Data Export (数据导入)\n")
-        f.write(f"-- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"-- 生成时间: {dt.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("-- =====================================================\n\n")
         f.write("SET client_encoding = 'UTF8';\n")
         f.write("SET standard_conforming_strings = on;\n\n")
@@ -189,7 +189,20 @@ def convert_sqlite_to_postgres():
                         elif isinstance(value, bool):
                             values.append('true' if value else 'false')
                         elif isinstance(value, int):
-                            values.append(str(value))
+                            # 检查是否是时间戳字段（通过字段名判断）
+                            time_keywords = ['time', 'date', 'created', 'updated', 'start', 'end',
+                                           'effective', 'expiry', 'report', 'production', 'work', 'calc',
+                                           'punch', 'schedule', 'adjusted', 'operation', 'graduation']
+                            if any(keyword in col_name.lower() for keyword in time_keywords):
+                                # 转换Unix时间戳（毫秒）到PostgreSQL TIMESTAMP格式
+                                if value > 0:
+                                    # 毫秒时间戳转秒
+                                    timestamp_dt = dt.fromtimestamp(value / 1000)
+                                    values.append(f"'{timestamp_dt.strftime('%Y-%m-%d %H:%M:%S')}'")
+                                else:
+                                    values.append('NULL')
+                            else:
+                                values.append(str(value))
                         elif isinstance(value, float):
                             values.append(str(value))
                         else:
