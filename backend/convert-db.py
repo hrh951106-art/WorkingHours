@@ -179,7 +179,8 @@ def convert_sqlite_to_postgres():
                 # 生成INSERT语句
                 for row in rows:
                     values = []
-                    for value in row:
+                    for idx, value in enumerate(row):
+                        col_name = columns[idx]  # 获取当前字段名
                         if value is None:
                             values.append('NULL')
                         elif isinstance(value, str):
@@ -195,12 +196,15 @@ def convert_sqlite_to_postgres():
                                            'punch', 'schedule', 'adjusted', 'operation', 'graduation']
                             if any(keyword in col_name.lower() for keyword in time_keywords):
                                 # 转换Unix时间戳（毫秒）到PostgreSQL TIMESTAMP格式
-                                if value > 0:
-                                    # 毫秒时间戳转秒
+                                # 合理的时间戳范围：1970-2100年
+                                # 1970-01-01: 0
+                                # 1990-01-01: 631152000000
+                                # 2100-01-01: 4102444800000
+                                if value >= 0 and value <= 4102444800000:
                                     timestamp_dt = dt.fromtimestamp(value / 1000)
                                     values.append(f"'{timestamp_dt.strftime('%Y-%m-%d %H:%M:%S')}'")
                                 else:
-                                    values.append('NULL')
+                                    values.append(str(value))
                             else:
                                 values.append(str(value))
                         elif isinstance(value, float):
