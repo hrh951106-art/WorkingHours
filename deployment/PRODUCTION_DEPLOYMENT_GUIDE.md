@@ -110,7 +110,7 @@ sudo -u postgres psql
 
 # 在 PostgreSQL 命令行中执行
 CREATE DATABASE jy_production;
-CREATE USER jy_user WITH ENCRYPTED PASSWORD 'your_secure_password_here';
+CREATE USER jy_user WITH ENCRYPTED PASSWORD 'Aaronhe';
 GRANT ALL PRIVILEGES ON DATABASE jy_production TO jy_user;
 \q
 

@@ -40,6 +40,8 @@ const AttendanceCardPage = lazy(() => import('@/pages/attendance/AttendanceCardP
 const AllocationPage = lazy(() => import('@/pages/allocation/AllocationPage'));
 const AllocationConfigPage = lazy(() => import('@/pages/allocation/AllocationConfigPage'));
 const AllocationBasicConfigPage = lazy(() => import('@/pages/allocation/AllocationBasicConfigPage'));
+const WorkHourBasicConfigPage = lazy(() => import('@/pages/allocation/WorkHourBasicConfigPage'));
+const ProductStandardHoursConfigPage = lazy(() => import('@/pages/allocation/ProductStandardHoursConfigPage'));
 const AllocationCalculatePage = lazy(() => import('@/pages/allocation/AllocationCalculatePage'));
 const AllocationResultPage = lazy(() => import('@/pages/allocation/AllocationResultPage'));
 const LineMaintenancePage = lazy(() => import('@/pages/allocation/LineMaintenancePage'));
@@ -375,6 +377,30 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <AllocationBasicConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'work-hour-basic-config',
+            element: (
+              <SuspenseWrapper>
+                <WorkHourBasicConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'product-config',
+            element: (
+              <SuspenseWrapper>
+                <ProductConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'product-standard-hours-config',
+            element: (
+              <SuspenseWrapper>
+                <ProductStandardHoursConfigPage />
               </SuspenseWrapper>
             ),
           },

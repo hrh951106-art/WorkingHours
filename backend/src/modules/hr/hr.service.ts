@@ -2241,6 +2241,11 @@ export class HrService {
       throw new Error('配置键已存在');
     }
 
+    // 特殊处理：standardHoursHierarchyLevels 配置需要使用 level 字段而不是 levelId
+    if (dto.configKey === 'standardHoursHierarchyLevels' && dto.configValue) {
+      dto.configValue = await this.convertLevelIdsToLevels(dto.configValue);
+    }
+
     return this.prisma.systemConfig.create({
       data: dto,
     });
@@ -2255,10 +2260,76 @@ export class HrService {
       throw new NotFoundException('配置不存在');
     }
 
+    // 特殊处理：standardHoursHierarchyLevels 配置需要使用 level 字段而不是 levelId
+    if (key === 'standardHoursHierarchyLevels' && dto.configValue) {
+      dto.configValue = await this.convertLevelIdsToLevels(dto.configValue);
+    }
+
     return this.prisma.systemConfig.update({
       where: { configKey: key },
       data: dto,
     });
+  }
+
+  /**
+   * 将 levelId 转换为 level
+   * 支持格式：单个数字 "5"、逗号分隔 "4,5"、层级名称 "工序,产线"
+   * @param configValue 配置值
+   * @returns 转换后的 level 值
+   */
+  private async convertLevelIdsToLevels(configValue: string): Promise<string> {
+    if (!configValue) {
+      return configValue;
+    }
+
+    // 层级名称到 level 的映射
+    const levelNameMap: Record<string, number> = {
+      '工厂': 1,
+      '车间': 2,
+      '产线': 3,
+      '产品': 4,
+      '工序': 5,
+      '岗位': 6,
+      '技能等级': 7,
+    };
+
+    const values = configValue.split(',').map(v => v.trim());
+    const convertedValues: string[] = [];
+
+    for (const value of values) {
+      const num = parseInt(value);
+
+      if (isNaN(num)) {
+        // 如果不是数字，检查是否是层级名称
+        if (levelNameMap[value]) {
+          convertedValues.push(String(levelNameMap[value]));
+        } else {
+          // 无法识别，保持原样
+          convertedValues.push(value);
+        }
+      } else {
+        // 如果是数字，检查是否是 AccountHierarchyConfig 的 id（> 7），如果是则转换为 level
+        if (num > 7) {
+          // 查询 AccountHierarchyConfig 的 id 对应的 level 字段
+          const hierarchyLevel = await this.prisma.accountHierarchyConfig.findFirst({
+            where: { id: num },
+            select: { level: true },
+          });
+
+          if (hierarchyLevel) {
+            convertedValues.push(String(hierarchyLevel.level));
+          } else {
+            // 未找到对应的 level，保持原样
+            convertedValues.push(value);
+          }
+        } else {
+          // 是 level 数字（1-7），直接使用
+          convertedValues.push(value);
+        }
+      }
+    }
+
+    return convertedValues.join(',');
   }
 
   async deleteSystemConfig(key: string) {

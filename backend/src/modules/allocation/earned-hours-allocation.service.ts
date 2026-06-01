@@ -858,12 +858,14 @@ export class EarnedHoursAllocationService {
   ) {
     const results = [];
 
-    // 获取分摊规则（第一条生效的规则）
+    // 获取分摊规则（在生产记录日期��效的规则）
+    // 注意：应该使用生产记录的日期来判断规则是否生效，而不是当前时间
+    // 这样可以支持回溯计算历史数据
     const rule = rules.find((r) => {
-      const now = new Date();
+      const recordDate = new Date(productionRecord.recordDate);
       const startTime = r.effectiveStartTime ? new Date(r.effectiveStartTime) : null;
       const endTime = r.effectiveEndTime ? new Date(r.effectiveEndTime) : null;
-      return (!startTime || now >= startTime) && (!endTime || now <= endTime);
+      return (!startTime || recordDate >= startTime) && (!endTime || recordDate <= endTime);
     });
 
     if (!rule) {
@@ -1257,25 +1259,15 @@ export class EarnedHoursAllocationService {
       '工序': 5,
     };
 
-    // levelId到层级序号的映射关系（根据系统的层级配置）
-    const levelIdToLevelNumberMap: Record<number, number> = {
-      4: 1,  // levelId 4 -> 第1层 (工厂)
-      5: 2,  // levelId 5 -> 第2层 (车间)
-      6: 3,  // levelId 6 -> 第3层 (产线)
-      7: 4,  // levelId 7 -> 第4层 (产品)
-      8: 5,  // levelId 8 -> 第5层 (工序)
-    };
-
+    // 直接使用层级序号（level字段），不需要levelId映射
+    // hierarchyValues中已包含level字段（1-7），SystemConfig直接配置层级序号即可
     const levelsToExtractNumbers = levelsToExtract.map(l => {
       const num = parseInt(l);
       if (isNaN(num)) {
         // 如果不是数字，尝试从层级名称映射
         return levelNameMap[l] || 0;
       }
-      // 如果是数字，检查是否为 levelId，如果是则转换为层级序号
-      if (levelIdToLevelNumberMap[num]) {
-        return levelIdToLevelNumberMap[num];
-      }
+      // 如果是数字，直接作为层级序号使用（1-7）
       return num;
     }).filter(n => n > 0);
 
@@ -1299,6 +1291,91 @@ export class EarnedHoursAllocationService {
           return value;
         }
         this.logger.log(`[标准工时匹配] 层级${levelNum}(索引${index})超出范围，返回null`);
+        return null;
+      })
+      .filter(v => v !== null) as string[];
+
+    this.logger.log(`[标准工时匹配] 最终提取的值: [${extractedValues.join(', ')}]`);
+
+    return extractedValues;
+  }
+
+  /**
+   * 从hierarchyValues中提取匹配值
+   * @param hierarchyValuesJSON hierarchyValues的JSON字符串
+   * @param hierarchyLevelsToExtract 要提取的层级配置，如 "产品,工序" 或 "4,5"
+   * @returns 提取的值数组，如 ["焊接"] 或 ["W1总装L1产线", "焊接"]
+   */
+  private extractMatchValuesFromHierarchy(
+    hierarchyValuesJSON: string | null,
+    hierarchyLevelsToExtract: string
+  ): string[] {
+    if (!hierarchyValuesJSON || !hierarchyLevelsToExtract) {
+      return [];
+    }
+
+    // 解析hierarchyValues
+    let hierarchyValues: any[] = [];
+    try {
+      hierarchyValues = JSON.parse(hierarchyValuesJSON);
+    } catch (e) {
+      this.logger.error(`[标准工时匹配] 解析hierarchyValues失败: ${e}`);
+      return [];
+    }
+
+    // 解析层级配置（支持 "产品,工序" 或 "4,5" 或 "6,8" 格式）
+    const levelsToExtract = hierarchyLevelsToExtract.split(',').map(l => l.trim());
+
+    // 将层级名称转换为层级编号（序号）
+    const levelNameMap: Record<string, number> = {
+      '工厂': 1,
+      '车间': 2,
+      '产线': 3,
+      '产品': 4,
+      '工序': 5,
+      '岗位': 6,
+      '技能等级': 7,
+    };
+
+    // 直接使用层级序号（level字段），不需要levelId映射
+    const levelsToExtractNumbers = levelsToExtract.map(l => {
+      const num = parseInt(l);
+      if (isNaN(num)) {
+        // 如果不是数字，尝试从层级名称映射
+        return levelNameMap[l] || 0;
+      }
+      // 如果是数字，直接作为层级序号使用（1-7）
+      return num;
+    }).filter(n => n > 0);
+
+    if (levelsToExtractNumbers.length === 0) {
+      return [];
+    }
+
+    this.logger.log(`[标准工时匹配] 从hierarchyValues提取层级: [${levelsToExtractNumbers.join(', ')}]`);
+
+    // 将hierarchyValues转换为level -> value的映射
+    const hierarchyValuesMap = new Map<number, string>();
+    hierarchyValues.forEach((hv: any) => {
+      if (hv.level && hv.selectedValue) {
+        const value = hv.selectedValue.name || hv.selectedValue.code || hv.selectedValue.id;
+        if (value) {
+          hierarchyValuesMap.set(hv.level, String(value));
+        }
+      }
+    });
+
+    this.logger.log(`[标准工时匹配] hierarchyValues包含的层级: [${[...hierarchyValuesMap.keys()].join(', ')}]`);
+
+    // 按层级序号提取对应的值
+    const extractedValues = levelsToExtractNumbers
+      .map(levelNum => {
+        const value = hierarchyValuesMap.get(levelNum);
+        if (value) {
+          this.logger.log(`[标准工时匹配] 提取层级${levelNum}: "${value}"`);
+          return value;
+        }
+        this.logger.log(`[标准工时匹配] 层级${levelNum}在hierarchyValues中为空，跳过`);
         return null;
       })
       .filter(v => v !== null) as string[];
@@ -1340,7 +1417,7 @@ export class EarnedHoursAllocationService {
    * 查找匹配的产品标准工时配置
    * @param productId 产品ID
    * @param orgId 劳动力账户ID
-   * @param orgName 劳动力账户名称路径
+   * @param orgName 劳动力账户名称路径（保留用于日志）
    * @param targetDate 目标日期
    * @returns 匹配的标准工时配置，如果没有匹配则返回 null
    */
@@ -1358,12 +1435,21 @@ export class EarnedHoursAllocationService {
     const hierarchyLevelsToExtract = hierarchyConfig?.configValue || '';
     this.logger.log(`[标准工时匹配] 配置的提取层级: ${hierarchyLevelsToExtract || '(无配置)'}`);
 
-    // 2. 提取匹配值（返回数组）
-    const extractedValues = this.extractMatchValues(orgName, hierarchyLevelsToExtract);
+    // 2. 查询劳动力账户的hierarchyValues
+    const laborAccount = await this.prisma.laborAccount.findFirst({
+      where: { id: orgId },
+      select: { hierarchyValues: true },
+    });
+
+    // 3. 提取匹配值（从hierarchyValues而不是name path）
+    const extractedValues = this.extractMatchValuesFromHierarchy(
+      laborAccount?.hierarchyValues,
+      hierarchyLevelsToExtract
+    );
 
     if (extractedValues.length === 0) {
-      this.logger.log(`[标准工时匹配] 提取的值为空，跳过匹配`);
-      return null;
+      this.logger.log(`[标准工时匹配] 提取的值为空，跳过精确路径匹配，直接尝试全局配置`);
+      // 继续执行，尝试匹配全局配置（accountPath="-"）
     }
 
     // 3. 生成所有可能的路径组合（从精确到粗粒度）

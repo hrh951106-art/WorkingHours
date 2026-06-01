@@ -72,7 +72,7 @@ sudo -u postgres psql
 CREATE DATABASE jy_production;
 
 -- 创建用户
-CREATE USER jy_user WITH ENCRYPTED PASSWORD 'your_strong_password_here';
+CREATE USER jy_user WITH ENCRYPTED PASSWORD 'Aaronhe';
 
 -- 授权
 GRANT ALL PRIVILEGES ON DATABASE jy_production TO jy_user;
@@ -141,7 +141,7 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND t
 #### 5.2 检查数据行数
 
 ```bash
-PGPASSWORD='your_password' psql -U jy_user -d jy_production -h localhost << EOF
+PGPASSWORD='Aaronhe' psql -U jy_user -d jy_production -h localhost << EOF
 SELECT
     table_name,
     (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as columns,

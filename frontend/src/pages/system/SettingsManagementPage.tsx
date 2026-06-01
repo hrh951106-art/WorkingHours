@@ -18,6 +18,7 @@ import {
   EditOutlined,
   FundOutlined,
   PlayCircleOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -172,10 +173,16 @@ const SettingsManagementPage: React.FC = () => {
       icon: <PieChartOutlined />,
       items: [
         {
-          key: '/embed/allocation/basic-config',
-          label: '基础配置',
-          path: '/embed/allocation/basic-config',
+          key: '/embed/allocation/work-hour-basic-config',
+          label: '工时基础配置',
+          path: '/embed/allocation/work-hour-basic-config',
           icon: <SettingOutlined />,
+        },
+        {
+          key: '/embed/allocation/product-standard-hours-config',
+          label: '产品标准配置',
+          path: '/embed/allocation/product-standard-hours-config',
+          icon: <ClockCircleOutlined />,
         },
         {
           key: '/embed/calculate/attendance-code-definition',
