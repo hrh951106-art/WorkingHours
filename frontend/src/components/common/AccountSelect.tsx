@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Select, Button, Tag, message, Modal, Form, Tree } from 'antd';
+import { Select, Button, Tag, message, Modal, Form, Tree, Tabs } from 'antd';
 import { PlusOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
@@ -34,6 +34,8 @@ interface AccountSelectProps {
   mode?: 'multiple' | 'tags';
   // 外部传入的账户列表（优先使用）
   externalAccounts?: Account[];
+  /** 是否显示"其他"页签，默认显示 */
+  showOtherTab?: boolean;
 }
 
 const AccountSelect: React.FC<AccountSelectProps> = ({
@@ -51,11 +53,13 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
   usageType = null,
   mode,
   externalAccounts,
+  showOtherTab = true,
 }) => {
   const queryClient = useQueryClient();
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountForm] = Form.useForm();
   const [selectedLevelValues, setSelectedLevelValues] = useState<Record<number, any>>({});
+  const [currentOtherLevelId, setCurrentOtherLevelId] = useState<number | null>(null);
 
   // 获取最近创建的5个子劳动力账户，按usageType过滤
   const { data: recentAccounts, refetch: refetchRecentAccounts, isLoading: isLoadingRecent, error: recentError } = useQuery({
@@ -592,32 +596,15 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
               </div>
               <div style={{ fontSize: 13, color: '#6366f1', fontWeight: 500, fontFamily: 'monospace' }}>
                 {(() => {
-                  // 获取所有组织类型的层级，按层级序号排序
-                  const orgLevels = hierarchyLevels
-                    ?.filter((l: any) => l.mappingType === 'ORG' || l.mappingType === 'ORG_TYPE')
-                    .sort((a: any, b: any) => a.level - b.level) || [];
+                  const allLevels = hierarchyLevels
+                    ?.sort((a: any, b: any) => a.level - b.level) || [];
 
-                  // 生成显示数组，每个层级都显示
-                  const displayParts = orgLevels.map((level: any) => {
+                  const displayParts = allLevels.map((level: any) => {
                     const selectedValue = selectedLevelValues[level.id];
                     return selectedValue?.name || '';
-                  });
+                  }).filter((name: string) => name !== '');
 
-                  // 获取非组织类型的层级
-                  const otherLevels = hierarchyLevels
-                    ?.filter((l: any) => l.mappingType !== 'ORG' && l.mappingType !== 'ORG_TYPE')
-                    .sort((a: any, b: any) => a.level - b.level) || [];
-
-                  const otherDisplayParts = otherLevels.map((level: any) => {
-                    const selectedValue = selectedLevelValues[level.id];
-                    return selectedValue?.name || '';
-                  });
-
-                  // 合并组织类型和非组织类型的层级
-                  const allParts = [...displayParts, ...otherDisplayParts];
-
-                  // 用 "/" 连接所有层级，未选择的显示为空（会自动形成//）
-                  return allParts.join('/');
+                  return displayParts.join('/') || '尚未选择任何层级';
                 })()}
               </div>
             </div>
@@ -633,137 +620,303 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 24, height: 550 }}>
-          {/* 左侧：所有层级列表 + 组织树 */}
-          <div style={{ width: 400, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* 组织架构部分 */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#6366f1' }}>
-                <ApartmentOutlined style={{ marginRight: 8 }} />
-                组织架构选择
-                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 400, marginTop: 4 }}>
-                  （选择节点自动带出父级）
-                </div>
-              </div>
-              <div style={{ flex: 1, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
-                <Tree
-                  treeData={buildOrgTreeData(orgTree || [])}
-                  defaultExpandAll
-                  showLine
-                  onSelect={(keys, info) => {
-                    if (info.node.data) {
-                      // 找到对应的组织层级配置
-                      const orgType = info.node.data.type;
-                      const level = hierarchyLevels?.find((l: any) => l.mappingValue === orgType);
-                      if (level) {
-                        handleLevelValueChange(level.id, info.node.data);
-                      }
-                    }
-                  }}
-                  style={{ background: 'transparent' }}
-                />
-              </div>
-            </div>
+        {/* Tabs 页签：组织 和 其他 */}
+        <Tabs
+          defaultActiveKey="org"
+          items={[
+            {
+              key: 'org',
+              label: (
+                <span>
+                  <ApartmentOutlined style={{ marginRight: 8 }} />
+                  组织
+                </span>
+              ),
+              children: (
+                <div style={{ height: 650, overflow: 'auto' }}>
+                  {/* 已选择的组织账户显示区域 */}
+                  {(() => {
+                    const orgLevels = hierarchyLevels
+                      ?.filter((l: any) => l.mappingType === 'ORG' || l.mappingType === 'ORG_TYPE')
+                      .sort((a: any, b: any) => a.level - b.level) || [];
 
-            {/* 已选择的层级 */}
-            <div style={{ maxHeight: 200, overflow: 'auto' }}>
-              <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 14 }}>
-                已选择的层级
-              </div>
-              {hierarchyLevels
-                ?.filter((l: any) => l.mappingType === 'ORG' || l.mappingType === 'ORG_TYPE')
-                .map((level: any) => (
-                  <div
-                    key={level.id}
-                    style={{
-                      padding: '8px 12px',
-                      marginBottom: 4,
-                      borderRadius: 6,
-                      background: selectedLevelValues[level.id] ? '#eef2ff' : '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      fontSize: 13,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ fontWeight: 500 }}>{level.name}:</span>
-                    <span style={{ marginLeft: 8, color: selectedLevelValues[level.id] ? '#6366f1' : '#94a3b8', flex: 1 }}>
-                      {selectedLevelValues[level.id]?.name || '未选择'}
-                    </span>
-                    {selectedLevelValues[level.id] && (
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleLevelValueChange(level.id, null);
-                        }}
-                        style={{ padding: '0 4px', fontSize: 12 }}
-                      >
-                        删除
-                      </Button>
-                    )}
-                  </div>
-                ))}
-            </div>
-          </div>
+                    const selectedOrgLevels = orgLevels.filter((level: any) => selectedLevelValues[level.id]);
 
-          {/* 右侧：非组织类型层级选择 */}
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 15 }}>
-              其他层级字段
-            </div>
+                    if (selectedOrgLevels.length === 0) return null;
 
-            {hierarchyLevels
-              ?.filter((l: any) => l.mappingType !== 'ORG' && l.mappingType !== 'ORG_TYPE')
-              .map((level: any) => (
-                <div key={level.id} style={{ marginBottom: 24 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontWeight: 500, fontSize: 14 }}>
-                      {level.name}
-                    </span>
-                    {selectedLevelValues[level.id] && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Tag color="blue">
-                          {selectedLevelValues[level.id]?.name}
-                        </Tag>
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          onClick={() => handleLevelValueChange(level.id, null)}
-                          style={{ padding: '0 4px', fontSize: 12 }}
-                        >
-                          删除
-                        </Button>
+                    // 构建完整的组织账户路径
+                    const buildOrgPath = (): string => {
+                      const pathParts: string[] = [];
+
+                      selectedOrgLevels.forEach((level: any) => {
+                        const selectedValue = selectedLevelValues[level.id];
+                        if (selectedValue) {
+                          // 构建该组织的完整路径（包含父级）
+                          const buildPath = (orgId: number): string => {
+                            const org = flattenOrgTree(orgTree || []).find((o: any) => o.id === orgId);
+                            if (!org) return '';
+                            const parentPath = org.parentId ? buildPath(org.parentId) : '';
+                            return parentPath ? `${parentPath}/${org.name}` : org.name;
+                          };
+
+                          const fullPath = buildPath(selectedValue.id);
+                          pathParts.push(fullPath);
+                        }
+                      });
+
+                      // 去重并合并路径
+                      const uniqueParts = Array.from(new Set(pathParts.join('/').split('/'))).join('/');
+                      return uniqueParts;
+                    };
+
+                    const orgPath = buildOrgPath();
+
+                    // 清空组织类型层级的选中
+                    const handleClearOrgSelection = () => {
+                      const newValues = { ...selectedLevelValues };
+                      orgLevels.forEach((level: any) => {
+                        delete newValues[level.id];
+                      });
+                      setSelectedLevelValues(newValues);
+                    };
+
+                    return (
+                      <div style={{ marginBottom: 16, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 15, color: '#1f2937', fontWeight: 500, fontFamily: 'monospace', flex: 1 }}>
+                            {orgPath || '尚未选择组织账户'}
+                          </div>
+                          <Button
+                            size="small"
+                            danger
+                            onClick={handleClearOrgSelection}
+                            style={{ marginLeft: 12, borderRadius: 6 }}
+                          >
+                            清空
+                          </Button>
+                        </div>
                       </div>
-                    )}
+                    );
+                  })()}
+
+                  {/* 组织架构树 */}
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, background: '#ffffff', minHeight: 500 }}>
+                    <Tree
+                      treeData={buildOrgTreeData(orgTree || [])}
+                      defaultExpandAll
+                      showLine
+                      onSelect={(keys, info) => {
+                        if (info.node.data) {
+                          const orgType = info.node.data.type;
+                          const level = hierarchyLevels?.find((l: any) => l.mappingValue === orgType);
+                          if (level) {
+                            handleLevelValueChange(level.id, info.node.data);
+                          }
+                        }
+                      }}
+                      style={{ background: 'transparent' }}
+                      titleRender={(nodeData: any) => {
+                        const orgType = nodeData.data?.type;
+                        const level = hierarchyLevels?.find((l: any) => l.mappingValue === orgType);
+                        const selectedValue = level ? selectedLevelValues[level.id] : null;
+                        const isSelected = selectedValue?.id === nodeData.data?.id;
+
+                        return (
+                          <span
+                            style={{
+                              color: isSelected ? '#6366f1' : undefined,
+                              fontWeight: isSelected ? 600 : 400,
+                            }}
+                          >
+                            {nodeData.title}
+                          </span>
+                        );
+                      }}
+                    />
                   </div>
-                  <Select
-                    showSearch
-                    allowClear
-                    placeholder={`请选择${level.name}`}
-                    value={selectedLevelValues[level.id]?.id}
-                    onChange={(value) => {
-                      const option = getLevelValues(level).find((v: any) => v.id === value);
-                      if (option) {
-                        handleLevelValueChange(level.id, option);
-                      } else {
-                        handleLevelValueChange(level.id, null);
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                    options={getLevelValues(level).map((v: any) => ({
-                      label: v.label || v.name,
-                      value: v.id,
-                    }))}
-                  />
                 </div>
-              ))}
-          </div>
-        </div>
+              ),
+            },
+            ...(showOtherTab ? [{
+              key: 'other',
+              label: (
+                <span>
+                  <ApartmentOutlined style={{ marginRight: 8 }} />
+                  其他
+                </span>
+              ),
+              children: (
+                <div style={{ height: 650 }}>
+                  {/* 已选择的其他账户路径显示 - 横跨整个宽度 */}
+                  {(() => {
+                    const otherLevels = hierarchyLevels
+                      ?.filter((l: any) => l.mappingType?.startsWith('FIELD_') || l.mappingType?.startsWith('CUSTOM_'))
+                      .sort((a: any, b: any) => a.level - b.level) || [];
+
+                    const selectedOtherLevels = otherLevels.filter((level: any) => selectedLevelValues[level.id]);
+
+                    if (selectedOtherLevels.length === 0) return null;
+
+                    const otherPath = selectedOtherLevels
+                      .map((level: any) => selectedLevelValues[level.id]?.name)
+                      .filter((name: string) => name)
+                      .join('/');
+
+                    // 清空其他类型层级的选中
+                    const handleClearOtherSelection = () => {
+                      const newValues = { ...selectedLevelValues };
+                      otherLevels.forEach((level: any) => {
+                        delete newValues[level.id];
+                      });
+                      setSelectedLevelValues(newValues);
+                    };
+
+                    return (
+                      <div style={{ marginBottom: 16, padding: 16, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 15, color: '#1f2937', fontWeight: 500, fontFamily: 'monospace', flex: 1 }}>
+                            {otherPath || '尚未选择其他层级'}
+                          </div>
+                          <Button
+                            size="small"
+                            danger
+                            onClick={handleClearOtherSelection}
+                            style={{ marginLeft: 12, borderRadius: 6 }}
+                          >
+                            清空
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 左右分栏布局 */}
+                  <div style={{ display: 'flex', gap: 24, height: 'calc(100% - 80px)' }}>
+                    {/* 左侧：层级字段列表 */}
+                    <div style={{ width: 280, borderRight: '1px solid #e2e8f0', paddingRight: 24, overflow: 'auto' }}>
+                      <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 15, color: '#6366f1' }}>
+                        层级字段
+                      </div>
+                      {(() => {
+                        const otherLevels = hierarchyLevels
+                          ?.filter((l: any) => l.mappingType?.startsWith('FIELD_') || l.mappingType?.startsWith('CUSTOM_'))
+                          .sort((a: any, b: any) => a.level - b.level) || [];
+
+                        return otherLevels.map((level: any) => {
+                          const selectedValue = selectedLevelValues[level.id];
+                          const isActive = currentOtherLevelId === level.id;
+
+                          return (
+                            <div
+                              key={level.id}
+                              onClick={() => setCurrentOtherLevelId(level.id)}
+                              style={{
+                                padding: '12px',
+                                marginBottom: '8px',
+                                borderRadius: '6px',
+                                background: isActive ? '#eef2ff' : '#ffffff',
+                                border: `1px solid ${isActive ? '#6366f1' : '#e2e8f0'}`,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                <div style={{ fontWeight: 500, fontSize: '14px', color: '#1f2937' }}>
+                                  {level.name}
+                                </div>
+                                {selectedValue && (
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    danger
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleLevelValueChange(level.id, null);
+                                    }}
+                                    style={{ padding: '0 4px', fontSize: 12 }}
+                                  >
+                                    清空
+                                  </Button>
+                                )}
+                              </div>
+                              {selectedValue && (
+                                <div style={{ fontSize: 12, color: '#6366f1' }}>
+                                  ✓ {selectedValue.name}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+
+                    {/* 右侧：层级选择值列表 */}
+                    <div style={{ flex: 1, overflow: 'auto' }}>
+                      {currentOtherLevelId ? (
+                        (() => {
+                          const currentLevel = hierarchyLevels?.find((l: any) => l.id === currentOtherLevelId);
+                          if (!currentLevel) return null;
+
+                          const levelValues = getLevelValues(currentLevel);
+                          const selectedValue = selectedLevelValues[currentOtherLevelId];
+
+                          return (
+                            <>
+                              <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 15, color: '#6366f1' }}>
+                                {currentLevel.name} - 选择值
+                              </div>
+                              <div>
+                                {levelValues.map((item: any) => {
+                                  const isSelected = selectedValue?.id === item.id;
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      onClick={() => handleLevelValueChange(currentOtherLevelId, item)}
+                                      style={{
+                                        padding: '12px 16px',
+                                        marginBottom: '8px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #e2e8f0',
+                                        background: isSelected ? '#eef2ff' : '#ffffff',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        ...(isSelected ? { borderColor: '#6366f1', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.1)' } : {}),
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = isSelected ? '#eef2ff' : '#f8fafc';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = isSelected ? '#eef2ff' : '#ffffff';
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ fontWeight: 500, fontSize: 14, color: '#1f2937' }}>
+                                          {item.name}
+                                        </div>
+                                        {isSelected && (
+                                          <div style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+                                            ✓
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9ca3af', fontSize: 14 }}>
+                          请从左侧选择一个层级字段
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ),
+            }] : []),
+          ]}
+        />
       </Modal>
     </>
   );

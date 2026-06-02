@@ -445,6 +445,7 @@ const LineMaintenancePage: React.FC = () => {
               placeholder="请选择产线"
               allowClear
               showCreateButton={false}
+              showOtherTab={false}
               style={{ width: 300 }}
             />
           </Form.Item>
@@ -540,6 +541,7 @@ const LineMaintenancePage: React.FC = () => {
               placeholder="请选择产线账户"
               allowClear={false}
               directOpenCreate={true}
+              showOtherTab={false}
               onAccountCreated={(accountId) => {
                 // 当账户创建成功后，自动填充到表单
                 form.setFieldsValue({ orgId: accountId });
