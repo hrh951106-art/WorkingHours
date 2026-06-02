@@ -203,10 +203,10 @@ const LineMaintenancePage: React.FC = () => {
       // 获取班次信息
       const shiftInfo = shifts?.find((s: any) => s.id === values.shiftId);
 
-      // 获取 WH1001 配置的可选层级
-      const wh1001Config = systemConfigs?.find((c: any) => c.configKey === 'WH1001');
-      const selectableLevelIds = wh1001Config?.configValue
-        ? wh1001Config.configValue.split(',').map((id: string) => parseInt(id.trim()))
+      // 获取 productionLineHierarchyLevel 配置的可选层级
+      const productionLineConfig = systemConfigs?.find((c: any) => c.configKey === 'productionLineHierarchyLevel');
+      const selectableLevelIds = productionLineConfig?.configValue
+        ? productionLineConfig.configValue.split(',').map((id: string) => parseInt(id.trim()))
         : [];
 
       // 获取劳动力账户信息
@@ -238,8 +238,8 @@ const LineMaintenancePage: React.FC = () => {
               )
               .sort((a: any, b: any) => a.level - b.level);
 
-            // 找到用户实际选择的层级：优先使用 WH1001 配置中存在的最深层级（用户最终选择的层级）
-            // 从最深层（level最大）开始找，找到第一个在 WH1001 配置中的层级
+            // 找到用户实际选择的层级：优先使用 productionLineHierarchyLevel 配置中存在的最深层级（用户最终选择的层级）
+            // 从最深层（level最大）开始找，找到���一个在 productionLineHierarchyLevel 配置中的层级
             for (let i = orgLevels.length - 1; i >= 0; i--) {
               const level = orgLevels[i];
               if (selectableLevelIds.includes(level.level) && level.selectedValue?.id) {

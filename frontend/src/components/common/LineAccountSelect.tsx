@@ -47,21 +47,21 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [selectedLevelValues, setSelectedLevelValues] = useState<Record<number, any>>({});
 
-  // 获取 WH1001 配置（开线计划产线选择可选层级）
-  const { data: wh1001Config } = useQuery({
-    queryKey: ['systemConfig', 'WH1001'],
+  // 获取 productionLineHierarchyLevel 配置（开线计划产线选择可选层级）
+  const { data: productionLineHierarchyConfig } = useQuery({
+    queryKey: ['systemConfig', 'productionLineHierarchyLevel'],
     queryFn: () =>
       request.get('/hr/system-configs').then((res: any) => {
-        const config = res?.find((c: any) => c.configKey === 'WH1001');
+        const config = res?.find((c: any) => c.configKey === 'productionLineHierarchyLevel');
         return config?.configValue || ''; // 返回类似 "3" 的字符串
       }),
   });
 
   // 解析可选择的层级ID列表
   const selectableLevelIds = useMemo(() => {
-    if (!wh1001Config) return [];
-    return wh1001Config.split(',').map((id: string) => parseInt(id.trim())).filter((id: number) => !isNaN(id));
-  }, [wh1001Config]);
+    if (!productionLineHierarchyConfig) return [];
+    return productionLineHierarchyConfig.split(',').map((id: string) => parseInt(id.trim())).filter((id: number) => !isNaN(id));
+  }, [productionLineHierarchyConfig]);
 
   // 获取最近创建的5个子劳动力账户
   const { data: recentAccounts, refetch: refetchRecentAccounts } = useQuery({
@@ -300,7 +300,7 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
         // 使用层级序号（level.level）来判断是否可选
         const isSelectable = selectableLevelIds.includes(level.level);
         if (!isSelectable) {
-          message.warning(`"${level.name}"层级不允许选择，请选择WH1001配置的层级`);
+          message.warning(`"${level.name}"层级不允许选择，请选择系统配置的产线层级`);
           return;
         }
       }
