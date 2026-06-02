@@ -191,25 +191,27 @@ async function main() {
           fieldType: field.fieldType,
           isRequired: field.isRequired,
           isHidden: false,
+          isSystem: true,
           sort: field.sort,
         },
       });
     }
 
     // 2.2 工作信息 - 分组和字段
+    // 岗位信息分组（合并了"当前职位"和"组织信息"）
     const workGroup1 = await prisma.employeeInfoTabGroup.upsert({
       where: {
         tabId_code: {
           tabId: workInfoTab.id,
-          code: 'CURRENT_POSITION',
+          code: 'POSITION_INFO',
         },
       },
       update: {},
       create: {
         tabId: workInfoTab.id,
-        code: 'CURRENT_POSITION',
-        name: '当前职位',
-        description: '当前职位和岗位信息',
+        code: 'POSITION_INFO',
+        name: '岗位信息',
+        description: '职位、职级、所属组织等岗位信息',
         sort: 1,
         status: 'ACTIVE',
         collapsed: false,
@@ -217,6 +219,7 @@ async function main() {
       },
     });
 
+    // 雇佣信息分组
     const workGroup2 = await prisma.employeeInfoTabGroup.upsert({
       where: {
         tabId_code: {
@@ -237,34 +240,15 @@ async function main() {
       },
     });
 
-    const workGroup3 = await prisma.employeeInfoTabGroup.upsert({
-      where: {
-        tabId_code: {
-          tabId: workInfoTab.id,
-          code: 'ORG_INFO',
-        },
-      },
-      update: {},
-      create: {
-        tabId: workInfoTab.id,
-        code: 'ORG_INFO',
-        name: '组织信息',
-        description: '所属组织和部门信息',
-        sort: 3,
-        status: 'ACTIVE',
-        collapsed: false,
-        isSystem: true,
-      },
-    });
-
     // 工作信息字段
     const workFields = [
-      // 当前职位分组
-      { groupId: workGroup1.id, fieldCode: 'position', fieldName: '职位', fieldType: 'TEXT', isRequired: false, sort: 1 },
-      { groupId: workGroup1.id, fieldCode: 'jobLevel', fieldName: '职级', fieldType: 'TEXT', isRequired: false, sort: 2 },
-      { groupId: workGroup1.id, fieldCode: 'employeeType', fieldName: '员工类型', fieldType: 'SELECT', isRequired: false, sort: 3 },
-      { groupId: workGroup1.id, fieldCode: 'workLocation', fieldName: '工作地点', fieldType: 'TEXT', isRequired: false, sort: 4 },
-      { groupId: workGroup1.id, fieldCode: 'workAddress', fieldName: '办公地址', fieldType: 'TEXT', isRequired: false, sort: 5 },
+      // 岗位信息分组（合并了职位和组织信息）
+      { groupId: workGroup1.id, fieldCode: 'orgId', fieldName: '所属组织', fieldType: 'ORG_SELECT', isRequired: true, sort: 1 },
+      { groupId: workGroup1.id, fieldCode: 'position', fieldName: '职位', fieldType: 'TEXT', isRequired: false, sort: 2 },
+      { groupId: workGroup1.id, fieldCode: 'jobLevel', fieldName: '职级', fieldType: 'TEXT', isRequired: false, sort: 3 },
+      { groupId: workGroup1.id, fieldCode: 'employeeType', fieldName: '员工类型', fieldType: 'SELECT', isRequired: false, sort: 4 },
+      { groupId: workGroup1.id, fieldCode: 'workLocation', fieldName: '工作地点', fieldType: 'TEXT', isRequired: false, sort: 5 },
+      { groupId: workGroup1.id, fieldCode: 'workAddress', fieldName: '办公地址', fieldType: 'TEXT', isRequired: false, sort: 6 },
 
       // 雇佣信息分组
       { groupId: workGroup2.id, fieldCode: 'entryDate', fieldName: '入职日期', fieldType: 'DATE', isRequired: true, sort: 1 },
@@ -275,9 +259,6 @@ async function main() {
       { groupId: workGroup2.id, fieldCode: 'regularDate', fieldName: '转正日期', fieldType: 'DATE', isRequired: false, sort: 6 },
       { groupId: workGroup2.id, fieldCode: 'workYears', fieldName: '工作年限', fieldType: 'NUMBER', isRequired: false, sort: 7 },
       { groupId: workGroup2.id, fieldCode: 'status', fieldName: '员工状态', fieldType: 'SELECT', isRequired: true, sort: 8 },
-
-      // 组织信息分组
-      { groupId: workGroup3.id, fieldCode: 'orgId', fieldName: '所属组织', fieldType: 'ORG_SELECT', isRequired: true, sort: 1 },
     ];
 
     for (const field of workFields) {
@@ -297,6 +278,7 @@ async function main() {
           fieldType: field.fieldType,
           isRequired: field.isRequired,
           isHidden: false,
+          isSystem: true,
           sort: field.sort,
         },
       });
@@ -324,6 +306,7 @@ async function main() {
           fieldType: field.fieldType,
           isRequired: field.isRequired,
           isHidden: false,
+          isSystem: true,
           sort: field.sort,
         },
       });
@@ -351,6 +334,7 @@ async function main() {
           fieldType: field.fieldType,
           isRequired: field.isRequired,
           isHidden: false,
+          isSystem: true,
           sort: field.sort,
         },
       });
@@ -378,6 +362,7 @@ async function main() {
           fieldType: field.fieldType,
           isRequired: field.isRequired,
           isHidden: false,
+          isSystem: true,
           sort: field.sort,
         },
       });
@@ -400,7 +385,7 @@ async function main() {
     console.log(`字段数量: ${fieldCount}`);
     console.log('\n已创建的页签:');
     console.log('  1. 基本信息 - 个人资料、联系方式、个人详情');
-    console.log('  2. 工作信息 - 当前职位、雇佣信息、组织信息');
+    console.log('  2. 工作信息 - 岗位信息、雇佣信息');
     console.log('  3. 学历信息 - 子表展示');
     console.log('  4. 工作经历 - 子表展示');
     console.log('  5. 家庭信息 - 子表展示');
