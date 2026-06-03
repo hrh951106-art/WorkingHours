@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Select, Button, Tag, message, Modal, Form, Tree, Tabs } from 'antd';
-import { PlusOutlined, ApartmentOutlined } from '@ant-design/icons';
+import { Select, Button, Tag, message, Modal, Form, Tree, Tabs, Input } from 'antd';
+import { PlusOutlined, ApartmentOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 
@@ -60,6 +60,8 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
   const [accountForm] = Form.useForm();
   const [selectedLevelValues, setSelectedLevelValues] = useState<Record<number, any>>({});
   const [currentOtherLevelId, setCurrentOtherLevelId] = useState<number | null>(null);
+  const [orgSearchText, setOrgSearchText] = useState('');
+  const [otherSearchText, setOtherSearchText] = useState('');
 
   // 获取最近创建的5个子劳动力账户，按usageType过滤
   const { data: recentAccounts, refetch: refetchRecentAccounts, isLoading: isLoadingRecent, error: recentError } = useQuery({
@@ -390,6 +392,26 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
     return result;
   };
 
+  // 过滤组织树（用于搜索）
+  const filterOrgTree = (tree: any[], searchText: string): any[] => {
+    if (!searchText) return tree;
+
+    const filterNode = (node: any): any => {
+      const matchesSearch = node.name?.toLowerCase().includes(searchText.toLowerCase());
+      const filteredChildren = node.children?.map(filterNode).filter((child: any) => child !== null);
+
+      if (matchesSearch || (filteredChildren && filteredChildren.length > 0)) {
+        return {
+          ...node,
+          children: filteredChildren || [],
+        };
+      }
+      return null;
+    };
+
+    return tree.map(filterNode).filter((node) => node !== null);
+  };
+
   // 在组织树中通过 ID 查找节点（包含父子关系）
   const findOrgNodeById = (orgs: any[], id: number): any => {
     for (const org of orgs) {
@@ -699,10 +721,21 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
                     );
                   })()}
 
+                  {/* 搜索框 */}
+                  <div style={{ marginBottom: 16 }}>
+                    <Input
+                      placeholder="搜索组织..."
+                      prefix={<SearchOutlined />}
+                      value={orgSearchText}
+                      onChange={(e) => setOrgSearchText(e.target.value)}
+                      allowClear
+                    />
+                  </div>
+
                   {/* 组织架构树 */}
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, background: '#ffffff', minHeight: 500 }}>
                     <Tree
-                      treeData={buildOrgTreeData(orgTree || [])}
+                      treeData={buildOrgTreeData(filterOrgTree(orgTree || [], orgSearchText))}
                       defaultExpandAll
                       showLine
                       onSelect={(keys, info) => {
@@ -859,48 +892,69 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
                           const levelValues = getLevelValues(currentLevel);
                           const selectedValue = selectedLevelValues[currentOtherLevelId];
 
+                          // 过滤层级明细
+                          const filteredLevelValues = levelValues.filter((item: any) =>
+                            item.name?.toLowerCase().includes(otherSearchText.toLowerCase())
+                          );
+
                           return (
                             <>
                               <div style={{ marginBottom: 16, fontWeight: 600, fontSize: 15, color: '#6366f1' }}>
                                 {currentLevel.name} - 选择值
                               </div>
+                              {/* 搜索框 */}
+                              <div style={{ marginBottom: 16 }}>
+                                <Input
+                                  placeholder="搜索层级明细..."
+                                  prefix={<SearchOutlined />}
+                                  value={otherSearchText}
+                                  onChange={(e) => setOtherSearchText(e.target.value)}
+                                  allowClear
+                                />
+                              </div>
                               <div>
-                                {levelValues.map((item: any) => {
-                                  const isSelected = selectedValue?.id === item.id;
-                                  return (
-                                    <div
-                                      key={item.id}
-                                      onClick={() => handleLevelValueChange(currentOtherLevelId, item)}
-                                      style={{
-                                        padding: '12px 16px',
-                                        marginBottom: '8px',
-                                        borderRadius: '8px',
-                                        border: '1px solid #e2e8f0',
-                                        background: isSelected ? '#eef2ff' : '#ffffff',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        ...(isSelected ? { borderColor: '#6366f1', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.1)' } : {}),
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.background = isSelected ? '#eef2ff' : '#f8fafc';
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.background = isSelected ? '#eef2ff' : '#ffffff';
-                                      }}
-                                    >
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ fontWeight: 500, fontSize: 14, color: '#1f2937' }}>
-                                          {item.name}
-                                        </div>
-                                        {isSelected && (
-                                          <div style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
-                                            ✓
+                                {filteredLevelValues.length === 0 ? (
+                                  <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, marginTop: 32 }}>
+                                    未找到匹配的层级明细
+                                  </div>
+                                ) : (
+                                  filteredLevelValues.map((item: any) => {
+                                    const isSelected = selectedValue?.id === item.id;
+                                    return (
+                                      <div
+                                        key={item.id}
+                                        onClick={() => handleLevelValueChange(currentOtherLevelId, item)}
+                                        style={{
+                                          padding: '12px 16px',
+                                          marginBottom: '8px',
+                                          borderRadius: '8px',
+                                          border: '1px solid #e2e8f0',
+                                          background: isSelected ? '#eef2ff' : '#ffffff',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s',
+                                          ...(isSelected ? { borderColor: '#6366f1', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.1)' } : {}),
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background = isSelected ? '#eef2ff' : '#f8fafc';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background = isSelected ? '#eef2ff' : '#ffffff';
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <div style={{ fontWeight: 500, fontSize: 14, color: '#1f2937' }}>
+                                            {item.name}
                                           </div>
-                                        )}
+                                          {isSelected && (
+                                            <div style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+                                              ✓
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })
+                                )}
                               </div>
                             </>
                           );

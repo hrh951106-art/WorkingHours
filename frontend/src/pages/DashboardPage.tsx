@@ -324,30 +324,38 @@ const DashboardPage: React.FC = () => {
                   <div
                     style={{
                       background: 'var(--color-bg-white)',
-                      border: '1px solid var(--color-border-1)',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '20px 16px',
+                      border: '2px solid var(--color-border-2)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '28px 20px',
                       textAlign: 'center',
                       cursor: 'pointer',
-                      transition: 'all 0.2s',
+                      transition: 'all 0.3s',
+                      minHeight: 140,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      fontFamily: 'PingFang SC, -apple-system, BlinkMacSystemFont, sans-serif',
                     }}
                     onClick={() => handleNavigate(action.path, action.title)}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-4px)';
-                      e.currentTarget.style.boxShadow = 'var(--shadow-s2)';
+                      e.currentTarget.style.transform = 'translateY(-6px)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-s3)';
                       e.currentTarget.style.borderColor = action.color;
+                      e.currentTarget.style.borderWidth = '2px';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = 'none';
-                      e.currentTarget.style.borderColor = 'var(--color-border-1)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-s1)';
+                      e.currentTarget.style.borderColor = 'var(--color-border-2)';
+                      e.currentTarget.style.borderWidth = '2px';
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 40,
+                        fontSize: 48,
                         color: action.color,
-                        marginBottom: 8,
+                        marginBottom: 12,
                       }}
                     >
                       {action.icon}
@@ -355,7 +363,7 @@ const DashboardPage: React.FC = () => {
                     <div
                       style={{
                         fontWeight: 600,
-                        fontSize: 16,
+                        fontSize: 17,
                         color: 'var(--color-text-primary)',
                       }}
                     >
