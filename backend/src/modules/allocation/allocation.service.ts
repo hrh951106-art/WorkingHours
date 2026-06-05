@@ -718,18 +718,19 @@ export class AllocationService {
   async createProductionRecord(dto: any) {
     const { recordDate, orgId, orgName, lineId, lineName, shiftId, shiftName, productId, productCode, productName, plannedQty, actualQty, qualifiedQty, unqualifiedQty, standardHours, workHours, source, recorderId, recorderName, description } = dto;
 
-    // 检查唯一性：劳动力账户 + 日期 + 班次
+    // 检查唯一性：劳动力账户 + 日期 + 班次 + 产品
     const existing = await this.prisma.productionRecord.findFirst({
       where: {
         recordDate: new Date(recordDate),
         orgId,
         shiftId,
+        productId,
         deletedAt: null,
       },
     });
 
     if (existing) {
-      throw new BadRequestException('该劳动力账户在该日期和班次的产量记录已存在');
+      throw new BadRequestException('该劳动力账户在该日期和班次下的该产品产量记录已存在');
     }
 
     const totalStdHours = (actualQty || 0) * (standardHours || 0);
@@ -770,21 +771,61 @@ export class AllocationService {
       throw new NotFoundException('产量记录不存在');
     }
 
-    const { plannedQty, actualQty, qualifiedQty, unqualifiedQty, standardHours, workHours, description } = dto;
+    const { recordDate, orgId, orgName, lineId, lineName, shiftId, shiftName, productId, productCode, productName, plannedQty, actualQty, qualifiedQty, unqualifiedQty, standardHours, workHours, description } = dto;
 
-    const totalStdHours = (actualQty || 0) * (standardHours || record.standardHours);
+    // 如果修改了关键字段（日期、产线、班次、产品），需要验证唯一性
+    const newRecordDate = recordDate ? new Date(recordDate) : record.recordDate;
+    const newOrgId = orgId !== undefined ? orgId : record.orgId;
+    const newShiftId = shiftId !== undefined ? shiftId : record.shiftId;
+    const newProductId = productId !== undefined ? productId : record.productId;
+
+    const keyFieldsChanged =
+      (recordDate && newRecordDate.getTime() !== new Date(record.recordDate).getTime()) ||
+      (orgId !== undefined && newOrgId !== record.orgId) ||
+      (shiftId !== undefined && newShiftId !== record.shiftId) ||
+      (productId !== undefined && newProductId !== record.productId);
+
+    if (keyFieldsChanged) {
+      // 检查唯一性：劳动力账户 + 日期 + 班次 + 产品（排除当前记录）
+      const existing = await this.prisma.productionRecord.findFirst({
+        where: {
+          recordDate: newRecordDate,
+          orgId: newOrgId,
+          shiftId: newShiftId,
+          productId: newProductId,
+          deletedAt: null,
+          id: { not: id }, // 排除当前记录
+        },
+      });
+
+      if (existing) {
+        throw new BadRequestException('该劳动力账户在该日期和班次下的该产品产量记录已存在');
+      }
+    }
+
+    const totalStdHours = (actualQty || record.actualQty) * (standardHours || record.standardHours);
 
     return this.prisma.productionRecord.update({
       where: { id },
       data: {
-        plannedQty,
-        actualQty,
-        qualifiedQty,
-        unqualifiedQty,
+        recordDate: recordDate ? new Date(recordDate) : record.recordDate,
+        orgId: newOrgId,
+        orgName: orgName !== undefined ? orgName : record.orgName,
+        lineId: lineId !== undefined ? lineId : record.lineId,
+        lineName: lineName !== undefined ? lineName : record.lineName,
+        shiftId: newShiftId,
+        shiftName: shiftName !== undefined ? shiftName : record.shiftName,
+        productId: newProductId,
+        productCode: productCode !== undefined ? productCode : record.productCode,
+        productName: productName !== undefined ? productName : record.productName,
+        plannedQty: plannedQty !== undefined ? plannedQty : record.plannedQty,
+        actualQty: actualQty !== undefined ? actualQty : record.actualQty,
+        qualifiedQty: qualifiedQty !== undefined ? qualifiedQty : record.qualifiedQty,
+        unqualifiedQty: unqualifiedQty !== undefined ? unqualifiedQty : record.unqualifiedQty,
         standardHours: standardHours || record.standardHours,
         totalStdHours,
-        workHours,
-        description,
+        workHours: workHours !== undefined ? workHours : record.workHours,
+        description: description !== undefined ? description : record.description,
       },
     });
   }
@@ -6599,19 +6640,20 @@ export class AllocationService {
       }
     }
 
-    // 检查是否已存在相同记录（按日期、员工、班次、劳动力账户验证唯一性）
+    // 检查是否已存在相同记录（按日期、员工、班次、劳动力账户、产品验证唯一性）
     const existing = await this.prisma.personalProductionRecord.findFirst({
       where: {
         recordDate: new Date(recordDate),
         employeeNo,
         shiftId: shiftId || null, // 班次
         orgId: orgId || null, // 劳动力账户
+        productId,
         deletedAt: null,
       },
     });
 
     if (existing) {
-      throw new BadRequestException('该员工在该日期、班次、劳动力账户下的产量记录已存在');
+      throw new BadRequestException('该员工在该日期、班次、劳动力账户下的该产品产量记录已存在');
     }
 
     // 计算挣得工时 = 实际产量 * 标准工时
@@ -6765,28 +6807,84 @@ export class AllocationService {
       throw new NotFoundException('个人产量记录不存在');
     }
 
-    const { actualQty, description } = dto;
+    const { recordDate, employeeNo, employeeName, orgId, orgName, lineId, lineName, shiftId, shiftName, productId, productCode, productName, actualQty, standardHours, description } = dto;
+
+    // 如果修改了关键字段（日期、员工、班次、产线、产品），需要验证唯一性
+    const newRecordDate = recordDate ? new Date(recordDate) : record.recordDate;
+    const newEmployeeNo = employeeNo !== undefined ? employeeNo : record.employeeNo;
+    const newOrgId = orgId !== undefined ? orgId : record.orgId;
+    const newShiftId = shiftId !== undefined ? shiftId : record.shiftId;
+    const newProductId = productId !== undefined ? productId : record.productId;
+
+    const keyFieldsChanged =
+      (recordDate && newRecordDate.getTime() !== new Date(record.recordDate).getTime()) ||
+      (employeeNo !== undefined && newEmployeeNo !== record.employeeNo) ||
+      (shiftId !== undefined && newShiftId !== record.shiftId) ||
+      (orgId !== undefined && newOrgId !== record.orgId) ||
+      (productId !== undefined && newProductId !== record.productId);
+
+    if (keyFieldsChanged) {
+      // 验证员工是否存在
+      if (employeeNo !== undefined && employeeNo !== record.employeeNo) {
+        const employee = await this.prisma.employee.findUnique({
+          where: { employeeNo: newEmployeeNo },
+        });
+
+        if (!employee) {
+          throw new BadRequestException('员工不存在');
+        }
+      }
+
+      // 检查是否已存在相同记录（按日期、员工、班次、劳动力账户、产品验证唯一性，排除当前记录）
+      const existing = await this.prisma.personalProductionRecord.findFirst({
+        where: {
+          recordDate: newRecordDate,
+          employeeNo: newEmployeeNo,
+          shiftId: newShiftId || null,
+          orgId: newOrgId || null,
+          productId: newProductId,
+          deletedAt: null,
+          id: { not: id }, // 排除当前记录
+        },
+      });
+
+      if (existing) {
+        throw new BadRequestException('该员工在该日期、班次、劳动力账户下的该产品产量记录已存在');
+      }
+    }
 
     // 重新计算挣得工时
-    const earnedHours = (actualQty || record.actualQty) * record.standardHours;
+    const earnedHours = (actualQty !== undefined ? actualQty : record.actualQty) * record.standardHours;
 
     // 更新个人产量记录
     const updatedRecord = await this.prisma.personalProductionRecord.update({
       where: { id },
       data: {
-        actualQty,
+        recordDate: newRecordDate,
+        employeeNo: newEmployeeNo,
+        employeeName: employeeName !== undefined ? employeeName : record.employeeName,
+        orgId: newOrgId,
+        orgName: orgName !== undefined ? orgName : record.orgName,
+        lineId: lineId !== undefined ? lineId : record.lineId,
+        lineName: lineName !== undefined ? lineName : record.lineName,
+        shiftId: newShiftId,
+        shiftName: shiftName !== undefined ? shiftName : record.shiftName,
+        productId: newProductId,
+        productCode: productCode !== undefined ? productCode : record.productCode,
+        productName: productName !== undefined ? productName : record.productName,
+        actualQty: actualQty !== undefined ? actualQty : record.actualQty,
         earnedHours,
-        description,
+        description: description !== undefined ? description : record.description,
       },
     });
 
     // 更新CalcResult表中的挣得工时记录
-    const calcDate = new Date(record.recordDate);
+    const calcDate = newRecordDate;
     calcDate.setHours(0, 0, 0, 0);
 
     const calcResults = await this.prisma.calcResult.findMany({
       where: {
-        employeeNo: record.employeeNo,
+        employeeNo: newEmployeeNo,
         calcDate,
       },
     });
