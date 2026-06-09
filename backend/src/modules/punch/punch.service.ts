@@ -205,14 +205,16 @@ export class PunchService {
     // 静默触发自动精益摆卡（不阻塞响应，不返回错误信息）
     if (accountId) {
       // 如果设置了账户，触发账户变更事件
-      this.attendancePunchTriggerService.triggerPunchAccountChange({
-        employeeNo: record.employeeNo,
-        punchRecordId: record.id,
-        punchDate: new Date(record.punchTime),
-        triggerSource: 'punch.create',
-      }).catch((error) => {
-        console.error('触发账户变更摆卡失败:', error);
-      });
+      this.attendancePunchTriggerService
+        .triggerPunchAccountChange({
+          employeeNo: record.employeeNo,
+          punchRecordId: record.id,
+          punchDate: new Date(record.punchTime),
+          triggerSource: 'punch.create',
+        })
+        .catch((error) => {
+          console.error('触发账户变更摆卡失败:', error);
+        });
     } else {
       // 没有设置账户，只触发普通的摆卡
       this.pairingService.handleNewPunchRecord(record.id).catch((error) => {
@@ -232,9 +234,12 @@ export class PunchService {
     });
 
     // 处理 accountId：只有明确选择了账户才保存，否则设为 null
-    const accountId = dto.accountId !== undefined
-      ? (dto.accountId && dto.accountId !== '' ? dto.accountId : null)
-      : undefined;
+    const accountId =
+      dto.accountId !== undefined
+        ? dto.accountId && dto.accountId !== ''
+          ? dto.accountId
+          : null
+        : undefined;
 
     const record = await this.prisma.punchRecord.update({
       where: { id },
@@ -250,14 +255,16 @@ export class PunchService {
 
     // 静默触发自动精益摆卡（不阻塞响应，不返回错误信息）
     if (oldRecord && hasAccountChanged) {
-      this.attendancePunchTriggerService.triggerPunchAccountChange({
-        employeeNo: record.employeeNo,
-        punchRecordId: record.id,
-        punchDate: new Date(record.punchTime),
-        triggerSource: 'punch.update',
-      }).catch((error) => {
-        console.error('触发账户变更摆卡失败:', error);
-      });
+      this.attendancePunchTriggerService
+        .triggerPunchAccountChange({
+          employeeNo: record.employeeNo,
+          punchRecordId: record.id,
+          punchDate: new Date(record.punchTime),
+          triggerSource: 'punch.update',
+        })
+        .catch((error) => {
+          console.error('触发账户变更摆卡失败:', error);
+        });
     } else {
       // 账户未变更，只触发普通的摆卡
       this.pairingService.handleNewPunchRecord(record.id).catch((error) => {
@@ -290,7 +297,9 @@ export class PunchService {
       const punchDate = new Date(record.punchTime);
       punchDate.setHours(0, 0, 0, 0);
 
-      console.log(`[删除打卡记录] ID: ${id}, 员工: ${employeeNo}, 日期: ${punchDate.toISOString()}`);
+      console.log(
+        `[删除打卡记录] ID: ${id}, 员工: ${employeeNo}, 日期: ${punchDate.toISOString()}`,
+      );
 
       // 使用事务处理：先删除相关的摆卡记录，再删除打卡记录
       await this.prisma.$transaction(async (tx) => {
@@ -325,7 +334,9 @@ export class PunchService {
       // 删除后触发自动精益摆卡（异步执行，不阻塞响应）
       // 逻辑：删除当天所有旧摆卡数据 → 重新摆��
       setImmediate(() => {
-        console.log(`[删除打卡记录] 触发自动精益摆卡: 员工 ${employeeNo}, 日期 ${punchDate.toISOString()}`);
+        console.log(
+          `[删除打卡记录] 触发自动精益摆卡: 员工 ${employeeNo}, 日期 ${punchDate.toISOString()}`,
+        );
 
         // 直接调用 pairPunches，它会先删除当天所有旧数据再重新摆卡
         this.pairingService.pairPunches(employeeNo, punchDate).catch((error) => {
@@ -376,9 +387,10 @@ export class PunchService {
         let path: string | null = null;
         if (account.hierarchyValues) {
           try {
-            const hierarchyValues = typeof account.hierarchyValues === 'string'
-              ? JSON.parse(account.hierarchyValues)
-              : account.hierarchyValues;
+            const hierarchyValues =
+              typeof account.hierarchyValues === 'string'
+                ? JSON.parse(account.hierarchyValues)
+                : account.hierarchyValues;
 
             console.log('解析后的 hierarchyValues:', JSON.stringify(hierarchyValues, null, 2));
 
@@ -386,12 +398,19 @@ export class PunchService {
             const codes: string[] = [];
             if (Array.isArray(hierarchyValues)) {
               const sortedValues = hierarchyValues.sort((a, b) => a.level - b.level);
-              console.log('排序后的层级:', sortedValues.map((v: any) => `L${v.level}:${v.name}`));
+              console.log(
+                '排序后的层级:',
+                sortedValues.map((v: any) => `L${v.level}:${v.name}`),
+              );
 
               sortedValues.forEach((hierarchy: any, index: number) => {
                 // 即使未选择层级，也要保留空字符串占位符，保持完整链路
                 const code = hierarchy.selectedValue?.code ?? '';
-                console.log(`层级 ${index + 1}: ${hierarchy.name}, selectedValue:`, JSON.stringify(hierarchy.selectedValue), `code: "${code}"`);
+                console.log(
+                  `层级 ${index + 1}: ${hierarchy.name}, selectedValue:`,
+                  JSON.stringify(hierarchy.selectedValue),
+                  `code: "${code}"`,
+                );
                 codes.push(code); // 无论是空字符串还是非空字符串都要push
               });
             }
@@ -418,13 +437,15 @@ export class PunchService {
         // 触发设备账户变更事件（异步执行，不阻塞事务）
         // 注意：这里使用原始的 prisma 实例而不是事务的 tx，因为事件应该是异步的
         setImmediate(() => {
-          this.attendancePunchTriggerService.triggerDeviceAccountChange({
-            deviceId,
-            effectiveDate: new Date(binding.effectiveDate),
-            triggerSource: 'device-account.bind',
-          }).catch((error) => {
-            console.error('触发设备账户变更摆卡失败:', error);
-          });
+          this.attendancePunchTriggerService
+            .triggerDeviceAccountChange({
+              deviceId,
+              effectiveDate: new Date(binding.effectiveDate),
+              triggerSource: 'device-account.bind',
+            })
+            .catch((error) => {
+              console.error('触发设备账户变更摆卡失败:', error);
+            });
         });
       }
     });
@@ -466,7 +487,12 @@ export class PunchService {
 
               try {
                 // 验证必填字段
-                if (!row['员工工号'] || !row['打卡时间'] || !row['刷卡设备代码'] || !row['刷卡类型']) {
+                if (
+                  !row['员工工号'] ||
+                  !row['打卡时间'] ||
+                  !row['刷卡设备代码'] ||
+                  !row['刷卡类型']
+                ) {
                   errors.push({
                     row: rowNum,
                     message: '必填字段不能为空',
@@ -505,8 +531,8 @@ export class PunchService {
 
                 // 转换打卡类型
                 const punchTypeMap: any = {
-                  '签入': 'IN',
-                  '签出': 'OUT',
+                  签入: 'IN',
+                  签出: 'OUT',
                 };
                 const punchType = punchTypeMap[row['刷卡类型']];
                 if (!punchType) {
@@ -553,15 +579,17 @@ export class PunchService {
             // 异步触发摆卡处理
             const uniqueEmployees = [...new Set(results.map((r) => r['员工工号']))];
             for (const employeeNo of uniqueEmployees) {
-              const dates = [...new Set(
-                results
-                  .filter((r) => r['员工工号'] === employeeNo)
-                  .map((r) => {
-                    const date = new Date(r['打卡时间']);
-                    date.setHours(0, 0, 0, 0);
-                    return date.toISOString();
-                  })
-              )];
+              const dates = [
+                ...new Set(
+                  results
+                    .filter((r) => r['员工工号'] === employeeNo)
+                    .map((r) => {
+                      const date = new Date(r['打卡时间']);
+                      date.setHours(0, 0, 0, 0);
+                      return date.toISOString();
+                    }),
+                ),
+              ];
               for (const dateStr of dates) {
                 this.pairingService.pairPunches(employeeNo, new Date(dateStr)).catch((error) => {
                   console.error('导入后摆卡失败:', error);

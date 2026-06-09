@@ -1,53 +1,102 @@
 import { useState, useMemo } from 'react';
-import { Card, Form, Select, Button, message, Spin, Space, Typography, Row, Col, Empty, Table, Modal, InputNumber, Input, DatePicker, Switch } from 'antd';
-import { AppstoreOutlined, PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined } from '@ant-design/icons';
+import { Card, Form, Select, Button, message, Table, Modal, InputNumber, DatePicker, Space, Popconfirm, Tag, Switch } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 import dayjs from 'dayjs';
 
-const { Text } = Typography;
+const { RangePicker } = DatePicker;
+
+interface ProductStandardConfig {
+  id?: number;
+  productId: number;
+  productCode: string;
+  productName: string;
+  accountPath: string;
+  standardHours: number;
+  quantity?: number;
+  unit?: string;
+  effectiveDate: string;
+  expiryDate?: string;
+}
 
 const ProductStandardHoursConfigPage: React.FC = () => {
-  const [editingRecord, setEditingRecord] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [isGlobalConfig, setIsGlobalConfig] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
 
-  // 筛选条件
+  // 查询条件
   const [filters, setFilters] = useState({
-    productKeyword: '',
-    accountPathKeyword: '',
+    productId: undefined as number | undefined,
+    effectiveDateStart: undefined as dayjs.Dayjs | undefined,
+    effectiveDateEnd: undefined as dayjs.Dayjs | undefined,
   });
+
+  // 分页
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+  });
+
+  // 获取用户信息
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
 
   // 获取系统配置
   const { data: systemConfigs = [] } = useQuery({
     queryKey: ['allocationSystemConfigs'],
+    queryFn: async () => {
+      try {
+        const res = await request.get('/hr/system-configs');
+        return res || [];
+      } catch (error) {
+        console.error('获取系统配置失败:', error);
+        return [];
+      }
+    },
+  });
+
+  // 获取层级列表（先获取，用于解析配置）
+  const { data: hierarchyLevels = [] } = useQuery({
+    queryKey: ['hierarchy-levels'],
     queryFn: () =>
-      request.get('/hr/system-configs').then((res: any) => res || []),
+      request.get('/account/hierarchy-config/levels').then((res: any) => res || []),
   });
 
   // 获取配置的标准工时层级
   const standardHoursLevelsConfig = systemConfigs.find(
     (c: any) => c.configKey === 'standardHoursHierarchyLevels'
   );
-  const selectedLevelIds = standardHoursLevelsConfig?.configValue
-    ? standardHoursLevelsConfig.configValue.split(',').map(Number)
-    : [];
 
-  // 获取层级列表
-  const { data: hierarchyLevels = [] } = useQuery({
-    queryKey: ['hierarchy-levels'],
-    queryFn: () =>
-      request.get('/account/hierarchy-config/levels').then((res: any) => res || []),
-    enabled: selectedLevelIds.length > 0,
-  });
+  // 解析层级ID - 使用level序号
+  const selectedLevelIds = useMemo(() => {
+    if (!standardHoursLevelsConfig?.configValue) {
+      return [];
+    }
+
+    const configValue = standardHoursLevelsConfig.configValue;
+    const parts = configValue.split(',').map(p => p.trim());
+
+    const levelIds = [];
+    if (hierarchyLevels.length > 0) {
+      parts.forEach(levelNum => {
+        const level = hierarchyLevels.find((l: any) => l.level === parseInt(levelNum));
+        if (level) {
+          levelIds.push(level.id);
+        }
+      });
+    }
+
+    return levelIds;
+  }, [standardHoursLevelsConfig, hierarchyLevels]);
 
   // 选择的层级详情
   const selectedLevels = hierarchyLevels.filter((level: any) =>
     selectedLevelIds.includes(level.id)
   );
+
+  console.log('选中的层级:', selectedLevels);
 
   // 获取层级明细（带选项）
   const { data: hierarchyLevelsWithDetails = [] } = useQuery({
@@ -83,73 +132,79 @@ const ProductStandardHoursConfigPage: React.FC = () => {
   }, [selectedLevelsWithDetails]);
 
   // 获取产品列表
-  const { data: products = [], isLoading: productsLoading } = useQuery({
-    queryKey: ['products', 'datasource'],
+  const { data: products = [] } = useQuery({
+    queryKey: ['products', 'all'],
     queryFn: async () => {
-      const dataSources = await request.get('/hr/data-sources');
-      const productDataSource = dataSources.find((ds: any) => ds.code === 'PRODUCT');
-      if (productDataSource) {
-        const options = await request.get(`/hr/data-sources/${productDataSource.id}/options`);
-        return options || [];
-      }
-      return [];
+      const result = await request.get('/allocation/products', {
+        params: { pageSize: 9999 },
+      });
+      const items = result?.items || result || [];
+      return items.map((item: any) => ({
+        id: item.id,
+        value: item.code,
+        label: `${item.code} - ${item.name}`,
+        code: item.code,
+        name: item.name,
+      }));
     },
   });
 
-  // 获取所有产品标准配置列表
-  const { data: configurations = [], isLoading: configsLoading, refetch } = useQuery({
-    queryKey: ['productStandardHoursConfigs'],
+  // 获取配置列表
+  const { data: configsData, isLoading, refetch } = useQuery({
+    queryKey: ['productStandardHoursConfigs', filters, pagination],
     queryFn: async () => {
-      const result = await request.get(`/allocation/standard-hour-by-levels`, {
-        params: { pageSize: 9999 },
-      });
-      const data = result?.items || result || [];
+      const params: any = {
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+      };
 
-      const sortedData = data.sort((a: any, b: any) => {
-        const accountPathA = a.accountPath || '-';
-        const accountPathB = b.accountPath || '-';
+      if (filters.productId) {
+        params.productId = filters.productId;
+      }
 
-        if (accountPathA !== accountPathB) {
-          return accountPathA.localeCompare(accountPathB, 'zh-CN');
-        }
+      const result = await request.get('/allocation/standard-hour-by-levels', { params });
+      const items = result?.items || result || [];
 
-        const dateA = a.effectiveDate ? new Date(a.effectiveDate).getTime() : 0;
-        const dateB = b.effectiveDate ? new Date(b.effectiveDate).getTime() : 0;
-        return dateB - dateA;
-      });
+      // 客户端过滤生效日期
+      let filteredItems = items;
+      if (filters.effectiveDateStart) {
+        filteredItems = filteredItems.filter((item: any) =>
+          item.effectiveDate && dayjs(item.effectiveDate).isAfter(filters.effectiveDateStart!.subtract(1, 'day'))
+        );
+      }
+      if (filters.effectiveDateEnd) {
+        filteredItems = filteredItems.filter((item: any) =>
+          item.effectiveDate && dayjs(item.effectiveDate).isBefore(filters.effectiveDateEnd!.add(1, 'day'))
+        );
+      }
 
-      return sortedData;
+      return {
+        items: filteredItems,
+        total: result?.total || filteredItems.length,
+      };
     },
   });
 
   // 创建/更新配置
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
-      const product = products.find((p: any) =>
-        String(p.id) === String(data.productId) ||
-        parseInt(p.id) === parseInt(data.productId)
-      );
+      const product = products.find((p: any) => p.id === data.productId);
 
       if (!product) {
         throw new Error('产品不存在，请重新选择产品');
       }
 
       if (!data.standardHours && data.standardHours !== 0) {
-        throw new Error('请输入标准');
+        throw new Error('请输入标准值');
       }
 
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-
-      let accountPath = '';
+      let accountPath = '-';
       let hierarchyLevelId = null;
       let hierarchyLevelName = '';
       let hierarchyOptionValue = '';
       let hierarchyOptionLabel = '';
 
-      if (data.isGlobalConfig) {
-        accountPath = '-';
-      } else {
+      if (selectedLevelIds.length > 0 && !data.isGlobalConfig) {
         const filledLevels = selectedLevels.filter((level: any) => {
           const value = data[`hierarchyOption_${level.id}`];
           return value !== undefined && value !== null && value !== '';
@@ -180,15 +235,13 @@ const ProductStandardHoursConfigPage: React.FC = () => {
           hierarchyLevelName = firstLevel.name;
           hierarchyOptionValue = String(firstOptionValue);
           hierarchyOptionLabel = firstOption?.label || firstOption?.optionLabel || String(firstOptionValue);
-        } else {
-          accountPath = '-';
         }
       }
 
       const payload = {
         productId: parseInt(product.id),
-        productCode: product.value || '',
-        productName: product.label ? (product.label.split(' - ')[1] || product.label) : '',
+        productCode: product.code,
+        productName: product.name,
         hierarchyLevelId,
         hierarchyLevelName,
         hierarchyOptionValue,
@@ -203,10 +256,10 @@ const ProductStandardHoursConfigPage: React.FC = () => {
         createdByName: user?.name || 'Admin',
       };
 
-      if (editingRecord && editingRecord.id) {
+      if (editingRecord?.id) {
         return request.put(`/allocation/standard-hour-by-levels/${editingRecord.id}`, payload);
       } else {
-        return request.post(`/allocation/standard-hour-by-levels`, payload);
+        return request.post('/allocation/standard-hour-by-levels', payload);
       }
     },
     onSuccess: () => {
@@ -235,16 +288,15 @@ const ProductStandardHoursConfigPage: React.FC = () => {
   });
 
   const handleAdd = () => {
-    if (!selectedProduct) {
-      message.warning('请先选择左侧的产品');
-      return;
-    }
     setEditingRecord(null);
-    setIsGlobalConfig(false);
     form.resetFields();
+
+    // 如果配置了层级，默认关闭；否则默认开启
+    const isGlobalDefault = selectedLevelIds.length > 0 ? false : true;
+
     form.setFieldsValue({
-      productId: selectedProduct.id,
-      isGlobalConfig: false,
+      productId: filters.productId,
+      isGlobalConfig: isGlobalDefault,
     });
     setIsModalVisible(true);
   };
@@ -253,7 +305,6 @@ const ProductStandardHoursConfigPage: React.FC = () => {
     setEditingRecord(record);
 
     const isGlobal = !record.accountPath || record.accountPath === '-';
-    setIsGlobalConfig(isGlobal);
 
     const formValues: any = {
       productId: record.productId,
@@ -265,7 +316,8 @@ const ProductStandardHoursConfigPage: React.FC = () => {
       expiryDate: record.expiryDate ? dayjs(record.expiryDate) : null,
     };
 
-    if (!isGlobal && record.accountPath) {
+    // 如果不是全局配置且有层级，恢复层级选择字段的值
+    if (!isGlobal && record.accountPath && record.accountPath !== '-' && selectedLevelIds.length > 0) {
       const pathParts = record.accountPath.split('/');
       selectedLevels.forEach((level: any, index: number) => {
         if (index < pathParts.length) {
@@ -282,20 +334,13 @@ const ProductStandardHoursConfigPage: React.FC = () => {
     setIsModalVisible(true);
   };
 
-  const handleDelete = (record: any) => {
-    const configId = record.id;
-    if (!configId) {
-      message.error('找不到配置记录');
-      return;
-    }
-
-    deleteMutation.mutate(configId);
+  const handleDelete = (id: number) => {
+    deleteMutation.mutate(id);
   };
 
   const handleModalCancel = () => {
     setIsModalVisible(false);
     setEditingRecord(null);
-    setIsGlobalConfig(false);
     form.resetFields();
   };
 
@@ -308,441 +353,382 @@ const ProductStandardHoursConfigPage: React.FC = () => {
     }
   };
 
-  // 按产品分组配置数据
-  const productConfigGroups = useMemo(() => {
-    const groups: Record<number, any[]> = {};
-
-    configurations.forEach((config: any) => {
-      if (!groups[config.productId]) {
-        groups[config.productId] = [];
-      }
-      groups[config.productId].push(config);
+  const handleSearch = () => {
+    setPagination({
+      ...pagination,
+      current: 1,
     });
+    refetch();
+  };
 
-    return groups;
-  }, [configurations]);
+  const handleReset = () => {
+    setFilters({
+      productId: undefined,
+      effectiveDateStart: undefined,
+      effectiveDateEnd: undefined,
+    });
+    setPagination({
+      current: 1,
+      pageSize: 10,
+    });
+  };
 
-  // 过滤后的产品列表（左侧显示）
-  const filteredProducts = useMemo(() => {
-    let result = products;
+  const columns = useMemo(() => {
+    const baseColumns = [
+      {
+        title: '产品',
+        dataIndex: 'productCode',
+        key: 'productCode',
+        width: 200,
+        sorter: (a: any, b: any) => {
+          const aValue = `${a.productCode}-${a.productName}`;
+          const bValue = `${b.productCode}-${b.productName}`;
+          return aValue.localeCompare(bValue, 'zh-CN');
+        },
+        render: (code: string, record: any) => (
+          <div style={{ fontWeight: 500 }}>
+            {code}-{record.productName}
+          </div>
+        ),
+      },
+    ];
 
-    if (filters.productKeyword) {
-      const keyword = filters.productKeyword.toLowerCase();
-      result = result.filter((p: any) =>
-        p.value?.toLowerCase().includes(keyword) ||
-        p.label?.toLowerCase().includes(keyword)
-      );
+    // 为每个配置的层级添加一列
+    if (selectedLevels.length > 0) {
+      selectedLevels.forEach((level: any, index: number) => {
+        baseColumns.push({
+          title: level.name,
+          key: `hierarchy_level_${level.id}`,
+          width: 180,
+          render: (_: any, record: any) => {
+            if (!record.accountPath || record.accountPath === '-') {
+              return <Tag color="green">全局配置</Tag>;
+            }
+            const pathParts = record.accountPath.split('/');
+            if (index < pathParts.length) {
+              return <span style={{ fontWeight: 500 }}>{pathParts[index]}</span>;
+            }
+            return '-';
+          },
+        });
+      });
+    } else {
+      // 如果没有配置层级，显示一个默认的"配置范围"列
+      baseColumns.push({
+        title: '配置范围',
+        dataIndex: 'accountPath',
+        key: 'accountPath',
+        width: 180,
+        render: (accountPath: string) => {
+          if (!accountPath || accountPath === '-') {
+            return <Tag color="green">全局配置</Tag>;
+          }
+          return <span style={{ fontWeight: 500 }}>{accountPath}</span>;
+        },
+      });
     }
 
-    return result;
-  }, [products, filters.productKeyword]);
-
-  // 当前选中产品的配置列表（右侧显示）
-  const selectedProductConfigs = useMemo(() => {
-    if (!selectedProduct) return [];
-
-    let configs = productConfigGroups[selectedProduct.id] || [];
-
-    if (filters.accountPathKeyword) {
-      const keyword = filters.accountPathKeyword.toLowerCase();
-      configs = configs.filter((config: any) =>
-        config.accountPath?.toLowerCase().includes(keyword)
-      );
-    }
-
-    return configs.map((config: any) => ({
-      ...config,
-      productCode: selectedProduct.value,
-      productName: selectedProduct.label?.split(' - ')[1] || selectedProduct.label,
-    }));
-  }, [productConfigGroups, selectedProduct, filters.accountPathKeyword]);
-
-  const columns = [
-    {
-      title: '劳动力账户',
-      dataIndex: 'accountPath',
-      key: 'accountPath',
-      render: (accountPath: string) => {
-        if (accountPath && accountPath !== '-') {
-          return <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{accountPath}</span>;
-        }
-        return <span style={{ color: '#52c41a', fontWeight: 500 }}>全局配置</span>;
-      },
-    },
-    {
-      title: '生效日期',
-      dataIndex: 'effectiveDate',
-      key: 'effectiveDate',
-      width: 120,
-      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
-    },
-    {
-      title: '失效日期',
-      dataIndex: 'expiryDate',
-      key: 'expiryDate',
-      width: 120,
-      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
-    },
-    {
-      title: '标准',
-      dataIndex: 'standardHours',
-      width: 180,
-      align: 'center' as const,
-      render: (hours: number, record: any) => {
-        if (record.quantity && hours) {
+    // 添加其他列
+    baseColumns.push(
+      {
+        title: '标准值',
+        dataIndex: 'standardHours',
+        key: 'standardHours',
+        width: 150,
+        render: (hours: number, record: any) => {
+          if (record.quantity && hours) {
+            return (
+              <span style={{ fontWeight: 500, color: '#52c41a' }}>
+                {record.quantity}件/{hours}小时
+              </span>
+            );
+          }
           return (
             <span style={{ fontWeight: 500, color: '#52c41a' }}>
-              {record.quantity}件/{hours}
+              {hours}小时
             </span>
           );
-        }
-        if (hours) {
-          return (
-            <span style={{ fontWeight: 500, color: '#52c41a' }}>
-              {hours}
-            </span>
-          );
-        }
-        return <span style={{ color: '#999' }}>-</span>;
+        },
       },
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 150,
-      fixed: 'right' as const,
-      render: (_: any, record: any) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record)}
-          >
-            删除
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
-  if (productsLoading || configsLoading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px' }}>
-        <Spin size="large" />
-      </div>
+      {
+        title: '生效日期',
+        dataIndex: 'effectiveDate',
+        key: 'effectiveDate',
+        width: 120,
+        render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
+      },
+      {
+        title: '失效日期',
+        dataIndex: 'expiryDate',
+        key: 'expiryDate',
+        width: 120,
+        render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
+      },
+      {
+        title: '操作',
+        key: 'action',
+        width: 150,
+        fixed: 'right' as const,
+        render: (_: any, record: any) => (
+          <Space>
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+            >
+              编辑
+            </Button>
+            <Popconfirm
+              title="确认删除"
+              description="确定要删除这条配置吗？"
+              onConfirm={() => record.id && handleDelete(record.id)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      }
     );
-  }
+
+    return baseColumns;
+  }, [selectedLevels]);
 
   return (
     <div>
       <Card
-        title={
-          <Space>
-            <AppstoreOutlined />
-            <span>产品标准配置</span>
-          </Space>
+        title="产品标准配置"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleAdd}
+          >
+            新增
+          </Button>
         }
       >
-        <Row gutter={16} style={{ height: 'calc(100vh - 300px)' }}>
-          {/* 左侧：产品列表 */}
-          <Col span={8} style={{ borderRight: '1px solid var(--color-border-1)', paddingRight: 16 }}>
-            <div style={{ marginBottom: 16 }}>
-              <Input
-                placeholder="搜索产品编码或名称"
-                allowClear
-                style={{ width: '100%' }}
-                value={filters.productKeyword}
-                onChange={(e) => setFilters({ ...filters, productKeyword: e.target.value })}
-                suffix={<SearchOutlined style={{ color: '#bbb' }} />}
-              />
-            </div>
-
-            <div
-              style={{
-                height: 'calc(100% - 60px)',
-                overflowY: 'auto',
-                border: '1px solid var(--color-border-1)',
-                borderRadius: 'var(--radius-md)',
+        {/* 查询条件 */}
+        <Form layout="inline" style={{ marginBottom: 16 }}>
+          <Form.Item label="产品">
+            <Select
+              placeholder="请选择产品"
+              style={{ width: 250 }}
+              value={filters.productId}
+              onChange={(value) => setFilters({ ...filters, productId: value })}
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={products.map((p: any) => ({
+                label: p.label,
+                value: p.id,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item label="生效日期区间">
+            <RangePicker
+              value={[filters.effectiveDateStart, filters.effectiveDateEnd]}
+              onChange={(dates) => {
+                setFilters({
+                  ...filters,
+                  effectiveDateStart: dates?.[0],
+                  effectiveDateEnd: dates?.[1],
+                });
               }}
-            >
-              {filteredProducts.map((product: any) => {
-                const configCount = (productConfigGroups[product.id] || []).length;
-                const isSelected = selectedProduct?.id === product.id;
-
-                return (
-                  <div
-                    key={product.id}
-                    onClick={() => setSelectedProduct(product)}
-                    style={{
-                      padding: '12px 16px',
-                      borderBottom: '1px solid var(--color-border-1)',
-                      cursor: 'pointer',
-                      background: isSelected ? '#e8f8f0' : 'transparent',
-                      borderLeft: isSelected ? '3px solid #00B365' : '3px solid transparent',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.background = 'var(--color-bg-light)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
-                  >
-                    <div style={{ fontWeight: 500, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>
-                        {product.label?.split(' - ')[1] || product.label}
-                        <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 400 }}>
-                          {product.value}
-                        </span>
-                      </span>
-                      {isSelected && (
-                        <span style={{ color: '#00B365', fontSize: 16 }}>✓</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                      {configCount} 个账户配置
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Col>
-
-          {/* 右侧：选中产品的工时配置 */}
-          <Col span={16}>
-            {!selectedProduct ? (
-              <div style={{ textAlign: 'center', padding: '80px 40px', color: 'var(--color-text-secondary)' }}>
-                <AppstoreOutlined style={{ fontSize: 64, marginBottom: 16, color: 'var(--color-border-3)' }} />
-                <div>请从左侧选择产品查看配置</div>
-              </div>
-            ) : (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <Space>
-                      <Text strong style={{ fontSize: 16 }}>
-                        {selectedProduct.label?.split(' - ')[1] || selectedProduct.label}
-                      </Text>
-                      <Text type="secondary">({selectedProduct.value})</Text>
-                    </Space>
-                    <Space>
-                      <Input
-                        placeholder="搜索劳动力账户"
-                        allowClear
-                        style={{ width: 200 }}
-                        value={filters.accountPathKeyword}
-                        onChange={(e) => setFilters({ ...filters, accountPathKeyword: e.target.value })}
-                        suffix={<SearchOutlined style={{ color: '#bbb' }} />}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={handleAdd}
-                      >
-                        新增
-                      </Button>
-                    </Space>
-                  </Space>
-                </div>
-
-                <Table
-                  columns={columns}
-                  dataSource={selectedProductConfigs}
-                  loading={configsLoading}
-                  rowKey="id"
-                  pagination={{
-                    pageSize: 10,
-                    showSizeChanger: true,
-                    showTotal: (total) => `共 ${total} 条`,
-                  }}
-                  scroll={{ x: 600 }}
-                  locale={{
-                    emptyText: (
-                      <Empty
-                        description={
-                          <div>
-                            <div>该产品暂无配置</div>
-                            <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 8 }}>
-                              点击上方"新增"按钮添加
-                            </div>
-                          </div>
-                        }
-                      />
-                    ),
-                  }}
-                />
-              </>
-            )}
-          </Col>
-        </Row>
-
-        {/* 编辑弹窗 */}
-        <Modal
-          title={editingRecord?.id ? '编辑' : '新增'}
-          open={isModalVisible}
-          onOk={handleModalSubmit}
-          onCancel={handleModalCancel}
-          confirmLoading={saveMutation.isPending}
-          width={600}
-        >
-          <Form form={form} layout="vertical">
-            <Form.Item
-              label="产品"
-              name="productId"
-              rules={[{ required: true, message: '请选择产品' }]}
-            >
-              <Select
-                placeholder="请选择产品"
-                showSearch
-                optionFilterProp="label"
-                disabled={!!editingRecord || !!selectedProduct}
-                options={products.map((p: any) => ({
-                  label: p.label,
-                  value: p.id,
-                }))}
-              />
-            </Form.Item>
-
-            {selectedLevelIds.length > 0 && (
-              <Form.Item
-                label="全局配置"
-                name="isGlobalConfig"
-                valuePropName="checked"
+            />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button
+                type="primary"
+                icon={<SearchOutlined />}
+                onClick={handleSearch}
               >
-                <Switch
-                  checked={isGlobalConfig}
-                  onChange={(checked) => setIsGlobalConfig(checked)}
-                />
-              </Form.Item>
-            )}
-
-            {selectedLevelIds.length > 0 && !isGlobalConfig && selectedLevels.map((level: any) => (
-              <Form.Item
-                key={level.id}
-                label={level.name}
-                name={`hierarchyOption_${level.id}`}
-                rules={[{ required: true, message: `请选择${level.name}，此项为必填项` }]}
+                查询
+              </Button>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={handleReset}
               >
-                <Select
-                  placeholder={`请选择${level.name}`}
-                  showSearch
-                  optionFilterProp="label"
-                  allowClear
-                  options={hierarchyLevelOptions[level.id]?.map((opt: any) => ({
-                    label: opt.label,
-                    value: opt.value,
-                  })) || []}
-                />
-              </Form.Item>
-            ))}
+                重置
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
 
-            <Form.Item label="标准">
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item
-                    name="quantity"
-                    tooltip="可选，用于记录批量生产时的数量"
-                    style={{ marginBottom: 0 }}
-                  >
-                    <InputNumber
-                      min={0}
-                      step={1}
-                      precision={0}
-                      style={{ width: '100%' }}
-                      addonAfter="件"
-                      placeholder="件数"
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={16}>
-                  <div style={{ display: 'flex', gap: 0 }}>
-                    <Form.Item
-                      name="standardHours"
-                      rules={[{ required: true, message: '请输入标准' }]}
-                      style={{ marginBottom: 0, flex: 1, marginRight: 0 }}
-                    >
-                      <InputNumber
-                        min={0}
-                        step={0.1}
-                        precision={2}
-                        style={{ width: '100%', borderRadius: '6px 0 0 6px' }}
-                        placeholder="标准"
-                      />
-                    </Form.Item>
-                    <Form.Item
-                      name="unit"
-                      style={{ marginBottom: 0, width: '120px', marginLeft: '-1px' }}
-                    >
-                      <Select
-                        placeholder="单位"
-                        allowClear
-                        style={{ width: '100%', borderRadius: '0 6px 6px 0' }}
-                      >
-                        <Select.Option value="小时">小时</Select.Option>
-                        <Select.Option value="元">元</Select.Option>
-                      </Select>
-                    </Form.Item>
-                  </div>
-                </Col>
-              </Row>
-            </Form.Item>
-
-            <Form.Item label="生效日期">
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    name="effectiveDate"
-                    rules={[{ required: true, message: '请选择生效日期' }]}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <DatePicker
-                      style={{ width: '100%' }}
-                      placeholder="请选择生效日期"
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    name="expiryDate"
-                    style={{ marginBottom: 0 }}
-                    rules={[
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
-                          const effectiveDate = getFieldValue('effectiveDate');
-                          if (value && effectiveDate && value.isBefore(effectiveDate, 'day')) {
-                            return Promise.reject(new Error('失效日期不能小于生效日期'));
-                          }
-                          return Promise.resolve();
-                        },
-                      }),
-                    ]}
-                  >
-                    <DatePicker
-                      style={{ width: '100%' }}
-                      placeholder="请选择失效日期（可选）"
-                      allowClear
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </Form.Item>
-          </Form>
-        </Modal>
+        {/* 表格 */}
+        <Table
+          columns={columns}
+          dataSource={configsData?.items || []}
+          loading={isLoading}
+          rowKey="id"
+          scroll={{ x: 1200 }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: configsData?.total || 0,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (page, pageSize) => {
+              setPagination({ current: page, pageSize });
+            },
+          }}
+        />
       </Card>
+
+      {/* 新增/编辑弹窗 */}
+      <Modal
+        title={editingRecord?.id ? '编辑配置' : '新增配置'}
+        open={isModalVisible}
+        onOk={handleModalSubmit}
+        onCancel={handleModalCancel}
+        confirmLoading={saveMutation.isPending}
+        width={600}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item
+            label="产品"
+            name="productId"
+            rules={[{ required: true, message: '请选择产品' }]}
+          >
+            <Select
+              placeholder="请选择产品"
+              showSearch
+              optionFilterProp="label"
+              options={products.map((p: any) => ({
+                label: p.label,
+                value: p.id,
+              }))}
+            />
+          </Form.Item>
+
+          <Form.Item label="全局配置" name="isGlobalConfig" valuePropName="checked">
+            <Switch
+              checkedChildren="是"
+              unCheckedChildren="否"
+              disabled={selectedLevelIds.length === 0}
+            />
+          </Form.Item>
+
+          {selectedLevelIds.length > 0 && (
+            <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => {
+              return prevValues.isGlobalConfig !== currentValues.isGlobalConfig;
+            }}>
+              {({ getFieldValue }) => {
+                const isGlobal = getFieldValue('isGlobalConfig');
+
+                if (!isGlobal) {
+                  return (
+                    <>
+                      {selectedLevels.map((level: any) => {
+                        const options = hierarchyLevelOptions[level.id] || [];
+                        return (
+                          <Form.Item
+                            key={level.id}
+                            label={level.name}
+                            name={`hierarchyOption_${level.id}`}
+                            rules={[{ required: true, message: `请选择${level.name}` }]}
+                          >
+                            <Select
+                              placeholder={`请选择${level.name}`}
+                              showSearch
+                              optionFilterProp="label"
+                              allowClear
+                              options={options.map((opt: any) => ({
+                                label: opt.label,
+                                value: opt.value,
+                              }))}
+                            />
+                          </Form.Item>
+                        );
+                      })}
+                    </>
+                  );
+                }
+                return <div style={{ color: '#999', fontSize: 12, marginTop: 8 }}>当前为全局配置，将应用于所有账户层级</div>;
+              }}
+            </Form.Item>
+          )}
+
+          <Form.Item label="标准值">
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item
+                name="quantity"
+                style={{ marginBottom: 0, width: '40%' }}
+              >
+                <InputNumber
+                  min={0}
+                  step={1}
+                  precision={0}
+                  style={{ width: '100%' }}
+                  placeholder="件数（可选）"
+                  addonAfter="件"
+                />
+              </Form.Item>
+              <Form.Item
+                name="standardHours"
+                rules={[{ required: true, message: '请输入标准值' }]}
+                style={{ marginBottom: 0, width: '60%' }}
+              >
+                <InputNumber
+                  min={0}
+                  step={0.1}
+                  precision={2}
+                  style={{ width: '100%' }}
+                  placeholder="标准值"
+                  addonAfter="小时"
+                />
+              </Form.Item>
+            </Space.Compact>
+          </Form.Item>
+
+          <Form.Item label="生效日期">
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <Form.Item
+                name="effectiveDate"
+                rules={[{ required: true, message: '请选择生效日期' }]}
+                style={{ marginBottom: 0, flex: 1 }}
+              >
+                <DatePicker
+                  style={{ width: '100%' }}
+                  placeholder="请选择生效日期"
+                />
+              </Form.Item>
+              <Form.Item
+                name="expiryDate"
+                style={{ marginBottom: 0, flex: 1 }}
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const effectiveDate = getFieldValue('effectiveDate');
+                      if (value && effectiveDate && value.isBefore(effectiveDate, 'day')) {
+                        return Promise.reject(new Error('失效日期不能小于生效日期'));
+                      }
+                      return Promise.resolve();
+                    },
+                  }),
+                ]}
+              >
+                <DatePicker
+                  style={{ width: '100%' }}
+                  placeholder="失效日期（可选）"
+                  allowClear
+                />
+              </Form.Item>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

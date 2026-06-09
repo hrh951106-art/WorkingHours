@@ -14,15 +14,7 @@ import { AmountModule } from '../amount/amount.module';
     WorkflowDefinitionController,
     WorkflowInstanceController,
   ],
-  providers: [
-    ParticipantConfigService,
-    WorkflowDefinitionService,
-    WorkflowInstanceService,
-  ],
-  exports: [
-    ParticipantConfigService,
-    WorkflowDefinitionService,
-    WorkflowInstanceService,
-  ],
+  providers: [ParticipantConfigService, WorkflowDefinitionService, WorkflowInstanceService],
+  exports: [ParticipantConfigService, WorkflowDefinitionService, WorkflowInstanceService],
 })
 export class WorkflowModule {}

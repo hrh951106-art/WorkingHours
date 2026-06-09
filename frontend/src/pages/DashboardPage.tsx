@@ -107,7 +107,7 @@ const DashboardPage: React.FC = () => {
       ],
     },
     {
-      title: '工时管理',
+      title: '精益工时',
       icon: <AccountBookOutlined />,
       color: '#00B365',
       items: [

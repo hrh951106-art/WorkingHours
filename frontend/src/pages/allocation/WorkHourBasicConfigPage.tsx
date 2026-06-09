@@ -91,7 +91,14 @@ const WorkHourBasicConfigPage: React.FC = () => {
         },
         {
           configKey: 'standardHoursHierarchyLevels',
-          configValue: (values.standardHoursHierarchyLevels || []).join(',') || '',
+          // 将选中的层级名称转换为层级序号存储到数据库
+          configValue: (values.standardHoursHierarchyLevels || [])
+            .map((name: string) => {
+              const level = hierarchyLevels.find((l: any) => l.name === name);
+              return level ? level.level : null;
+            })
+            .filter((levelNum: number | null) => levelNum !== null)
+            .join(',') || '',
           category: 'WORK_HOURS',
           description: '标准工时配置层级',
         },
@@ -178,8 +185,14 @@ const WorkHourBasicConfigPage: React.FC = () => {
       ? shiftPropertiesConfig.configValue.split(',').filter((key: string) => key)
       : [];
 
+    // 将数据库中存储的层级序号转换为层级名称，用于Select回显
     const standardHoursLevels = standardHoursLevelsConfig?.configValue
-      ? standardHoursLevelsConfig.configValue.split(',').filter((key: string) => key)
+      ? standardHoursLevelsConfig.configValue.split(',')
+          .filter((key: string) => key)
+          .map((levelNum: string) => {
+            const level = hierarchyLevels.find((l: any) => l.level === parseInt(levelNum));
+            return level ? level.name : levelNum;
+          })
       : [];
 
     return {

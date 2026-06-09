@@ -26,7 +26,7 @@ export class CalculateService {
     });
 
     // 解析 JSON 配置字段
-    return rules.map(rule => ({
+    return rules.map((rule) => ({
       ...rule,
       configs: JSON.parse(rule.configs || '[]'),
       scheduledConfig: rule.scheduledConfig ? JSON.parse(rule.scheduledConfig) : null,
@@ -48,10 +48,7 @@ export class CalculateService {
         effectiveDate: {
           lte: targetDate,
         },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gte: targetDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gte: targetDate } }],
       },
       include: {
         ruleGroup: {
@@ -120,7 +117,10 @@ export class CalculateService {
    * @param targetDate 目标日期
    * @returns Map<employeeId, ruleGroup>
    */
-  async getBatchEmployeeRuleGroups(employeeIds: string[], targetDate: Date): Promise<Map<string, any>> {
+  async getBatchEmployeeRuleGroups(
+    employeeIds: string[],
+    targetDate: Date,
+  ): Promise<Map<string, any>> {
     const ruleGroupMap = new Map<string, any>();
 
     // 查询所有员工的考勤规则组
@@ -128,10 +128,7 @@ export class CalculateService {
       where: {
         employeeNo: { in: employeeIds },
         effectiveDate: { lte: targetDate },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gte: targetDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gte: targetDate } }],
       },
       include: {
         ruleGroup: {
@@ -194,14 +191,21 @@ export class CalculateService {
     const existingRules = await this.prisma.punchRule.findMany({
       select: { code: true },
     });
-    const existingCodes = existingRules.map(r => r.code);
+    const existingCodes = existingRules.map((r) => r.code);
     return {
       code: StringUtils.generateSequentialCode('PR', existingCodes),
     };
   }
 
   async createPunchRule(dto: any) {
-    const { configs, conditions, deviceGroupIntervals, scheduledConfig, unscheduledConfig, ...data } = dto;
+    const {
+      configs,
+      conditions,
+      deviceGroupIntervals,
+      scheduledConfig,
+      unscheduledConfig,
+      ...data
+    } = dto;
 
     // 验证设备组间隔配置
     if (deviceGroupIntervals && deviceGroupIntervals.length > 0) {
@@ -220,7 +224,7 @@ export class CalculateService {
         const existingRules = await this.prisma.punchRule.findMany({
           select: { code: true },
         });
-        const existingCodes = existingRules.map(r => r.code);
+        const existingCodes = existingRules.map((r) => r.code);
         code = StringUtils.generateSequentialCode('PR', existingCodes);
       }
 
@@ -280,7 +284,14 @@ export class CalculateService {
   }
 
   async updatePunchRule(id: number, dto: any) {
-    const { configs, conditions, deviceGroupIntervals, scheduledConfig, unscheduledConfig, ...data } = dto;
+    const {
+      configs,
+      conditions,
+      deviceGroupIntervals,
+      scheduledConfig,
+      unscheduledConfig,
+      ...data
+    } = dto;
 
     // 验证设备组间隔配置
     if (deviceGroupIntervals && deviceGroupIntervals.length > 0) {
@@ -299,8 +310,18 @@ export class CalculateService {
         configs: configs !== undefined ? JSON.stringify(configs) : undefined,
         conditions: conditions !== undefined ? conditions : undefined,
         // 更新三种类型的配置
-        scheduledConfig: scheduledConfig !== undefined ? (scheduledConfig ? JSON.stringify(scheduledConfig) : null) : undefined,
-        unscheduledConfig: unscheduledConfig !== undefined ? (unscheduledConfig ? JSON.stringify(unscheduledConfig) : null) : undefined,
+        scheduledConfig:
+          scheduledConfig !== undefined
+            ? scheduledConfig
+              ? JSON.stringify(scheduledConfig)
+              : null
+            : undefined,
+        unscheduledConfig:
+          unscheduledConfig !== undefined
+            ? unscheduledConfig
+              ? JSON.stringify(unscheduledConfig)
+              : null
+            : undefined,
       },
     });
 
@@ -409,10 +430,7 @@ export class CalculateService {
     }
 
     // 使用计算引擎进行计算
-    const calcResult = await this.calculateEngine.calculateDaily(
-      employeeNo,
-      date,
-    );
+    const calcResult = await this.calculateEngine.calculateDaily(employeeNo, date);
 
     // 检查是否已有计算结果，如有则更新，无则创建
     const dayStart = new Date(date);
@@ -501,7 +519,7 @@ export class CalculateService {
     if (punchPairs.length === 0) {
       return {
         message: '没有找到需要计算的摆卡数据',
-        deletedCount: 0,  // ✅ 不再批量删除
+        deletedCount: 0, // ✅ 不再批量删除
         successCount: 0,
         failCount: 0,
         totalCount: 0,
@@ -515,7 +533,9 @@ export class CalculateService {
 
     for (const punchPair of punchPairs) {
       try {
-        console.log(`正在计算摆卡 ${punchPair.id}, 员工 ${punchPair.employeeNo}, 日期 ${punchPair.pairDate.toISOString()}`);
+        console.log(
+          `正在计算摆卡 ${punchPair.id}, 员工 ${punchPair.employeeNo}, 日期 ${punchPair.pairDate.toISOString()}`,
+        );
         const results = await this.attendanceCodeService.calculateFromPunchPair(punchPair.id);
         successCount++;
         console.log(`摆卡 ${punchPair.id} 计算成功，生成 ${results.length} 条工时记录`);
@@ -555,13 +575,15 @@ export class CalculateService {
           select: { id: true },
         });
 
-        const calcResultIds = newCalcResults.map(r => r.id);
+        const calcResultIds = newCalcResults.map((r) => r.id);
         console.log(`[CalculateService] 找到 ${calcResultIds.length} 条计算结果，准备推送...`);
 
         // 批量推送
         const pushResult = await this.workHourPushService.pushWorkHourResults(calcResultIds);
 
-        console.log(`[CalculateService] 批量推送完成: 成功 ${pushResult.success}, 失败 ${pushResult.failed}, 删除旧数据 ${pushResult.deleted}`);
+        console.log(
+          `[CalculateService] 批量推送完成: 成功 ${pushResult.success}, 失败 ${pushResult.failed}, 删除旧数据 ${pushResult.deleted}`,
+        );
       } catch (error) {
         console.error('[CalculateService] 批量推送工时结果失败:', error);
         // 不影响主流程，记录错误即可
@@ -570,7 +592,7 @@ export class CalculateService {
 
     return {
       message: failCount > 0 ? '批量计算完成，部分失败' : '批量计算完成',
-      deletedCount: 0,  // ✅ 不再批量删除
+      deletedCount: 0, // ✅ 不再批量删除
       successCount,
       failCount,
       totalCount: punchPairs.length,
@@ -584,7 +606,15 @@ export class CalculateService {
   }
 
   async getResults(query: any, user?: any) {
-    const { page = 1, pageSize = 10, employeeNo, calcDate, startDate, endDate, includeAllocation = false } = query;
+    const {
+      page = 1,
+      pageSize = 10,
+      employeeNo,
+      calcDate,
+      startDate,
+      endDate,
+      includeAllocation = false,
+    } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
@@ -641,7 +671,7 @@ export class CalculateService {
     let itemsWithAllocation = items;
     if (includeAllocation === 'true' || includeAllocation === true) {
       // 获取所有calcResultIds
-      const calcResultIds = items.map(item => item.id).filter(id => id != null);
+      const calcResultIds = items.map((item) => item.id).filter((id) => id != null);
 
       if (calcResultIds.length > 0) {
         // 查询相关的分摊结果
@@ -663,7 +693,7 @@ export class CalculateService {
 
         // 创建映射：calcResultId -> allocationResults[]
         const allocationMap = new Map<number, any[]>();
-        allocationResults.forEach(ar => {
+        allocationResults.forEach((ar) => {
           if (!allocationMap.has(ar.calcResultId)) {
             allocationMap.set(ar.calcResultId, []);
           }
@@ -671,7 +701,7 @@ export class CalculateService {
         });
 
         // 为每个工时结果添加分摊信息
-        itemsWithAllocation = items.map(item => {
+        itemsWithAllocation = items.map((item) => {
           const allocations = allocationMap.get(item.id) || [];
           return {
             ...item,

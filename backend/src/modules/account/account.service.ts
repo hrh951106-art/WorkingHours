@@ -61,15 +61,15 @@ export class AccountService {
     }
 
     // 验证层级名称不能重复
-    const names = levels.map(l => l.name);
+    const names = levels.map((l) => l.name);
     const uniqueNames = new Set(names);
     if (names.length !== uniqueNames.size) {
       throw new Error('层级名称不能重复');
     }
 
     // 验证一个组织类型只允许被映射一次
-    const orgTypeMappings = levels.filter(l => l.mappingType === 'ORG_TYPE' && l.mappingValue);
-    const orgTypeValues = orgTypeMappings.map(l => l.mappingValue);
+    const orgTypeMappings = levels.filter((l) => l.mappingType === 'ORG_TYPE' && l.mappingValue);
+    const orgTypeValues = orgTypeMappings.map((l) => l.mappingValue);
     const uniqueOrgTypes = new Set(orgTypeValues);
     if (orgTypeValues.length !== uniqueOrgTypes.size) {
       throw new Error('一个组织类型只允许被映射一次，请检查是否有重复的组织类型映射');
@@ -109,7 +109,7 @@ export class AccountService {
           await this.syncHierarchyLevelDetails(tx, config);
 
           return config;
-        })
+        }),
       );
 
       return createdConfigs;
@@ -130,7 +130,13 @@ export class AccountService {
     });
 
     // 根据映射类型获取数据
-    const details = await this.fetchHierarchyLevelDetails(tx, mappingType, mappingValue, dataSourceId, id);
+    const details = await this.fetchHierarchyLevelDetails(
+      tx,
+      mappingType,
+      mappingValue,
+      dataSourceId,
+      id,
+    );
 
     // 批量创建新的层级明细
     if (details && details.length > 0) {
@@ -154,7 +160,7 @@ export class AccountService {
     mappingType: string,
     mappingValue: string | null,
     dataSourceId: number | null,
-    hierarchyConfigId: number
+    hierarchyConfigId: number,
   ): Promise<any[]> {
     // 组织类型映射：从组织表获取数据
     // 兼容 ORG_TYPE 和 ORG 两种格式
@@ -267,7 +273,9 @@ export class AccountService {
       }));
     }
 
-    console.warn(`未处理的映射类型: ${mappingType}, mappingValue: ${mappingValue}, dataSourceId: ${dataSourceId}`);
+    console.warn(
+      `未处理的映射类型: ${mappingType}, mappingValue: ${mappingValue}, dataSourceId: ${dataSourceId}`,
+    );
     return [];
   }
 
@@ -307,7 +315,7 @@ export class AccountService {
 
     // 合并所有需要同步的配置，去重
     const allConfigs = [...directConfigs];
-    const configIds = new Set(directConfigs.map(c => c.id));
+    const configIds = new Set(directConfigs.map((c) => c.id));
 
     for (const config of indirectConfigs) {
       if (!configIds.has(config.id)) {
@@ -324,7 +332,7 @@ export class AccountService {
 
     // 对每个配置同步层级明细
     await Promise.all(
-      allConfigs.map((config) => this.syncHierarchyLevelDetails(this.prisma, config))
+      allConfigs.map((config) => this.syncHierarchyLevelDetails(this.prisma, config)),
     );
   }
 
@@ -365,9 +373,7 @@ export class AccountService {
       orderBy: [{ level: 'asc' }, { sort: 'asc' }],
     });
 
-    await Promise.all(
-      configs.map((config) => this.syncHierarchyLevelDetails(this.prisma, config))
-    );
+    await Promise.all(configs.map((config) => this.syncHierarchyLevelDetails(this.prisma, config)));
 
     // 返回所有更新后的层级配置及明细
     return this.prisma.accountHierarchyConfig.findMany({
@@ -408,7 +414,7 @@ export class AccountService {
       employeeId,
       usageType,
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
     } = query;
     const skip = (page - 1) * pageSize;
 
@@ -446,7 +452,19 @@ export class AccountService {
   }
 
   async createAccount(dto: any) {
-    const { code, name, type, level, parentId, employeeId, effectiveDate, path, namePath, hierarchyValues, usageType } = dto;
+    const {
+      code,
+      name,
+      type,
+      level,
+      parentId,
+      employeeId,
+      effectiveDate,
+      path,
+      namePath,
+      hierarchyValues,
+      usageType,
+    } = dto;
 
     // 构建账户路径：优先级 hierarchyValues > path > 默认逻辑
     let accountPath = path;
@@ -454,9 +472,8 @@ export class AccountService {
     // 如果有 hierarchyValues，根据它生成完整的 path（包含所有层级，未选择的用空字符串占位）
     if (hierarchyValues && hierarchyValues !== '{}') {
       try {
-        const levels = typeof hierarchyValues === 'string'
-          ? JSON.parse(hierarchyValues)
-          : hierarchyValues;
+        const levels =
+          typeof hierarchyValues === 'string' ? JSON.parse(hierarchyValues) : hierarchyValues;
 
         if (Array.isArray(levels)) {
           // 按层级序号排序
@@ -544,9 +561,10 @@ export class AccountService {
     }
 
     // 解析员工自定义字段
-    const customFields = typeof employee.customFields === 'string'
-      ? JSON.parse(employee.customFields)
-      : employee.customFields || {};
+    const customFields =
+      typeof employee.customFields === 'string'
+        ? JSON.parse(employee.customFields)
+        : employee.customFields || {};
 
     // 查询员工当前的工作信息，获取employeeType和jobPost等字段
     const workInfoHistory = await this.prisma.workInfoHistory.findFirst({
@@ -558,9 +576,10 @@ export class AccountService {
 
     // 合并工作信息的customFields到customFields对象中
     if (workInfoHistory) {
-      const workInfoCustomFields = typeof workInfoHistory.customFields === 'string'
-        ? JSON.parse(workInfoHistory.customFields)
-        : workInfoHistory.customFields || {};
+      const workInfoCustomFields =
+        typeof workInfoHistory.customFields === 'string'
+          ? JSON.parse(workInfoHistory.customFields)
+          : workInfoHistory.customFields || {};
 
       // 合并customFields，WorkInfoHistory的字段优先级更高
       Object.assign(customFields, workInfoCustomFields);
@@ -602,9 +621,17 @@ export class AccountService {
         case 'ORG':
           // 组织类型：根据mappingValue查找指定类型的组织
           if (config.mappingValue) {
-            accountCode = await this.findOrgByType(this.prisma, employee.orgId, config.mappingValue);
+            accountCode = await this.findOrgByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
             // 查询组织详细信息
-            const org = await this.findOrgObjectByType(this.prisma, employee.orgId, config.mappingValue);
+            const org = await this.findOrgObjectByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
             if (org) {
               accountName = org.name;
               selectedValue = {
@@ -619,20 +646,30 @@ export class AccountService {
             const topLevelOrg = await this.getTopLevelOrg(this.prisma, employee.orgId);
             accountCode = topLevelOrg?.code || '-';
             accountName = topLevelOrg?.name || '-';
-            selectedValue = topLevelOrg ? {
-              id: topLevelOrg.id,
-              name: topLevelOrg.name,
-              code: topLevelOrg.code,
-              type: topLevelOrg.type,
-            } : null;
+            selectedValue = topLevelOrg
+              ? {
+                  id: topLevelOrg.id,
+                  name: topLevelOrg.name,
+                  code: topLevelOrg.code,
+                  type: topLevelOrg.type,
+                }
+              : null;
           }
           break;
 
         case 'ORG_TYPE':
           // 组织类型映射：根据员工组织树向上查找匹配的组织类型
           if (config.mappingValue) {
-            accountCode = await this.findOrgByType(this.prisma, employee.orgId, config.mappingValue);
-            const org = await this.findOrgObjectByType(this.prisma, employee.orgId, config.mappingValue);
+            accountCode = await this.findOrgByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
+            const org = await this.findOrgObjectByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
             if (org) {
               accountName = org.name;
               selectedValue = {
@@ -795,9 +832,10 @@ export class AccountService {
     }
 
     // 解析员工自定义字段
-    const customFields = typeof employee.customFields === 'string'
-      ? JSON.parse(employee.customFields)
-      : employee.customFields || {};
+    const customFields =
+      typeof employee.customFields === 'string'
+        ? JSON.parse(employee.customFields)
+        : employee.customFields || {};
 
     // 查询员工当前的工作信息，获取employeeType和jobPost等字段
     const workInfoHistory = await this.prisma.workInfoHistory.findFirst({
@@ -809,9 +847,10 @@ export class AccountService {
 
     // 合并工作信息的customFields到customFields对象中
     if (workInfoHistory) {
-      const workInfoCustomFields = typeof workInfoHistory.customFields === 'string'
-        ? JSON.parse(workInfoHistory.customFields)
-        : workInfoHistory.customFields || {};
+      const workInfoCustomFields =
+        typeof workInfoHistory.customFields === 'string'
+          ? JSON.parse(workInfoHistory.customFields)
+          : workInfoHistory.customFields || {};
 
       // 合并customFields，WorkInfoHistory的字段优先级更高
       Object.assign(customFields, workInfoCustomFields);
@@ -960,11 +999,14 @@ export class AccountService {
         // 构建层级值信息（用于hierarchyValues字段）
         const levelValue = {
           level: config.level,
-          selectedValue: accountCode !== '-' ? {
-            code: accountCode,
-            name: accountName,
-            value: accountCode,
-          } : null,
+          selectedValue:
+            accountCode !== '-'
+              ? {
+                  code: accountCode,
+                  name: accountName,
+                  value: accountCode,
+                }
+              : null,
           selectedValueLabel: accountName !== '-' ? accountName : null,
         };
         hierarchyValues.push(levelValue);
@@ -974,9 +1016,10 @@ export class AccountService {
 
         // 生成唯一的账户编码（添加层级后缀和时间戳确保唯一性）
         const timestampSuffix = Date.now().toString().slice(-6);
-        const uniqueCode = accountCode === '-'
-          ? `-${employeeId}_L${config.level}_${timestampSuffix}`
-          : `${accountCode}_L${config.level}_${timestampSuffix}`;
+        const uniqueCode =
+          accountCode === '-'
+            ? `-${employeeId}_L${config.level}_${timestampSuffix}`
+            : `${accountCode}_L${config.level}_${timestampSuffix}`;
 
         // 创建账户
         // 首次生成账户时，生效日期为员工入职日期
@@ -1046,9 +1089,10 @@ export class AccountService {
     }
 
     // 解析员工自定义字段
-    const customFields = typeof employee.customFields === 'string'
-      ? JSON.parse(employee.customFields)
-      : employee.customFields || {};
+    const customFields =
+      typeof employee.customFields === 'string'
+        ? JSON.parse(employee.customFields)
+        : employee.customFields || {};
 
     // 查询员工当前的工作信息，获取employeeType和jobPost等字段
     const workInfoHistory = await this.prisma.workInfoHistory.findFirst({
@@ -1060,9 +1104,10 @@ export class AccountService {
 
     // 合并工作信息的customFields到customFields对象中
     if (workInfoHistory) {
-      const workInfoCustomFields = typeof workInfoHistory.customFields === 'string'
-        ? JSON.parse(workInfoHistory.customFields)
-        : workInfoHistory.customFields || {};
+      const workInfoCustomFields =
+        typeof workInfoHistory.customFields === 'string'
+          ? JSON.parse(workInfoHistory.customFields)
+          : workInfoHistory.customFields || {};
 
       // 合并customFields，WorkInfoHistory的字段优先级更高
       Object.assign(customFields, workInfoCustomFields);
@@ -1205,11 +1250,14 @@ export class AccountService {
         // 构建层级值信息（用于hierarchyValues字段）
         const levelValue = {
           level: config.level,
-          selectedValue: accountCode !== '-' ? {
-            code: accountCode,
-            name: accountName,
-            value: accountCode,
-          } : null,
+          selectedValue:
+            accountCode !== '-'
+              ? {
+                  code: accountCode,
+                  name: accountName,
+                  value: accountCode,
+                }
+              : null,
           selectedValueLabel: accountName !== '-' ? accountName : null,
         };
         hierarchyValues.push(levelValue);
@@ -1219,9 +1267,10 @@ export class AccountService {
 
         // 生成唯一的账户编码（添加层级后缀和时间戳确保唯一性）
         const timestampSuffix = Date.now().toString().slice(-6);
-        const uniqueCode = accountCode === '-'
-          ? `-${employeeId}_L${config.level}_${timestampSuffix}`
-          : `${accountCode}_L${config.level}_${timestampSuffix}`;
+        const uniqueCode =
+          accountCode === '-'
+            ? `-${employeeId}_L${config.level}_${timestampSuffix}`
+            : `${accountCode}_L${config.level}_${timestampSuffix}`;
 
         // 创建账户，使用指定的生效日期
         const accountEffectiveDate = new Date(effectiveDate);
@@ -1385,9 +1434,10 @@ export class AccountService {
     }
 
     // 解析员工自定义字段
-    const customFields = typeof employee.customFields === 'string'
-      ? JSON.parse(employee.customFields)
-      : employee.customFields || {};
+    const customFields =
+      typeof employee.customFields === 'string'
+        ? JSON.parse(employee.customFields)
+        : employee.customFields || {};
 
     // 查询员工当前的工作信息，获取employeeType和jobPost等字段
     const workInfoHistory = await this.prisma.workInfoHistory.findFirst({
@@ -1399,9 +1449,10 @@ export class AccountService {
 
     // 合并工作信息的customFields到customFields对象中
     if (workInfoHistory) {
-      const workInfoCustomFields = typeof workInfoHistory.customFields === 'string'
-        ? JSON.parse(workInfoHistory.customFields)
-        : workInfoHistory.customFields || {};
+      const workInfoCustomFields =
+        typeof workInfoHistory.customFields === 'string'
+          ? JSON.parse(workInfoHistory.customFields)
+          : workInfoHistory.customFields || {};
 
       // 合并customFields，WorkInfoHistory的字段优先级更高
       Object.assign(customFields, workInfoCustomFields);
@@ -1439,7 +1490,11 @@ export class AccountService {
           // 组织类型：根据mappingValue查找指定类型的组织
           if (config.mappingValue) {
             // 使用mappingValue指定的组织类型查找组织
-            accountCode = await this.findOrgByType(this.prisma, employee.orgId, config.mappingValue);
+            accountCode = await this.findOrgByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
           } else if (config.level === 1) {
             // 如果没有指定mappingValue，第1层使用顶级组织
             const topLevelOrg = await this.getTopLevelOrg(this.prisma, employee.orgId);
@@ -1452,7 +1507,11 @@ export class AccountService {
 
         case 'ORG_TYPE':
           if (config.mappingValue) {
-            accountCode = await this.findOrgByType(this.prisma, employee.orgId, config.mappingValue);
+            accountCode = await this.findOrgByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
           } else {
             accountCode = '-';
           }
@@ -1551,7 +1610,9 @@ export class AccountService {
         };
       }
 
-      console.log(`📋 最新WorkInfoHistory: effectiveDate=${latestWorkInfo.effectiveDate.toISOString().substring(0, 10)}, position=${latestWorkInfo.position}, jobLevel=${latestWorkInfo.jobLevel}`);
+      console.log(
+        `📋 最新WorkInfoHistory: effectiveDate=${latestWorkInfo.effectiveDate.toISOString().substring(0, 10)}, position=${latestWorkInfo.position}, jobLevel=${latestWorkInfo.jobLevel}`,
+      );
 
       // 2. 计算新的层级值
       const newHierarchyData = await this.calculateCompleteHierarchy(employeeId);
@@ -1658,9 +1719,10 @@ export class AccountService {
     }
 
     // 解析员工自定义字段
-    const customFields = typeof employee.customFields === 'string'
-      ? JSON.parse(employee.customFields)
-      : employee.customFields || {};
+    const customFields =
+      typeof employee.customFields === 'string'
+        ? JSON.parse(employee.customFields)
+        : employee.customFields || {};
 
     // 查询员工当前的工作信息
     const workInfoHistory = await this.prisma.workInfoHistory.findFirst({
@@ -1674,9 +1736,10 @@ export class AccountService {
     if (workInfoHistory) {
       // 合并customFields
       if (workInfoHistory.customFields) {
-        const workInfoCustomFields = typeof workInfoHistory.customFields === 'string'
-          ? JSON.parse(workInfoHistory.customFields)
-          : workInfoHistory.customFields || {};
+        const workInfoCustomFields =
+          typeof workInfoHistory.customFields === 'string'
+            ? JSON.parse(workInfoHistory.customFields)
+            : workInfoHistory.customFields || {};
         Object.assign(customFields, workInfoCustomFields);
       }
 
@@ -1716,8 +1779,16 @@ export class AccountService {
       switch (cleanMappingType) {
         case 'ORG':
           if (config.mappingValue) {
-            accountCode = await this.findOrgByType(this.prisma, employee.orgId, config.mappingValue);
-            const org = await this.findOrgObjectByType(this.prisma, employee.orgId, config.mappingValue);
+            accountCode = await this.findOrgByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
+            const org = await this.findOrgObjectByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
             accountName = org?.name || accountCode;
           } else if (config.level === 1) {
             const topLevelOrg = await this.getTopLevelOrg(this.prisma, employee.orgId);
@@ -1731,8 +1802,16 @@ export class AccountService {
 
         case 'ORG_TYPE':
           if (config.mappingValue) {
-            accountCode = await this.findOrgByType(this.prisma, employee.orgId, config.mappingValue);
-            const org = await this.findOrgObjectByType(this.prisma, employee.orgId, config.mappingValue);
+            accountCode = await this.findOrgByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
+            const org = await this.findOrgObjectByType(
+              this.prisma,
+              employee.orgId,
+              config.mappingValue,
+            );
             accountName = org?.name || accountCode;
           } else {
             accountCode = '-';
@@ -1751,7 +1830,9 @@ export class AccountService {
           const fieldCode = config.mappingType.replace('FIELD_', '');
           const customFieldValue = customFields[fieldCode];
 
-          console.log(`处理Level ${config.level}: mappingType=${config.mappingType}, fieldCode=${fieldCode}, value=${customFieldValue}`);
+          console.log(
+            `处理Level ${config.level}: mappingType=${config.mappingType}, fieldCode=${fieldCode}, value=${customFieldValue}`,
+          );
 
           if (!customFieldValue) {
             accountCode = '-';
@@ -1785,11 +1866,14 @@ export class AccountService {
       const levelValue = {
         level: config.level,
         name: config.name,
-        selectedValue: accountCode !== '-' ? {
-          code: accountCode,
-          name: accountName,
-          value: accountCode,
-        } : null,
+        selectedValue:
+          accountCode !== '-'
+            ? {
+                code: accountCode,
+                name: accountName,
+                value: accountCode,
+              }
+            : null,
         selectedValueLabel: accountName !== '-' ? accountName : null,
       };
       hierarchyValues.push(levelValue);
@@ -1915,9 +1999,10 @@ export class AccountService {
       }
 
       // 解析员工自定义字段
-      const customFields = typeof employee.customFields === 'string'
-        ? JSON.parse(employee.customFields)
-        : employee.customFields || {};
+      const customFields =
+        typeof employee.customFields === 'string'
+          ? JSON.parse(employee.customFields)
+          : employee.customFields || {};
 
       // 构建账户路径
       const pathParts: string[] = []; // 用于存储code
@@ -2044,9 +2129,10 @@ export class AccountService {
         // 生成唯一的账户编码（添加层级后缀和时间戳确保唯一性）
         // 使用时间戳后6位确保每次生成的编码都不同
         const timestampSuffix = Date.now().toString().slice(-6);
-        const uniqueCode = accountCode === '-'
-          ? `-${employeeId}_L${config.level}_${timestampSuffix}`
-          : `${accountCode}_L${config.level}_${timestampSuffix}`;
+        const uniqueCode =
+          accountCode === '-'
+            ? `-${employeeId}_L${config.level}_${timestampSuffix}`
+            : `${accountCode}_L${config.level}_${timestampSuffix}`;
 
         // 创建账户（重新生成时总是创建新账户）
         const account = await tx.laborAccount.create({
