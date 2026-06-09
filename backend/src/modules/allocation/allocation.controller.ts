@@ -529,4 +529,12 @@ export class AllocationController {
       orgType: await this.allocationScopeService.getOrgTypeByLevel(levelNum),
     };
   }
+
+  // ============ 工时���果查询 ============
+
+  @Get('work-hours')
+  @ApiOperation({ summary: '获取工时结果数据（从WorkHourResult表）' })
+  async getWorkHours(@Query() query: any) {
+    return this.allocationService.getWorkHours(query);
+  }
 }

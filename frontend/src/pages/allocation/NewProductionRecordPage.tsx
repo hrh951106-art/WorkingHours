@@ -66,6 +66,7 @@ interface PersonalProductionRecord {
   actualQty: number;
   standardHours?: number;
   earnedHours?: number;
+  unit?: string;
   recorderId: number;
   recorderName?: string;
   createdAt?: string;
@@ -665,14 +666,19 @@ const NewProductionRecordPage: React.FC = () => {
       ),
     },
     {
-      title: '挣得工时',
+      title: '挣得',
       dataIndex: 'earnedHours',
       key: 'earnedHours',
       width: 100,
       align: 'right' as const,
-      render: (value: number) => (
-        <span style={{ fontWeight: 600, color: '#52c41a' }}>{value?.toFixed(2) || '-'}</span>
-      ),
+      render: (value: number, record: PersonalProductionRecord) => {
+        const unit = record.unit || '小时';
+        return (
+          <span style={{ fontWeight: 600, color: '#52c41a' }}>
+            {value !== undefined && value !== null ? value.toFixed(2) : '-'} {unit}
+          </span>
+        );
+      },
     },
     {
       title: '操作',
@@ -1102,6 +1108,7 @@ const NewProductionRecordPage: React.FC = () => {
           >
             <EmployeeSelect
               placeholder="请选择员工"
+              disabled={!!editingPersonalRecord}
               onChange={(value, employee) => {
                 // 当选择员工时，更新表单的两个字段
                 personalForm.setFieldsValue({

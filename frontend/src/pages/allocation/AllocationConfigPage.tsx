@@ -77,18 +77,28 @@ const AllocationConfigPage: React.FC = () => {
       request.get('/allocation/attendance-codes').then((res: any) => res),
   });
 
-  // 创建配置
+  // 创建配置 - 根据当前Tab调用不同的API
   const createMutation = useMutation({
     mutationFn: (data: any) => {
-      console.log('createMutation - 发送请求到 /allocation/configs');
+      // 根据当前Tab调用不同的API
+      const apiUrl = activeTab === 'earned'
+        ? '/earned-hours-allocation/configs'  // 挣得工时规则API
+        : '/allocation/configs';               // 间接工时分摊API
+
+      console.log(`createMutation - 发送请求到 ${apiUrl}`);
       console.log('请求数据:', JSON.stringify(data, null, 2));
-      return request.post('/allocation/configs', data);
+      return request.post(apiUrl, data);
     },
     onSuccess: () => {
       message.success('创建成功');
       setIsModalVisible(false);
       form.resetFields();
-      queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      // 刷新当前Tab的数据
+      if (activeTab === 'earned') {
+        queryClient.invalidateQueries({ queryKey: ['earnedHourConfigs'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      }
     },
     onError: (error: any) => {
       console.error('创建失败 - 错误详情:', error);
@@ -99,55 +109,95 @@ const AllocationConfigPage: React.FC = () => {
     },
   });
 
-  // 更新配置
+  // 更新配置 - 根据当前Tab调用不同的API
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) =>
-      request.put(`/allocation/configs/${id}`, data),
+    mutationFn: ({ id, data }: { id: number; data: any }) => {
+      const apiUrl = activeTab === 'earned'
+        ? `/earned-hours-allocation/configs/${id}`
+        : `/allocation/configs/${id}`;
+
+      return request.put(apiUrl, data);
+    },
     onSuccess: () => {
       message.success('更新成功');
       setIsModalVisible(false);
       setEditingConfig(null);
       form.resetFields();
-      queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      // 刷新当前Tab的数据
+      if (activeTab === 'earned') {
+        queryClient.invalidateQueries({ queryKey: ['earnedHourConfigs'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      }
     },
     onError: (error: any) => {
       message.error(error.response?.data?.message || '更新失败');
     },
   });
 
-  // 删除配置
+  // 删除配置 - 根据当前Tab调用不同的API
   const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      request.delete(`/allocation/configs/${id}`),
+    mutationFn: (id: number) => {
+      const apiUrl = activeTab === 'earned'
+        ? `/earned-hours-allocation/configs/${id}`
+        : `/allocation/configs/${id}`;
+
+      return request.delete(apiUrl);
+    },
     onSuccess: () => {
       message.success('删除成功');
-      queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      // 刷新当前Tab的数据
+      if (activeTab === 'earned') {
+        queryClient.invalidateQueries({ queryKey: ['earnedHourConfigs'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      }
     },
     onError: (error: any) => {
       message.error(error.response?.data?.message || '删除失败');
     },
   });
 
-  // 启用配置
+  // 启用配置 - 根据当前Tab调用不同的API
   const activateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) =>
-      request.post(`/allocation/configs/${id}/activate`, data),
+    mutationFn: ({ id, data }: { id: number; data: any }) => {
+      const apiUrl = activeTab === 'earned'
+        ? `/earned-hours-allocation/configs/${id}/activate`
+        : `/allocation/configs/${id}/activate`;
+
+      return request.post(apiUrl, data);
+    },
     onSuccess: () => {
       message.success('启用成功');
-      queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      // 刷新当前Tab的数据
+      if (activeTab === 'earned') {
+        queryClient.invalidateQueries({ queryKey: ['earnedHourConfigs'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      }
     },
     onError: (error: any) => {
       message.error(error.response?.data?.message || '启用失败');
     },
   });
 
-  // 复制配置
+  // 复制配置 - 根据当前Tab调用不同的API
   const copyMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) =>
-      request.post(`/allocation/configs/${id}/copy`, data),
+    mutationFn: ({ id, data }: { id: number; data: any }) => {
+      const apiUrl = activeTab === 'earned'
+        ? `/earned-hours-allocation/configs/${id}/copy`
+        : `/allocation/configs/${id}/copy`;
+
+      return request.post(apiUrl, data);
+    },
     onSuccess: () => {
       message.success('复制成功，已创建新配置');
-      queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      // 刷新当前Tab的数据
+      if (activeTab === 'earned') {
+        queryClient.invalidateQueries({ queryKey: ['earnedHourConfigs'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['allocationConfigs'] });
+      }
     },
     onError: (error: any) => {
       message.error(error.response?.data?.message || '复制失败');

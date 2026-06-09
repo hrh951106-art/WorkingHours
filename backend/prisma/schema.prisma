@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -633,6 +633,7 @@ model PersonalProductionRecord {
   actualQty        Float
   standardHours    Float
   earnedHours      Float
+  unit             String?  @default("小时")
   source           String   @default("MANUAL")
   recorderId       Int
   recorderName     String
@@ -693,6 +694,7 @@ model AllocationSourceConfig {
 model AllocationRuleConfig {
   id                        Int                    @id @default(autoincrement())
   configId                  Int
+  ruleCode                  String?
   ruleName                  String?
   ruleType                  String
   allocationBasis           String
@@ -1285,6 +1287,10 @@ model LaborHourReportEmployee {
   employeeId        Int
   employeeNo        String
   employeeName      String
+  startTime         String?              // 员工独立开始时间 (HH:mm)
+  endTime           String?              // 员工独立结束时间 (HH:mm)
+  value             Float?               // 员工独立工���数量
+  description       String?              // 员工独立描述
   createdAt         DateTime             @default(now())
 
   request           LaborHourReportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
@@ -1679,6 +1685,7 @@ model EarnedHoursAllocationResult {
   sourceHours           Float
   allocatedHours        Float
   allocationRatio       Float?
+  unit                  String?
   calcResultId          Int?
   calcTime              DateTime
   createdAt             DateTime                 @default(now())
@@ -1729,6 +1736,7 @@ model ProductStandardHourByLevel {
   accountPath           String?
   standardHours         Float
   quantity              Float?
+  unit                  String?
   effectiveDate         DateTime
   expiryDate            DateTime?
   status                String                   @default("ACTIVE")

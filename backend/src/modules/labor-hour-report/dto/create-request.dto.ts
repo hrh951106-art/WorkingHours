@@ -18,6 +18,22 @@ export class ReportEmployeeDto {
   @IsNotEmpty()
   @IsString()
   employeeName: string;
+
+  @IsOptional()
+  @IsString()
+  startTime?: string;   // 员工独立开始时间 (HH:mm)
+
+  @IsOptional()
+  @IsString()
+  endTime?: string;     // 员工独立结束时间 (HH:mm)
+
+  @IsOptional()
+  @IsNumber()
+  value?: number;       // 员工独立工时数量
+
+  @IsOptional()
+  @IsString()
+  description?: string; // 员工独立描述
 }
 
 export class CreateLaborHourReportRequestDto {

@@ -25,47 +25,16 @@ export class AllocationService {
       return [];
     }
 
-    // 解析层级配置（支持 "产品,工序" 或 "4,5" 或 "6,8" 格式）
-    const levelsToExtract = hierarchyLevelsToExtract.split(',').map(l => l.trim());
-
-    // 将层级名称转换为层级编号（序号）
-    const levelNameMap: Record<string, number> = {
-      '工厂': 1,
-      '车间': 2,
-      '产线': 3,
-      '产品': 4,
-      '工序': 5,
-    };
-
-    // levelId到层级序号的映射关系（根据系统的层级配置）
-    const levelIdToLevelNumberMap: Record<number, number> = {
-      4: 1,  // levelId 4 -> 第1层 (工厂)
-      5: 2,  // levelId 5 -> 第2层 (车间)
-      6: 3,  // levelId 6 -> 第3层 (产线)
-      7: 4,  // levelId 7 -> 第4层 (产品)
-      8: 5,  // levelId 8 -> 第5层 (工序)
-    };
-
-    const levelsToExtractNumbers = levelsToExtract.map(l => {
-      const num = parseInt(l);
-      if (isNaN(num)) {
-        // 如果不是数字，尝试从层级名称映射
-        return levelNameMap[l] || 0;
-      } else {
-        // 如果是数字，检查是否为levelId（4-8范围）
-        if (num >= 4 && num <= 8) {
-          // 这是levelId，需要转换为层级序号
-          return levelIdToLevelNumberMap[num] || 0;
-        } else {
-          // 这是层级序号，直接使用
-          return num;
-        }
-      }
-    }).filter(n => n > 0).sort((a, b) => a - b); // 升序排序
+    // 直接解析配置值为层级序号（1-5）
+    const levelsToExtractNumbers = hierarchyLevelsToExtract
+      .split(',')
+      .map(l => parseInt(l.trim()))
+      .filter(n => !isNaN(n) && n > 0)
+      .sort((a, b) => a - b);
 
     console.log(`[标准工时匹配] 原始路径: ${namePath}`);
     console.log(`[标准工时匹配] 提取层级配置: ${hierarchyLevelsToExtract}`);
-    console.log(`[标准工时匹配] 转换后的层级序号: [${levelsToExtractNumbers.join(', ')}]`);
+    console.log(`[标准工时匹配] 层级序号: [${levelsToExtractNumbers.join(', ')}]`);
 
     // 将路径按 "/" 分割
     const pathParts = namePath.split('/');
@@ -549,11 +518,36 @@ export class AllocationService {
   // ============ 产线班次管理 ============
 
   async getLineShifts(query: any) {
-    const { page = 1, pageSize = 10, orgId, lineId, scheduleDate, shiftId } = query;
+    const { page = 1, pageSize = 10, orgId, orgIds, lineId, scheduleDate, shiftId } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = { deletedAt: null };
-    if (orgId) where.orgId = +orgId;
+
+    // 支持 orgIds 数组查询
+    if (orgIds) {
+      // 确保 orgIds 是数组并且所有元素都是整数
+      let ids: number[] = [];
+      if (Array.isArray(orgIds)) {
+        // 如果已经是数组，将所有元素转换为整数
+        ids = orgIds.map((id: any) => {
+          const num = typeof id === 'string' ? parseInt(id) : id;
+          return isNaN(num) ? 0 : num;
+        }).filter((id: number) => id > 0);
+      } else if (typeof orgIds === 'string') {
+        // 如果是字符串，按逗号分割后转换为整数
+        ids = orgIds.split(',').map((id: string) => {
+          const num = parseInt(id.trim());
+          return isNaN(num) ? 0 : num;
+        }).filter((id: number) => id > 0);
+      }
+
+      if (ids.length > 0) {
+        where.orgId = { in: ids };
+      }
+    } else if (orgId) {
+      where.orgId = +orgId;
+    }
+
     if (lineId) where.lineId = +lineId;
     if (shiftId) where.shiftId = +shiftId;
     if (scheduleDate) {
@@ -803,6 +797,59 @@ export class AllocationService {
       }
     }
 
+    // 获取产品信息（如果更新了产品）
+    let finalProductCode = record.productCode;
+    let finalProductName = record.productName;
+    if (productId !== undefined && productId !== record.productId) {
+      // productId 实际上是数据源选项的ID，需要先查找数据源选项
+      const dataSourceOption = await this.prisma.dataSourceOption.findUnique({
+        where: { id: productId },
+      });
+
+      if (dataSourceOption) {
+        finalProductCode = dataSourceOption.value;
+        finalProductName = dataSourceOption.label;
+      }
+    }
+
+    // 获取产线信息（如果更新了产线）
+    let finalOrgName = record.orgName;
+    let finalLineName = record.lineName;
+    if (orgId !== undefined && orgId !== record.orgId) {
+      try {
+        // 获取劳动力账户信息
+        const account = await this.prisma.laborAccount.findUnique({
+          where: { id: orgId },
+        });
+        if (account) {
+          finalOrgName = account.namePath || account.name || '';
+          finalLineName = account.namePath || account.name || '';
+        }
+      } catch (error) {
+        console.error('获取产线信息失败:', error);
+      }
+    }
+
+    // 获取班次信息（如果更新了班次）
+    let finalShiftName = record.shiftName;
+    if (shiftId !== undefined && shiftId !== record.shiftId) {
+      if (shiftId === null) {
+        // 清空班次
+        finalShiftName = null;
+      } else {
+        try {
+          const shift = await this.prisma.shift.findUnique({
+            where: { id: shiftId },
+          });
+          if (shift) {
+            finalShiftName = shift.name;
+          }
+        } catch (error) {
+          console.error('获取班次信息失败:', error);
+        }
+      }
+    }
+
     const totalStdHours = (actualQty || record.actualQty) * (standardHours || record.standardHours);
 
     return this.prisma.productionRecord.update({
@@ -810,14 +857,14 @@ export class AllocationService {
       data: {
         recordDate: recordDate ? new Date(recordDate) : record.recordDate,
         orgId: newOrgId,
-        orgName: orgName !== undefined ? orgName : record.orgName,
+        orgName: finalOrgName,
         lineId: lineId !== undefined ? lineId : record.lineId,
-        lineName: lineName !== undefined ? lineName : record.lineName,
+        lineName: finalLineName,
         shiftId: newShiftId,
-        shiftName: shiftName !== undefined ? shiftName : record.shiftName,
+        shiftName: finalShiftName,
         productId: newProductId,
-        productCode: productCode !== undefined ? productCode : record.productCode,
-        productName: productName !== undefined ? productName : record.productName,
+        productCode: finalProductCode,
+        productName: finalProductName,
         plannedQty: plannedQty !== undefined ? plannedQty : record.plannedQty,
         actualQty: actualQty !== undefined ? actualQty : record.actualQty,
         qualifiedQty: qualifiedQty !== undefined ? qualifiedQty : record.qualifiedQty,
@@ -5096,6 +5143,7 @@ export class AllocationService {
       },
       select: {
         id: true,
+        ruleCode: true,
         ruleName: true,
       },
     });
@@ -5815,6 +5863,7 @@ export class AllocationService {
       accountPath,
       standardHours,
       quantity,
+      unit,
       effectiveDate,
       expiryDate,
       status,
@@ -5912,6 +5961,7 @@ export class AllocationService {
         accountPath: accountPath || null,
         standardHours: parseFloat(standardHours) || 0,
         quantity: quantity ? parseFloat(quantity) : null,
+        unit: unit || null,
         effectiveDate: effective,
         expiryDate: expiry,
         status: status || 'ACTIVE',
@@ -5943,6 +5993,7 @@ export class AllocationService {
       accountPath,
       standardHours,
       quantity,
+      unit,
       effectiveDate,
       expiryDate,
       status,
@@ -6019,6 +6070,7 @@ export class AllocationService {
         accountPath: accountPath !== undefined ? accountPath : existing.accountPath,
         standardHours: standardHours ? parseFloat(standardHours) : existing.standardHours,
         quantity: quantity !== undefined ? (quantity ? parseFloat(quantity) : null) : existing.quantity,
+        unit: unit !== undefined ? unit : existing.unit,
         effectiveDate: effective,
         expiryDate: expiry,
         status: status || existing.status,
@@ -6611,6 +6663,7 @@ export class AllocationService {
 
     // 从产品标准配置中查找标准工时（如果前端没有传递）
     let productStandardHours = standardHours || 0;
+    let unit = '小时'; // 默认单位
 
     if (productStandardHours === 0 && orgId) {
       // 根据记录日期匹配对应的标准配置
@@ -6635,12 +6688,15 @@ export class AllocationService {
           // 配置的是：1件 = X标准工时
           productStandardHours = standardHourConfig.standardHours;
         }
+        // 获取单位
+        unit = standardHourConfig.unit || '小时';
+        console.log(`[个人产量] 找到标准配置，使用单位: ${unit}`);
       } else {
         console.log(`[个人产量] 未找到标准配置，使用默认值 0`);
       }
     }
 
-    // 检查是否已存在相同记录（按日期、员工、班次、劳动力账户、产品验证唯一性）
+    // 检查是否已存在相同记录（按日期、��工、班次、劳动力账户、产品验证唯一性）
     const existing = await this.prisma.personalProductionRecord.findFirst({
       where: {
         recordDate: new Date(recordDate),
@@ -6659,7 +6715,7 @@ export class AllocationService {
     // 计算挣得工时 = 实际产量 * 标准工时
     const earnedHours = (actualQty || 0) * productStandardHours;
 
-    // 创建个人产量记录
+    // 创建���人产量记录
     const record = await this.prisma.personalProductionRecord.create({
       data: {
         recordDate: new Date(recordDate),
@@ -6677,6 +6733,7 @@ export class AllocationService {
         actualQty: actualQty || 0,
         standardHours: productStandardHours,
         earnedHours,
+        unit,
         source: source || 'MANUAL',
         recorderId,
         recorderName,
@@ -6853,8 +6910,97 @@ export class AllocationService {
       }
     }
 
+    // 获取产品信息
+    let finalProductCode = record.productCode;
+    let finalProductName = record.productName;
+    let finalStandardHours = record.standardHours;
+    let finalUnit = record.unit || '小时';
+    let finalOrgName = record.orgName;
+    let finalLineName = record.lineName;
+    const targetProductId = productId !== undefined ? productId : record.productId;
+    const targetOrgId = orgId !== undefined ? orgId : record.orgId;
+
+    // 获取产线信息（如果更新了产线）
+    if (orgId !== undefined && orgId !== record.orgId) {
+      try {
+        const account = await this.prisma.laborAccount.findUnique({
+          where: { id: orgId },
+        });
+        if (account) {
+          finalOrgName = account.namePath || account.name || '';
+          finalLineName = account.namePath || account.name || '';
+        }
+      } catch (error) {
+        console.error('获取产线信息失败:', error);
+      }
+    }
+
+    // 获取产品信息（如果更新了产品）
+    if (productId !== undefined && productId !== record.productId) {
+      const dataSourceOption = await this.prisma.dataSourceOption.findUnique({
+        where: { id: productId },
+      });
+
+      if (!dataSourceOption) {
+        throw new BadRequestException('产品数据源选项不存在');
+      }
+
+      finalProductCode = dataSourceOption.value;
+      finalProductName = dataSourceOption.label;
+    }
+
+    // 总是重新查找标准配置，确保获取正确的unit
+    if (targetProductId && targetOrgId) {
+      const targetDate = newRecordDate;
+      targetDate.setHours(0, 0, 0, 0);
+
+      const standardHourConfig = await this.findMatchingStandardHourConfig(
+        targetProductId,
+        targetOrgId,
+        finalOrgName || '',
+        targetDate
+      );
+
+      if (standardHourConfig) {
+        if (standardHourConfig.quantity && standardHourConfig.quantity > 0) {
+          finalStandardHours = standardHourConfig.standardHours / standardHourConfig.quantity;
+        } else {
+          finalStandardHours = standardHourConfig.standardHours;
+        }
+        finalUnit = standardHourConfig.unit || '小时';
+        console.log(`[个人产量编辑] 找到标准配置: standardHours=${finalStandardHours}, unit=${finalUnit}`);
+      } else {
+        console.log(`[个人产量编辑] 未找到标准配置，使用默认值`);
+        finalStandardHours = 0;
+        finalUnit = '小时';
+      }
+    }
+
+    // 获取班次信息（如果更新了班次）
+    let finalShiftName = record.shiftName;
+    if (shiftId !== undefined && shiftId !== record.shiftId) {
+      if (shiftId === null) {
+        // 清空班次
+        finalShiftName = null;
+      } else {
+        try {
+          const shift = await this.prisma.shift.findUnique({
+            where: { id: shiftId },
+          });
+          if (shift) {
+            finalShiftName = shift.name;
+          }
+        } catch (error) {
+          console.error('获取班次信息失败:', error);
+        }
+      }
+    }
+
+    // 使用传入的标准工时，否则使用现有的或计算出来的
+    const finalStandardHoursValue = standardHours !== undefined ? standardHours : finalStandardHours;
+
     // 重新计算挣得工时
-    const earnedHours = (actualQty !== undefined ? actualQty : record.actualQty) * record.standardHours;
+    const earnedHours = (actualQty !== undefined ? actualQty : record.actualQty) * finalStandardHoursValue;
 
     // 更新个人产量记录
     const updatedRecord = await this.prisma.personalProductionRecord.update({
@@ -6864,16 +7010,18 @@ export class AllocationService {
         employeeNo: newEmployeeNo,
         employeeName: employeeName !== undefined ? employeeName : record.employeeName,
         orgId: newOrgId,
-        orgName: orgName !== undefined ? orgName : record.orgName,
+        orgName: finalOrgName,
         lineId: lineId !== undefined ? lineId : record.lineId,
-        lineName: lineName !== undefined ? lineName : record.lineName,
+        lineName: finalLineName,
         shiftId: newShiftId,
-        shiftName: shiftName !== undefined ? shiftName : record.shiftName,
+        shiftName: finalShiftName,
         productId: newProductId,
-        productCode: productCode !== undefined ? productCode : record.productCode,
-        productName: productName !== undefined ? productName : record.productName,
+        productCode: finalProductCode,
+        productName: finalProductName,
         actualQty: actualQty !== undefined ? actualQty : record.actualQty,
+        standardHours: finalStandardHoursValue,
         earnedHours,
+        unit: finalUnit,
         description: description !== undefined ? description : record.description,
       },
     });
@@ -6964,5 +7112,100 @@ export class AllocationService {
     }
 
     return { message: '删除成功' };
+  }
+
+  /**
+   * 获取工时结果数据（从WorkHourResult表）
+   * 用于考勤模块工时结果Tab页显示
+   */
+  async getWorkHours(query: any) {
+    const {
+      employeeNo,
+      startDate,
+      endDate,
+      calcDate,
+      page = 1,
+      pageSize = 20,
+    } = query;
+
+    const where: any = {};
+
+    if (employeeNo) {
+      where.employeeNo = employeeNo;
+    }
+
+    // 支持单日期或日期范围查询
+    if (calcDate) {
+      where.workDate = new Date(calcDate);
+    } else if (startDate || endDate) {
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        if (!where.workDate) where.workDate = {};
+        where.workDate.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (!where.workDate) where.workDate = {};
+        where.workDate.lte = end;
+      }
+    }
+
+    const skip = (Number(page) - 1) * Number(pageSize);
+
+    const [total, items] = await Promise.all([
+      this.prisma.workHourResult.count({ where }),
+      this.prisma.workHourResult.findMany({
+        where,
+        include: {
+          definitionAttendanceCode: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              type: true,
+              color: true,
+              showInDetailPage: true,
+            },
+          },
+        },
+        orderBy: {
+          workDate: 'desc',
+        },
+        skip,
+        take: Number(pageSize),
+      }),
+    ]);
+
+    // 手动查询员工信息
+    const employeeNos = [...new Set(items.map(item => item.employeeNo))];
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        employeeNo: { in: employeeNos },
+      },
+      select: {
+        id: true,
+        employeeNo: true,
+        name: true,
+        org: true,
+      },
+    });
+
+    const employeeMap = new Map(employees.map(emp => [emp.employeeNo, emp]));
+
+    // 将员工信息添加到每个item
+    const itemsWithEmployee = items.map(item => ({
+      ...item,
+      employee: employeeMap.get(item.employeeNo) || null,
+    }));
+
+    return {
+      success: true,
+      total,
+      items: itemsWithEmployee,
+      page: Number(page),
+      pageSize: Number(pageSize),
+    };
   }
 }

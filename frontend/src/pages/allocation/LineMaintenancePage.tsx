@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -22,6 +22,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import request from '@/utils/request';
 import LineAccountSelect from '@/components/common/LineAccountSelect';
+import OrganizationTreeSelect from '@/components/common/OrganizationTreeSelect';
 
 const { RangePicker } = DatePicker;
 
@@ -108,26 +109,127 @@ const LineMaintenancePage: React.FC = () => {
     ? allShifts?.filter((s: any) => configuredShiftIds.includes(s.id))
     : allShifts;
 
+  // 获取组织架构树（用于包含子组织功能）
+  const { data: orgTree } = useQuery({
+    queryKey: ['organizations-tree'],
+    queryFn: () =>
+      request.get('/hr/organizations/tree').then((res: any) => res || []),
+  });
+
   // 查询条件
   const [filters, setFilters] = useState({
     dateRange: null as any,
-    orgId: null as number | null,
+    orgId: null as number | number[] | null,
+    includeChildren: false,
     shiftId: null as number | null,
   });
+
+  // 递归获取组织及其所有子组织ID
+  const getAllChildOrgIds = (orgId: number | number[], tree: any[]): number[] => {
+    const ids = Array.isArray(orgId) ? orgId : [orgId];
+    const result = new Set<number>(ids);
+
+    const addAllChildren = (node: any) => {
+      if (!node.children || node.children.length === 0) return;
+
+      node.children.forEach((child: any) => {
+        result.add(child.id);
+        // 递归添加子节点的子节点
+        addAllChildren(child);
+      });
+    };
+
+    // 遍历树，找到所有选中的节点，并添加其所有子节点
+    const traverseAndAddChildren = (nodes: any[]) => {
+      nodes.forEach((node) => {
+        if (result.has(node.id)) {
+          // 找到选中的节点，递归添加其所有子节点
+          addAllChildren(node);
+        }
+        // 继续遍历子节点
+        if (node.children) {
+          traverseAndAddChildren(node.children);
+        }
+      });
+    };
+
+    traverseAndAddChildren(tree);
+    return Array.from(result);
+  };
+
+  // 计算实际查询的组织数量（用于提示）
+  const actualOrgIds = useMemo(() => {
+    console.log('计算 actualOrgIds, filters:', filters);
+    if (!filters.orgId || !orgTree) return [];
+    let result;
+    if (filters.includeChildren) {
+      result = getAllChildOrgIds(filters.orgId, orgTree);
+      console.log('包含子组织，递归获取后的 orgIds:', result);
+    } else {
+      result = Array.isArray(filters.orgId) ? filters.orgId : [filters.orgId];
+      console.log('不包含子组织，直接使用 orgIds:', result);
+    }
+    return result;
+  }, [filters.orgId, filters.includeChildren, orgTree]);
 
   // 获取开线记录列表
   const { data: lineRecords, isLoading, refetch } = useQuery({
     queryKey: ['lineMaintenanceRecords', filters],
-    queryFn: () =>
-      request.get('/allocation/line-shifts', {
-        params: {
-          startDate: filters.dateRange?.[0]?.format('YYYY-MM-DD'),
-          endDate: filters.dateRange?.[1]?.format('YYYY-MM-DD'),
-          orgId: filters.orgId,
-          shiftId: filters.shiftId,
-        },
-      }).then((res: any) => res?.items || []),
+    queryFn: () => {
+      console.log('=== useQuery queryFn 被调用 ===');
+      console.log('当前 filters:', filters);
+
+      // 计算要查询的组织ID列表
+      let queryOrgIds = filters.orgId;
+      if (filters.orgId && filters.includeChildren && orgTree) {
+        // 如果包含子组织，获取所有子组织ID
+        queryOrgIds = getAllChildOrgIds(filters.orgId, orgTree);
+        console.log('包含子组织，递归获取后的 queryOrgIds:', queryOrgIds);
+      } else {
+        console.log('不包含子组织或未勾选，直接使用 filters.orgId:', queryOrgIds);
+      }
+
+      const params: any = {
+        shiftId: filters.shiftId,
+      };
+
+      // 只有当有日期范围时才添加日期参数
+      if (filters.dateRange && filters.dateRange[0] && filters.dateRange[1]) {
+        params.startDate = filters.dateRange[0].format('YYYY-MM-DD');
+        params.endDate = filters.dateRange[1].format('YYYY-MM-DD');
+      }
+
+      // 添加组织ID参数
+      if (queryOrgIds) {
+        params.orgIds = Array.isArray(queryOrgIds) ? queryOrgIds : [queryOrgIds];
+        console.log('添加 orgIds 参数:', params.orgIds);
+      }
+
+      console.log('最终查询参数:', params);
+      console.log('请求URL:', '/allocation/line-shifts');
+
+      return request.get('/allocation/line-shifts', {
+        params,
+      }).then((res: any) => {
+        console.log('API返回结果:', res);
+        const items = res?.items || [];
+        console.log('返回数据条数:', items.length);
+        return items;
+      }).catch((error: any) => {
+        console.error('API请求失败:', error);
+        throw error;
+      });
+    },
+    // 确保每次filters变化都重新获取
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
+
+  // 监听filters变化
+  useEffect(() => {
+    console.log('=== filters 变化 ===', filters);
+    console.log('queryKey 也会变化，应该触发查询');
+  }, [filters]);
 
   // 创建记录
   const createMutation = useMutation({
@@ -305,6 +407,7 @@ const LineMaintenancePage: React.FC = () => {
     setFilters({
       dateRange: null,
       orgId: null,
+      includeChildren: false,
       shiftId: null,
     });
   };
@@ -438,16 +541,33 @@ const LineMaintenancePage: React.FC = () => {
               onChange={(dates) => setFilters({ ...filters, dateRange: dates })}
             />
           </Form.Item>
-          <Form.Item label="产线">
-            <LineAccountSelect
+          <Form.Item label="产线组织">
+            <OrganizationTreeSelect
               value={filters.orgId}
-              onChange={(value) => setFilters({ ...filters, orgId: value as number | null })}
-              placeholder="请选择产线"
+              onChange={(value) => {
+                console.log('组织选择onChange触发，value:', value, '类型:', typeof value);
+                setFilters({ ...filters, orgId: value });
+              }}
+              onIncludeChildrenChange={(include) => {
+                console.log('包含子组织onChange触发，include:', include);
+                setFilters({ ...filters, includeChildren: include });
+              }}
+              placeholder="请选择产线组织"
               allowClear
-              showCreateButton={false}
-              showOtherTab={false}
-              style={{ width: 300 }}
+              multiple
+              showIncludeChildren
+              includeChildren={filters.includeChildren}
+              showSelectAll
+              style={{ width: '100%', maxWidth: 400 }}
             />
+            {actualOrgIds.length > 0 && (
+              <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                {filters.includeChildren
+                  ? `已包含子组织，共查询 ${actualOrgIds.length} 个组织`
+                  : `查询 ${actualOrgIds.length} 个组织`
+                }
+              </div>
+            )}
           </Form.Item>
           <Form.Item label="班次">
             <Select

@@ -140,6 +140,13 @@ const DashboardPage: React.FC = () => {
           description: '查询分摊结果',
         },
         {
+          title: '挣得报表',
+          icon: <FundProjectionScreenOutlined />,
+          color: '#52c41a',
+          path: '/allocation/earned-hours-report',
+          description: '实时计算挣得工时',
+        },
+        {
           title: '开线维护',
           icon: <CheckCircleOutlined />,
           color: '#eb2f96',

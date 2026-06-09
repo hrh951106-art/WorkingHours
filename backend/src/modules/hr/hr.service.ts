@@ -1857,6 +1857,9 @@ export class HrService {
       orderBy: [{ configCode: 'asc' }, { sortOrder: 'asc' }],
     });
 
+    console.log('=== getUnifiedSearchConditionConfigs ===');
+    console.log('数据库原始配置:', JSON.stringify(configs.filter(c => c.fieldCode === 'orgId'), null, 2));
+
     // 获取所有自定义字段的映射，用于规范化字段类型
     const customFields = await this.prisma.customField.findMany({
       include: {
@@ -1877,6 +1880,8 @@ export class HrService {
     const normalizeConfig = (config: any) => {
       let normalizedFieldType = config.fieldType;
       let normalizedDataSourceCode = config.dataSourceCode;
+
+      console.log(`normalizeConfig [${config.fieldCode}]: 原始 fieldType="${config.fieldType}", dataSourceCode="${config.dataSourceCode}"`);
 
       // 如果配置的字段类型是text，尝试从实际字段配置中获取正确的类型
       if (config.fieldType === 'text') {
@@ -1902,6 +1907,8 @@ export class HrService {
         }
       }
 
+      console.log(`normalizeConfig [${config.fieldCode}]: 规范化后 fieldType="${normalizedFieldType}"`);
+
       return {
         ...config,
         applicablePages: JSON.parse(config.applicablePages || '[]'),
@@ -1912,12 +1919,15 @@ export class HrService {
 
     // 如果指定了pageCode，返回适用于该页面的配置
     if (pageCode) {
-      return configs
+      const filtered = configs
         .filter((config) => {
           const applicablePages = JSON.parse(config.applicablePages || '[]');
           return applicablePages.includes(pageCode);
         })
         .map(normalizeConfig);
+
+      console.log('最终返回的配置:', JSON.stringify(filtered.filter(c => c.fieldCode === 'orgId'), null, 2));
+      return filtered;
     }
 
     return configs.map(normalizeConfig);
@@ -2214,10 +2224,23 @@ export class HrService {
     const { category } = query;
     const where = category ? { category } : {};
 
-    return this.prisma.systemConfig.findMany({
+    const configs = await this.prisma.systemConfig.findMany({
       where,
       orderBy: { category: 'asc' },
     });
+
+    // 反向转换：将 level 转换回 levelId
+    return Promise.all(
+      configs.map(async (config) => {
+        if (config.configKey === 'standardHoursHierarchyLevels' && config.configValue) {
+          return {
+            ...config,
+            configValue: await this.convertLevelsToLevelIds(config.configValue),
+          };
+        }
+        return config;
+      })
+    );
   }
 
   async getSystemConfigByKey(key: string) {
@@ -2227,6 +2250,14 @@ export class HrService {
 
     if (!config) {
       return null;
+    }
+
+    // 反向转换：将 level 转换回 levelId
+    if (config.configKey === 'standardHoursHierarchyLevels' && config.configValue) {
+      return {
+        ...config,
+        configValue: await this.convertLevelsToLevelIds(config.configValue),
+      };
     }
 
     return config;
@@ -2241,9 +2272,9 @@ export class HrService {
       throw new Error('配置键已存在');
     }
 
-    // 特殊处理：standardHoursHierarchyLevels 配置需要使用 level 字段而不是 levelId
+    // 特殊处理：standardHoursHierarchyLevels 配置需要将层级名称转换为 level 序号
     if (dto.configKey === 'standardHoursHierarchyLevels' && dto.configValue) {
-      dto.configValue = await this.convertLevelIdsToLevels(dto.configValue);
+      dto.configValue = await this.convertLevelNamesToNumbers(dto.configValue);
     }
 
     return this.prisma.systemConfig.create({
@@ -2260,9 +2291,9 @@ export class HrService {
       throw new NotFoundException('配置不存在');
     }
 
-    // 特殊处理：standardHoursHierarchyLevels 配置需要使用 level 字段而不是 levelId
+    // 特殊处理：standardHoursHierarchyLevels 配置需要将层级名称转换为 level 序号
     if (key === 'standardHoursHierarchyLevels' && dto.configValue) {
-      dto.configValue = await this.convertLevelIdsToLevels(dto.configValue);
+      dto.configValue = await this.convertLevelNamesToNumbers(dto.configValue);
     }
 
     return this.prisma.systemConfig.update({
@@ -2308,24 +2339,89 @@ export class HrService {
           convertedValues.push(value);
         }
       } else {
-        // 如果是数字，检查是否是 AccountHierarchyConfig 的 id（> 7），如果是则转换为 level
-        if (num > 7) {
-          // 查询 AccountHierarchyConfig 的 id 对应的 level 字段
-          const hierarchyLevel = await this.prisma.accountHierarchyConfig.findFirst({
-            where: { id: num },
-            select: { level: true },
-          });
+        // 如果���数字，查询 AccountHierarchyConfig 表将ID转换为 level
+        const hierarchyLevel = await this.prisma.accountHierarchyConfig.findFirst({
+          where: { id: num },
+          select: { level: true },
+        });
 
-          if (hierarchyLevel) {
-            convertedValues.push(String(hierarchyLevel.level));
-          } else {
-            // 未找到对应的 level，保持原样
-            convertedValues.push(value);
-          }
+        if (hierarchyLevel) {
+          convertedValues.push(String(hierarchyLevel.level));
         } else {
-          // 是 level 数字（1-7），直接使用
+          // 未找到对应的 level，保持原样
           convertedValues.push(value);
         }
+      }
+    }
+
+    return convertedValues.join(',');
+  }
+
+  /**
+   * 将层级名称转换为层级序号（用于保存到数据库）
+   * 支持格式：单��名称 "工序"、逗号分隔 "车间,工序"
+   * @param configValue 配置值（层级名称）
+   * @returns 转换后的层级序号
+   */
+  private async convertLevelNamesToNumbers(configValue: string): Promise<string> {
+    if (!configValue) {
+      return configValue;
+    }
+
+    const values = configValue.split(',').map(v => v.trim());
+    const convertedValues: string[] = [];
+
+    for (const value of values) {
+      // 查询该 name 对应的 AccountHierarchyConfig 的 level
+      const hierarchyLevel = await this.prisma.accountHierarchyConfig.findFirst({
+        where: { name: value },
+        select: { level: true },
+      });
+
+      if (hierarchyLevel) {
+        convertedValues.push(String(hierarchyLevel.level));
+      } else {
+        // 未找到对应的 level，保持原样
+        convertedValues.push(value);
+      }
+    }
+
+    return convertedValues.join(',');
+  }
+
+  /**
+   * 将 level 转换为层级名称（convertLevelNamesToNumbers 的反向转换）
+   * 支持格式：单个数字 "5"、逗号分隔 "3,5"
+   * @param configValue 配置值（level序号）
+   * @returns 转换后的层级名称
+   */
+  private async convertLevelsToLevelIds(configValue: string): Promise<string> {
+    if (!configValue) {
+      return configValue;
+    }
+
+    const values = configValue.split(',').map(v => v.trim());
+    const convertedValues: string[] = [];
+
+    for (const value of values) {
+      const level = parseInt(value);
+
+      if (!isNaN(level)) {
+        // 查询该 level 对应的 AccountHierarchyConfig 的 name（层级名称）
+        const hierarchyLevel = await this.prisma.accountHierarchyConfig.findFirst({
+          where: { level },
+          select: { name: true },
+        });
+
+        if (hierarchyLevel) {
+          convertedValues.push(hierarchyLevel.name);
+        } else {
+          // 未找到对应的 name，保持原样
+          convertedValues.push(value);
+        }
+      } else {
+        // 不是数字，保持原样
+        convertedValues.push(value);
       }
     }
 

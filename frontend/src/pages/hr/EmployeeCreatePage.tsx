@@ -137,6 +137,7 @@ const EmployeeCreatePage: React.FC = () => {
     onSuccess: (result: any) => {
       message.success('人员创建成功');
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['nextEmployeeNo'] });
       // 跳转到新创建员工的详情页面
       if (result?.id) {
         navigate(`/hr/employees/${result.id}`);

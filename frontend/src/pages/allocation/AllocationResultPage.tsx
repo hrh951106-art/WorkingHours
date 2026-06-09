@@ -57,12 +57,14 @@ interface AllocationResult {
   allocationRatio: number;
   allocatedHours: number;
   calcTime: string;
+  unit?: string; // 单位字段
   config?: {
     configCode: string;
     configName: string;
   };
   rule?: {
-    ruleName: string;
+    ruleCode?: string;
+    ruleName?: string;
   };
   // 挣得工时专用字段
   totalEarnedHours?: number; // 总挣得工时（新增）
@@ -303,8 +305,16 @@ const AllocationResultPage: React.FC = () => {
       title: '分摊规则',
       dataIndex: 'ruleName',
       key: 'ruleName',
-      width: 150,
+      width: 200,
       ellipsis: true,
+      render: (_: string, record: SummaryItem) => {
+        const configCode = record.details?.[0]?.config?.configCode;
+        const configName = record.details?.[0]?.config?.configName;
+        if (configCode && configName) {
+          return `${configCode}-${configName}`;
+        }
+        return configName || '-';
+      },
     },
     {
       title: '分摊日期',
@@ -405,7 +415,7 @@ const AllocationResultPage: React.FC = () => {
       render: (ratio: number) => `${(ratio * 100).toFixed(2)}%`,
     },
     {
-      title: '分摊工时',
+      title: '分得',
       dataIndex: 'allocatedHours',
       key: 'allocatedHours',
       width: 100,
@@ -432,8 +442,16 @@ const AllocationResultPage: React.FC = () => {
       title: '分摊规则',
       dataIndex: 'ruleName',
       key: 'ruleName',
-      width: 150,
+      width: 200,
       ellipsis: true,
+      render: (_: string, record: EarnedHoursSummaryItem) => {
+        const configCode = record.details?.[0]?.config?.configCode;
+        const configName = record.details?.[0]?.config?.configName;
+        if (configCode && configName) {
+          return `${configCode}-${configName}`;
+        }
+        return configName || '-';
+      },
     },
     {
       title: '记录日期',
@@ -464,12 +482,15 @@ const AllocationResultPage: React.FC = () => {
       render: (qty: number) => <strong>{qty?.toFixed(0) || '-'}</strong>,
     },
     {
-      title: '挣得工时',
+      title: '挣得',
       dataIndex: 'totalStdHours',
       key: 'totalStdHours',
       width: 120,
       align: 'right' as const,
-      render: (hours: number) => <strong style={{ color: '#52c41a' }}>{hours?.toFixed(2) || '-'}</strong>,
+      render: (hours: number, record: EarnedHoursSummaryItem) => {
+        const unit = record.details?.[0]?.unit || '小时';
+        return <strong style={{ color: '#52c41a' }}>{hours?.toFixed(2) || '-'} {unit}</strong>;
+      },
     },
     {
       title: '分摊方式',
@@ -546,12 +567,15 @@ const AllocationResultPage: React.FC = () => {
       },
     },
     {
-      title: '分得工时',
+      title: '分得',
       dataIndex: 'allocatedHours',
       key: 'allocatedHours',
       width: 100,
       align: 'right' as const,
-      render: (hours: number) => <strong style={{ color: '#1890ff' }}>{hours?.toFixed(2) || '-'}</strong>,
+      render: (hours: number, record: AllocationResult) => {
+        const unit = record.unit || '小时';
+        return <strong style={{ color: '#1890ff' }}>{hours?.toFixed(2) || '-'} {unit}</strong>;
+      },
     },
   ];
 
@@ -762,12 +786,15 @@ const AllocationResultPage: React.FC = () => {
                             },
                           },
                           {
-                            title: '分得工时',
+                            title: '分得',
                             dataIndex: 'allocatedHours',
                             key: 'allocatedHours',
                             width: 100,
                             align: 'right' as const,
-                            render: (hours: number) => <strong style={{ color: '#1890ff' }}>{hours?.toFixed(2) || '-'}</strong>,
+                            render: (hours: number, detail: AllocationResult) => {
+                              const unit = detail.unit || record.details?.[0]?.unit || '小时';
+                              return <strong style={{ color: '#1890ff' }}>{hours?.toFixed(2) || '-'} {unit}</strong>;
+                            },
                           },
                         ];
 
@@ -779,7 +806,11 @@ const AllocationResultPage: React.FC = () => {
                               pagination={false}
                               rowKey="id"
                               size="small"
-                              title={() => <strong>分摊明细 - 共 {record.details.length} 人，分得工时总计 {record.details.reduce((sum, item) => sum + item.allocatedHours, 0).toFixed(2)} 小时</strong>}
+                              title={() => {
+                                const unit = record.details?.[0]?.unit || '小时';
+                                const total = record.details.reduce((sum, item) => sum + item.allocatedHours, 0);
+                                return <strong>分摊明细 - 共 {record.details.length} 人，分得总计 {total.toFixed(2)} {unit}</strong>;
+                              }}
                             />
                           </div>
                         );

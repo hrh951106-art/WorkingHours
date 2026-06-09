@@ -4,6 +4,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import request from '@/utils/request';
 import dayjs from 'dayjs';
+import OrganizationTreeSelect from './OrganizationTreeSelect';
 
 interface SearchConditionConfig {
   id?: number;
@@ -48,25 +49,32 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
     queryKey: ['unifiedSearchConditionConfigs', pageCode],
     queryFn: async () => {
       try {
+        console.log('=== DynamicSearchConditions 开始获取配置 ===');
+        console.log('请求URL:', '/hr/unified-search-condition-configs');
+
         const res = await request.get('/hr/unified-search-condition-configs');
-        console.log('=== DynamicSearchConditions 获取配置 ===');
+
+        console.log('=== DynamicSearchConditions API返回 ===');
+        console.log('返回数据类型:', typeof res);
+        console.log('是否为数组:', Array.isArray(res));
+        console.log('返回数据:', JSON.stringify(res, null, 2));
         console.log('页面代码:', pageCode);
-        console.log('API返回的配置数量:', res?.length || 0);
 
         // 过滤出适用于当前页面的配置
         const filtered = (res || []).filter((config: any) => {
           const applicablePages = config.applicablePages || [];
-          // applicablePages 可能是字符串（需要解析）或数组
           const pages = typeof applicablePages === 'string'
             ? JSON.parse(applicablePages)
             : applicablePages;
           const matches = pages.includes(pageCode) && config.isEnabled;
-          console.log(`配置 ${config.configCode}: applicablePages=`, pages, 'isEnabled=', config.isEnabled, 'matches=', matches);
+          console.log(`配置 [${config.fieldCode}]: fieldType="${config.fieldType}", applicablePages=`, pages, 'isEnabled=', config.isEnabled, 'matches=', matches);
           return matches;
         });
 
-        console.log('过滤后的配置数量:', filtered.length);
-        console.log('过滤后的配置:', filtered);
+        console.log('=== 过滤后的配置 ===');
+        filtered.forEach((config: any) => {
+          console.log(`- ${config.fieldName} (${config.fieldCode}): fieldType="${config.fieldType}"`);
+        });
 
         return filtered;
       } catch (error) {
@@ -98,34 +106,6 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
   const searchConfigs = Array.isArray(unifiedConfigs) && unifiedConfigs.length > 0
     ? unifiedConfigs
     : (Array.isArray(legacyConfigs) ? legacyConfigs : []);
-
-  // 获取组织架构数据（用于organization字段）
-  const { data: orgTree = [] } = useQuery({
-    queryKey: ['organizations-tree'],
-    queryFn: async () => {
-      try {
-        const res = await request.get('/hr/organizations/tree');
-        return res || [];
-      } catch (error) {
-        console.error('获取组织架构失败:', error);
-        return [];
-      }
-    },
-    enabled: searchConfigs.some((config: SearchConditionConfig) => config.fieldType === 'organization'),
-  });
-
-  // 将组织架构树转换为 TreeSelect 需要的数据格式
-  const organizationTreeData = useMemo(() => {
-    const convertToTreeData = (nodes: any[]): any[] => {
-      return nodes.map((node) => ({
-        title: node.name,
-        value: node.id,
-        key: node.id,
-        children: node.children && node.children.length > 0 ? convertToTreeData(node.children) : undefined,
-      }));
-    };
-    return convertToTreeData(orgTree);
-  }, [orgTree]);
 
   const { data: dataSources = [] } = useQuery({
     queryKey: ['dataSources'],
@@ -241,6 +221,7 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
         )}
 
         {enabledConfigs.map((config: SearchConditionConfig) => {
+          console.log('渲染配置:', config.fieldCode, config.fieldName, config.fieldType);
           return (
             <Col key={config.fieldCode} style={{ marginBottom: 0 }}>
               <Form.Item
@@ -283,16 +264,14 @@ const DynamicSearchConditions: React.FC<DynamicSearchConditionsProps> = ({
                   />
                 )}
                 {config.fieldType === 'organization' && (
-                  <TreeSelect
+                  <OrganizationTreeSelect
                     placeholder={`请选择${config.fieldName}`}
                     allowClear
                     size="middle"
-                    style={{ width: 200 }}
-                    treeData={organizationTreeData}
-                    showSearch
-                    treeNodeFilterProp="title"
-                    treeDefaultExpandAll
-                    treeCheckable={false}
+                    multiple={false}
+                    showIncludeChildren={true}
+                    showSelectAll={false}
+                    style={{ width: '100%', maxWidth: 400 }}
                   />
                 )}
               </Form.Item>

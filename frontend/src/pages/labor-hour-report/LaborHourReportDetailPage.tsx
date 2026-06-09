@@ -14,6 +14,7 @@ import {
   Timeline,
   Row,
   Col,
+  Table,
 } from 'antd';
 import { ArrowLeftOutlined, CheckOutlined, CloseOutlined, EyeOutlined } from '@ant-design/icons';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -55,6 +56,10 @@ interface LaborHourReport {
     id: number;
     employeeNo: string;
     employeeName: string;
+    startTime?: string;
+    endTime?: string;
+    value?: number;
+    description?: string;
   }>;
   instance?: {
     id: number;
@@ -86,6 +91,16 @@ const LaborHourReportDetailPage: React.FC = () => {
       const response = await request.get(`/labor-hour-report/requests/${id}`);
       return response.data || response;
     },
+  });
+
+  // 获取员工工时明细
+  const { data: employeeDetails } = useQuery({
+    queryKey: ['laborHourReportEmployees', id],
+    queryFn: async () => {
+      const response = await request.get(`/labor-hour-report/requests/${id}/employees`);
+      return response.data || response;
+    },
+    enabled: !!id && detail?.reportMode === 'team',
   });
 
   // 当数据加载成功后，设置selectedReport
@@ -555,28 +570,83 @@ const LaborHourReportDetailPage: React.FC = () => {
               <Col span={12}></Col>
             </Row>
 
-            {/* 团队报工：显示组织 */}
-            {selectedReport.reportMode === 'team' && selectedReport.employees && selectedReport.employees.length > 0 && (
+            {/* ��队报工：显示员工工时明细 */}
+            {selectedReport.reportMode === 'team' && employeeDetails && employeeDetails.length > 0 && (
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={24}>
-                  <div style={{ fontWeight: 500, marginBottom: 8 }}>报工人员</div>
+                  {/* 表格上方显示报工日期和工时类型 */}
+                  <Row gutter={16} style={{ marginBottom: 12 }}>
+                    <Col span={12}>
+                      <div style={{ fontWeight: 500, marginBottom: 8 }}>报工日期</div>
+                      <div>{dayjs(selectedReport.reportDate).format('YYYY-MM-DD')}</div>
+                    </Col>
+                    <Col span={12}>
+                      <div style={{ fontWeight: 500, marginBottom: 8 }}>工时类型</div>
+                      <div>{selectedReport.hourTypeName}</div>
+                    </Col>
+                  </Row>
+
+                  <div style={{ fontWeight: 500, marginBottom: 12 }}>报工人员工时明细</div>
                   <div style={{
                     border: '1px solid #d9d9d9',
                     borderRadius: '6px',
-                    padding: '12px',
-                    background: '#fafafa',
-                    minHeight: '60px'
+                    overflow: 'hidden',
                   }}>
-                    <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
-                      共 {selectedReport.employees.length} 人
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {selectedReport.employees.map((emp) => (
-                        <Tag key={emp.id} style={{ marginBottom: 0, padding: '4px 10px', fontSize: 13 }}>
-                          {emp.employeeName} ({emp.employeeNo})
-                        </Tag>
-                      ))}
-                    </div>
+                    <Table
+                      dataSource={employeeDetails}
+                      rowKey="id"
+                      pagination={false}
+                      size="small"
+                      style={{ margin: 0 }}
+                      columns={[
+                        {
+                          title: '序号',
+                          key: 'index',
+                          width: 60,
+                          render: (_: any, __: any, index: number) => index + 1,
+                        },
+                        {
+                          title: '员工编号',
+                          dataIndex: 'employeeNo',
+                          key: 'employeeNo',
+                          width: 120,
+                        },
+                        {
+                          title: '员工姓名',
+                          dataIndex: 'employeeName',
+                          key: 'employeeName',
+                          width: 100,
+                        },
+                        {
+                          title: '开始时间',
+                          dataIndex: 'startTime',
+                          key: 'startTime',
+                          width: 100,
+                          render: (text: string) => text || '-',
+                        },
+                        {
+                          title: '结束时间',
+                          dataIndex: 'endTime',
+                          key: 'endTime',
+                          width: 100,
+                          render: (text: string) => text || '-',
+                        },
+                        {
+                          title: '工时数量',
+                          dataIndex: 'value',
+                          key: 'value',
+                          width: 100,
+                          render: (value: number) => value ? `${value} 小时` : '-',
+                        },
+                        {
+                          title: '工作描述',
+                          dataIndex: 'description',
+                          key: 'description',
+                          ellipsis: true,
+                          render: (text: string) => text || '-',
+                        },
+                      ]}
+                    />
                   </div>
                 </Col>
               </Row>
@@ -596,39 +666,43 @@ const LaborHourReportDetailPage: React.FC = () => {
               </Row>
             )}
 
-            {/* 工时信息 */}
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={12}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>报工日期</div>
-                <div>{dayjs(selectedReport.reportDate).format('YYYY-MM-DD')}</div>
-              </Col>
-              <Col span={12}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>工时类型</div>
-                <div>{selectedReport.hourTypeName}</div>
-              </Col>
-            </Row>
+            {/* 个人报工显示详细工时信息，团队报工已在明细表格上方显示 */}
+            {selectedReport.reportMode === 'personal' && (
+              <>
+                <Row gutter={16} style={{ marginBottom: 16 }}>
+                  <Col span={12}>
+                    <div style={{ fontWeight: 500, marginBottom: 8 }}>报工日期</div>
+                    <div>{dayjs(selectedReport.reportDate).format('YYYY-MM-DD')}</div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ fontWeight: 500, marginBottom: 8 }}>工时类型</div>
+                    <div>{selectedReport.hourTypeName}</div>
+                  </Col>
+                </Row>
 
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={12}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>开始时间</div>
-                <div>{selectedReport.startTime}</div>
-              </Col>
-              <Col span={12}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>结束时间</div>
-                <div>{selectedReport.endTime}</div>
-              </Col>
-            </Row>
+                <Row gutter={16} style={{ marginBottom: 16 }}>
+                  <Col span={12}>
+                    <div style={{ fontWeight: 500, marginBottom: 8 }}>开始时间</div>
+                    <div>{selectedReport.startTime}</div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ fontWeight: 500, marginBottom: 8 }}>结束时间</div>
+                    <div>{selectedReport.endTime}</div>
+                  </Col>
+                </Row>
 
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={12}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>工时数量</div>
-                <div>{selectedReport.value} {selectedReport.unit}</div>
-              </Col>
-              <Col span={12}>
-                <div style={{ fontWeight: 500, marginBottom: 8 }}>单位</div>
-                <div>{selectedReport.unit}</div>
-              </Col>
-            </Row>
+                <Row gutter={16} style={{ marginBottom: 16 }}>
+                  <Col span={12}>
+                    <div style={{ fontWeight: 500, marginBottom: 8 }}>工时数量</div>
+                    <div>{selectedReport.value} {selectedReport.unit}</div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ fontWeight: 500, marginBottom: 8 }}>单位</div>
+                    <div>{selectedReport.unit}</div>
+                  </Col>
+                </Row>
+              </>
+            )}
 
             {/* 报工归属 */}
             <Row gutter={16} style={{ marginBottom: selectedReport.description ? 16 : 0 }}>

@@ -321,6 +321,7 @@ export class EarnedHoursAllocationService {
       batchNo,
       configId,
       new Date(),
+      finalConfig.unit || '小时', // 添加单位参数
     );
 
     return {
@@ -564,7 +565,6 @@ export class EarnedHoursAllocationService {
     // 构建查询条件
     const where: any = {
       workDate: calcDate,
-      status: 'ACTIVE',
     };
 
     // 账户路径筛选：使用 IN 匹配所有相关路径
@@ -855,6 +855,7 @@ export class EarnedHoursAllocationService {
     batchNo: string,
     configId: number,
     calcTime: Date,
+    unit: string, // 添加单位参数
   ) {
     const results = [];
 
@@ -938,6 +939,7 @@ export class EarnedHoursAllocationService {
             targetAccountName: mergedAccount.namePath,
             allocatedHours,
             allocationRatio: ratio,
+            unit, // 添加单位
             calcTime,
           },
         });
@@ -995,6 +997,7 @@ export class EarnedHoursAllocationService {
             targetAccountName: mergedAccount.namePath,
             allocatedHours,
             allocationRatio: ratio,
+            unit, // 添加单位
             calcTime,
           },
         });
@@ -1046,6 +1049,7 @@ export class EarnedHoursAllocationService {
             targetAccountName: mergedAccount.namePath,
             allocatedHours: perPersonHours,
             allocationRatio: avgRatio,
+            unit, // 添加单位
             calcTime,
           },
         });
@@ -1153,12 +1157,14 @@ export class EarnedHoursAllocationService {
         });
 
         let ruleName = '-';
+        let ruleCode = '-';
         let allocationBasis = '-';
         if (config) {
           try {
             const rules = JSON.parse(config.rules || '[]');
             if (rules.length > 0) {
               ruleName = rules[0].ruleName || '-';
+              ruleCode = rules[0].ruleCode || '-';
               allocationBasis = rules[0].allocationBasis || '-';
             }
           } catch (e) {
@@ -1194,6 +1200,11 @@ export class EarnedHoursAllocationService {
             configName: config.configName || config.name,
           } : null,
           ruleName,
+          ruleCode,
+          rule: {
+            ruleCode,
+            ruleName,
+          },
         };
       })
     );
@@ -1232,6 +1243,554 @@ export class EarnedHoursAllocationService {
       total: {
         totalAllocatedHours,
         totalRecords,
+      },
+    };
+  }
+
+  /**
+   * 统一查询挣��工时数据 - 按员工+日期+账户+产品维度聚合
+   * 包含团队分摊工时和个人挣得工时
+   */
+  async getUnifiedEarnedHoursReport(query: any) {
+    const { startDate, endDate, employeeNo, orgId, productId } = query;
+
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    this.logger.log(`[统一挣得工时报表] 查询条件: startDate=${startDate}, endDate=${endDate}, employeeNo=${employeeNo}, orgId=${orgId}, productId=${productId}`);
+
+    // 使用Map来聚合数据，key格式: 日期_员工号_账户ID_产品ID
+    const dataMap = new Map<string, any>();
+
+    // ========== 1. 查询个人产量记录 ==========
+    const personalWhere: any = {
+      recordDate: { gte: start, lte: end },
+      deletedAt: null,
+    };
+
+    if (employeeNo) personalWhere.employeeNo = employeeNo;
+    if (orgId) personalWhere.orgId = Number(orgId);
+    if (productId) personalWhere.productId = Number(productId);
+
+    const personalRecords = await this.prisma.personalProductionRecord.findMany({
+      where: personalWhere,
+      orderBy: { recordDate: 'desc' },
+    });
+
+    this.logger.log(`[统一挣得工时报表] 找到 ${personalRecords.length} 条个人产量记录`);
+
+    // 处理个人产量记录
+    for (const record of personalRecords) {
+      const dateKey = record.recordDate.toISOString().split('T')[0];
+      const key = `${dateKey}_${record.employeeNo}_${record.orgId}_${record.productId || 0}`;
+
+      // 查找标准工时配置
+      let standardHoursConfig = null;
+      let standardQuantity = 1;
+      let standardHours = 0;
+
+      if (record.productId) {
+        const recordDate = new Date(record.recordDate);
+        const standardConfig = await this.findMatchingStandardHourConfig(
+          record.productId,
+          record.orgId,
+          record.orgName,
+          recordDate
+        );
+
+        if (standardConfig) {
+          standardHoursConfig = standardConfig;
+          standardQuantity = standardConfig.quantity || 1;
+          standardHours = standardConfig.standardHours || 0;
+        }
+      }
+
+      if (!dataMap.has(key)) {
+        dataMap.set(key, {
+          recordDate: record.recordDate,
+          employeeNo: record.employeeNo,
+          employeeName: record.employeeName,
+          orgId: record.orgId,
+          orgName: record.orgName,
+          productId: record.productId,
+          productCode: record.productCode,
+          productName: record.productName,
+          actualQty: record.actualQty || 0,
+          standardQuantity,
+          standardHours,
+          accountPath: standardHoursConfig?.accountPath || null,
+          teamAllocatedHours: 0,
+          personalEarnedHours: record.earnedHours || 0,
+          totalEarnedHours: record.earnedHours || 0,
+        });
+      } else {
+        // 如果已存在，累加个人挣得工时
+        const existing = dataMap.get(key);
+        existing.personalEarnedHours += record.earnedHours || 0;
+        existing.totalEarnedHours = existing.teamAllocatedHours + existing.personalEarnedHours;
+      }
+    }
+
+    // ========== 2. 查询团队分摊结果 ==========
+    const allocationWhere: any = {
+      recordDate: { gte: start, lte: end },
+      targetType: 'EMPLOYEE',
+      deletedAt: null,
+    };
+
+    if (employeeNo) allocationWhere.sourceEmployeeNo = employeeNo;
+    if (orgId) allocationWhere.sourceAccountId = Number(orgId);
+
+    const allocationResults = await this.prisma.earnedHoursAllocationResult.findMany({
+      where: allocationWhere,
+      orderBy: { recordDate: 'desc' },
+    });
+
+    this.logger.log(`[统一挣得工时报表] 找到 ${allocationResults.length} 条团队分摊结果`);
+
+    // 处理团队分摊结果
+    for (const allocation of allocationResults) {
+      // 获取对应的生产记录
+      const productionRecord = await this.prisma.productionRecord.findFirst({
+        where: {
+          recordDate: allocation.recordDate,
+          orgId: allocation.sourceAccountId,
+          deletedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // 按productId筛选
+      if (productId && productionRecord && productionRecord.productId !== Number(productId)) {
+        continue;
+      }
+
+      const dateKey = allocation.recordDate.toISOString().split('T')[0];
+      const prodId = productionRecord?.productId || 0;
+      const key = `${dateKey}_${allocation.sourceEmployeeNo}_${allocation.sourceAccountId}_${prodId}`;
+
+      // 查找标准工时配置
+      let standardHoursConfig = null;
+      let standardQuantity = 1;
+      let standardHours = 0;
+
+      if (productionRecord && productionRecord.productId) {
+        const recordDate = new Date(allocation.recordDate);
+        const standardConfig = await this.findMatchingStandardHourConfig(
+          productionRecord.productId,
+          allocation.sourceAccountId!,
+          allocation.sourceAccountName || '',
+          recordDate
+        );
+
+        if (standardConfig) {
+          standardHoursConfig = standardConfig;
+          standardQuantity = standardConfig.quantity || 1;
+          standardHours = standardConfig.standardHours || 0;
+        }
+      }
+
+      if (!dataMap.has(key)) {
+        // 创建新记录（只有团队分摊）
+        dataMap.set(key, {
+          recordDate: allocation.recordDate,
+          employeeNo: allocation.sourceEmployeeNo,
+          employeeName: allocation.sourceEmployeeName,
+          orgId: allocation.sourceAccountId,
+          orgName: allocation.sourceAccountName,
+          productId: productionRecord?.productId,
+          productCode: productionRecord?.productCode,
+          productName: productionRecord?.productName,
+          actualQty: productionRecord?.actualQty || 0,
+          standardQuantity,
+          standardHours,
+          accountPath: standardHoursConfig?.accountPath || null,
+          teamAllocatedHours: allocation.allocatedHours || 0,
+          personalEarnedHours: 0,
+          totalEarnedHours: allocation.allocatedHours || 0,
+        });
+      } else {
+        // 如果已存在，累加团队分摊工时
+        const existing = dataMap.get(key);
+        existing.teamAllocatedHours += allocation.allocatedHours || 0;
+        existing.totalEarnedHours = existing.teamAllocatedHours + existing.personalEarnedHours;
+      }
+    }
+
+    // 转换为数组并添加ID
+    const results = Array.from(dataMap.values()).map((item, index) => ({
+      ...item,
+      id: index + 1,
+    }));
+
+    // 按日期、员工、账户排序
+    results.sort((a, b) => {
+      const dateCompare = new Date(b.recordDate).getTime() - new Date(a.recordDate).getTime();
+      if (dateCompare !== 0) return dateCompare;
+      const empCompare = a.employeeNo.localeCompare(b.employeeNo);
+      if (empCompare !== 0) return empCompare;
+      return (a.orgId || 0) - (b.orgId || 0);
+    });
+
+    // 汇总统计
+    const totalRecords = results.length;
+    const totalQty = results.reduce((sum, r) => sum + (r.actualQty || 0), 0);
+    const totalTeamAllocatedHours = results.reduce((sum, r) => sum + (r.teamAllocatedHours || 0), 0);
+    const totalPersonalEarnedHours = results.reduce((sum, r) => sum + (r.personalEarnedHours || 0), 0);
+    const totalEarnedHours = results.reduce((sum, r) => sum + (r.totalEarnedHours || 0), 0);
+
+    this.logger.log(`[统一挣得工时报表] 汇总: ${totalRecords} 条记录, 总产量: ${totalQty}, 团队分摊: ${totalTeamAllocatedHours}, 个人挣得: ${totalPersonalEarnedHours}, 总计: ${totalEarnedHours}`);
+
+    return {
+      items: results,
+      summary: {
+        totalRecords,
+        totalQty,
+        totalTeamAllocatedHours,
+        totalPersonalEarnedHours,
+        totalEarnedHours,
+      },
+    };
+  }
+
+  /**
+   * 从数据库表中读取团队挣得工时分摊结果
+   */
+  async getTeamProductionEarnedHours(query: any) {
+    const { startDate, endDate, orgId, productId } = query;
+
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    this.logger.log(`[团队产量挣得工时] 查询条件: startDate=${startDate}, endDate=${endDate}, orgId=${orgId}, productId=${productId}`);
+
+    // 构建查询条件
+    const allocationWhere: any = {
+      recordDate: { gte: start, lte: end },
+      targetType: 'EMPLOYEE',
+      deletedAt: null,
+    };
+
+    // 按组织筛选（通过源账户）
+    if (orgId) {
+      allocationWhere.sourceAccountId = Number(orgId);
+    }
+
+    // 查询分摊结果表
+    const allocationResults = await this.prisma.earnedHoursAllocationResult.findMany({
+      where: allocationWhere,
+      orderBy: { recordDate: 'desc' },
+    });
+
+    this.logger.log(`[团队产量挣得工时] 找到 ${allocationResults.length} 条分摊结果`);
+
+    if (allocationResults.length === 0) {
+      return {
+        items: [],
+        summary: {
+          totalRecords: 0,
+          totalQty: 0,
+          totalEarnedHours: 0,
+        },
+      };
+    }
+
+    // 获取相关的生产记录信息
+    const recordDates = [...new Set(allocationResults.map(r => r.recordDate.toISOString().split('T')[0]))];
+    const sourceAccountIds = [...new Set(allocationResults.map(r => r.sourceAccountId).filter(Boolean))];
+
+    // 查询生产记录
+    const productionWhere: any = {
+      recordDate: { gte: start, lte: end },
+      deletedAt: null,
+    };
+    if (orgId) productionWhere.orgId = Number(orgId);
+    if (productId) productionWhere.productId = Number(productId);
+
+    const productionRecords = await this.prisma.productionRecord.findMany({
+      where: productionWhere,
+    });
+
+    // 按日期和账户组织生产记录
+    const productionMap = new Map<string, any>();
+    for (const record of productionRecords) {
+      const dateKey = record.recordDate.toISOString().split('T')[0];
+      const key = `${dateKey}_${record.orgId}`;
+      if (!productionMap.has(key)) {
+        productionMap.set(key, record);
+      }
+    }
+
+    // 按日期+账户聚合分摊结果
+    const groupedResults = new Map<string, any>();
+    for (const allocation of allocationResults) {
+      const dateKey = allocation.recordDate.toISOString().split('T')[0];
+      const key = `${dateKey}_${allocation.sourceAccountId}`;
+
+      if (!groupedResults.has(key)) {
+        // 获取对应的生产记录
+        const prodKey = `${dateKey}_${allocation.sourceAccountId}`;
+        const productionRecord = productionMap.get(prodKey);
+
+        // 查找标准工时配置
+        let standardHoursConfig = null;
+        if (productionRecord && productionRecord.productId) {
+          const recordDate = new Date(allocation.recordDate);
+          const standardConfig = await this.findMatchingStandardHourConfig(
+            productionRecord.productId,
+            allocation.sourceAccountId!,
+            allocation.sourceAccountName || '',
+            recordDate
+          );
+
+          if (standardConfig) {
+            standardHoursConfig = {
+              productId: standardConfig.productId,
+              accountPath: standardConfig.accountPath,
+              standardHours: standardConfig.standardHours,
+              quantity: standardConfig.quantity,
+              effectiveDate: standardConfig.effectiveDate,
+              expiryDate: standardConfig.expiryDate,
+            };
+          }
+        }
+
+        // 按productId筛选
+        if (productId && productionRecord && productionRecord.productId !== Number(productId)) {
+          continue;
+        }
+
+        groupedResults.set(key, {
+          id: allocation.id,
+          recordDate: allocation.recordDate,
+          orgId: allocation.sourceAccountId,
+          orgName: allocation.sourceAccountName,
+          productId: productionRecord?.productId,
+          productCode: productionRecord?.productCode,
+          productName: productionRecord?.productName,
+          actualQty: productionRecord?.actualQty || 0,
+          totalStdHours: productionRecord?.totalStdHours || 0,
+          calculatedEarnedHours: 0,
+          standardHoursConfig,
+          allocationDetails: [],
+        });
+      }
+
+      const group = groupedResults.get(key);
+      group.calculatedEarnedHours += allocation.allocatedHours || 0;
+      group.allocationDetails.push({
+        employeeNo: allocation.sourceEmployeeNo,
+        employeeName: allocation.sourceEmployeeName,
+        allocatedHours: allocation.allocatedHours,
+        allocationRatio: allocation.allocationRatio,
+        targetAccountName: allocation.targetAccountName,
+      });
+    }
+
+    const results = Array.from(groupedResults.values());
+
+    // 汇总统计
+    const totalQty = results.reduce((sum, r) => sum + (r.actualQty || 0), 0);
+    const totalEarnedHours = results.reduce((sum, r) => sum + (r.calculatedEarnedHours || 0), 0);
+
+    this.logger.log(`[团队产量挣得工时] 汇总: ${results.length} 条记录, 总产量: ${totalQty}, 总挣得工时: ${totalEarnedHours}`);
+
+    return {
+      items: results,
+      summary: {
+        totalRecords: results.length,
+        totalQty,
+        totalEarnedHours,
+      },
+    };
+  }
+
+  /**
+   * 从数据库表中读取个人挣得工时数据
+   */
+  async getPersonalProductionEarnedHours(query: any) {
+    const { startDate, endDate, employeeNo, orgId, productId } = query;
+
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    this.logger.log(`[个人产量挣得工时] 查询条件: startDate=${startDate}, endDate=${endDate}, employeeNo=${employeeNo}, orgId=${orgId}, productId=${productId}`);
+
+    // 1. 查询个人产量记录表（个人直接记录的产量和挣得工时）
+    const personalWhere: any = {
+      recordDate: { gte: start, lte: end },
+      deletedAt: null,
+    };
+
+    if (employeeNo) personalWhere.employeeNo = employeeNo;
+    if (orgId) personalWhere.orgId = Number(orgId);
+    if (productId) personalWhere.productId = Number(productId);
+
+    const personalRecords = await this.prisma.personalProductionRecord.findMany({
+      where: personalWhere,
+      orderBy: { recordDate: 'desc' },
+    });
+
+    this.logger.log(`[个人产量挣得工时] 找到 ${personalRecords.length} 条个人产量记录`);
+
+    // 2. 查询团队分摊结果表（团队产量分摊到个人的工时）
+    const allocationWhere: any = {
+      recordDate: { gte: start, lte: end },
+      targetType: 'EMPLOYEE',
+      deletedAt: null,
+    };
+
+    if (employeeNo) allocationWhere.sourceEmployeeNo = employeeNo;
+    if (orgId) allocationWhere.sourceAccountId = Number(orgId);
+
+    const allocationResults = await this.prisma.earnedHoursAllocationResult.findMany({
+      where: allocationWhere,
+      orderBy: { recordDate: 'desc' },
+    });
+
+    this.logger.log(`[个人产量挣得工时] 找到 ${allocationResults.length} 条团队分摊结果`);
+
+    // 3. 合并两种数据来源
+    const resultMap = new Map<string, any>();
+
+    // 处理个人产量记录
+    for (const record of personalRecords) {
+      const key = `${record.recordDate.toISOString().split('T')[0]}_${record.employeeNo}_${record.productId || 'all'}`;
+
+      // 查找标准工时配置
+      let standardHoursConfig = null;
+      if (record.productId) {
+        const recordDate = new Date(record.recordDate);
+        const standardConfig = await this.findMatchingStandardHourConfig(
+          record.productId,
+          record.orgId,
+          record.orgName,
+          recordDate
+        );
+
+        if (standardConfig) {
+          standardHoursConfig = {
+            productId: standardConfig.productId,
+            accountPath: standardConfig.accountPath,
+            standardHours: standardConfig.standardHours,
+            quantity: standardConfig.quantity,
+            effectiveDate: standardConfig.effectiveDate,
+            expiryDate: standardConfig.expiryDate,
+          };
+        }
+      }
+
+      resultMap.set(key, {
+        id: record.id,
+        recordDate: record.recordDate,
+        employeeNo: record.employeeNo,
+        employeeName: record.employeeName,
+        orgId: record.orgId,
+        orgName: record.orgName,
+        productId: record.productId,
+        productCode: record.productCode,
+        productName: record.productName,
+        actualQty: record.actualQty,
+        standardHours: record.standardHours,
+        earnedHours: record.earnedHours || 0,
+        allocatedHours: 0, // 团队分摊的工时，后续累加
+        standardHoursConfig,
+        source: 'PERSONAL',
+      });
+    }
+
+    // 处理团队分摊结果
+    for (const allocation of allocationResults) {
+      const key = `${allocation.recordDate.toISOString().split('T')[0]}_${allocation.sourceEmployeeNo}_allocation`;
+
+      // 获取生产记录信息
+      const productionRecord = await this.prisma.productionRecord.findFirst({
+        where: {
+          recordDate: allocation.recordDate,
+          orgId: allocation.sourceAccountId,
+          deletedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // 按productId筛选
+      if (productId && productionRecord && productionRecord.productId !== Number(productId)) {
+        continue;
+      }
+
+      if (resultMap.has(key)) {
+        // 已存在个人记录，累加分摊工时
+        const existing = resultMap.get(key);
+        existing.allocatedHours += allocation.allocatedHours || 0;
+      } else {
+        // 不存在个人记录，创建新记录（仅包含分摊工时）
+        const recordDate = new Date(allocation.recordDate);
+        let standardHoursConfig = null;
+
+        if (productionRecord && productionRecord.productId) {
+          const standardConfig = await this.findMatchingStandardHourConfig(
+            productionRecord.productId,
+            allocation.sourceAccountId!,
+            allocation.sourceAccountName || '',
+            recordDate
+          );
+
+          if (standardConfig) {
+            standardHoursConfig = {
+              productId: standardConfig.productId,
+              accountPath: standardConfig.accountPath,
+              standardHours: standardConfig.standardHours,
+              quantity: standardConfig.quantity,
+              effectiveDate: standardConfig.effectiveDate,
+              expiryDate: standardConfig.expiryDate,
+            };
+          }
+        }
+
+        resultMap.set(key, {
+          id: allocation.id,
+          recordDate: allocation.recordDate,
+          employeeNo: allocation.sourceEmployeeNo,
+          employeeName: allocation.sourceEmployeeName,
+          orgId: allocation.sourceAccountId,
+          orgName: allocation.sourceAccountName,
+          productId: productionRecord?.productId,
+          productCode: productionRecord?.productCode,
+          productName: productionRecord?.productName,
+          actualQty: productionRecord?.actualQty || 0,
+          standardHours: 0,
+          earnedHours: 0,
+          allocatedHours: allocation.allocatedHours || 0,
+          standardHoursConfig,
+          source: 'ALLOCATION',
+        });
+      }
+    }
+
+    const results = Array.from(resultMap.values());
+
+    // 汇总统计
+    const totalQty = results.reduce((sum, r) => sum + (r.actualQty || 0), 0);
+    const totalEarnedHours = results.reduce((sum, r) => sum + (r.earnedHours || 0), 0);
+    const totalAllocatedHours = results.reduce((sum, r) => sum + (r.allocatedHours || 0), 0);
+    const totalCalculatedEarnedHours = totalEarnedHours + totalAllocatedHours;
+
+    this.logger.log(`[个人产量挣得工时] 汇总: ${results.length} 条记录, 总产量: ${totalQty}, 个人挣得工时: ${totalEarnedHours}, 团队分摊工时: ${totalAllocatedHours}, 总计: ${totalCalculatedEarnedHours}`);
+
+    return {
+      items: results,
+      summary: {
+        totalRecords: results.length,
+        totalQty,
+        totalCalculatedEarnedHours,
+        totalExistingEarnedHours: totalEarnedHours,
+        totalAllocatedHours,
       },
     };
   }

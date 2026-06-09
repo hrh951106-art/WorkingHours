@@ -12,10 +12,10 @@ import {
   Col,
   TimePicker,
   Radio,
-  Tag,
-  Space,
+  Divider,
+  Table,
 } from 'antd';
-import { DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -25,7 +25,6 @@ import AccountSelect from '@/components/common/AccountSelect';
 import EmployeeSelect from '@/components/common/EmployeeSelect';
 import OrganizationTreeSelect from '@/components/common/OrganizationTreeSelect';
 
-const { TextArea } = Input;
 const { Option } = Select;
 
 interface AttendanceCode {
@@ -38,6 +37,20 @@ interface AttendanceCode {
   calculateHours: boolean | number;
 }
 
+interface Employee {
+  id: number;
+  employeeNo: string;
+  name: string;
+  employeeName?: string;
+}
+
+interface EmployeeReportData {
+  employee: Employee;
+  startTime?: dayjs.Dayjs;
+  endTime?: dayjs.Dayjs;
+  value?: number;
+}
+
 const LaborHourReportCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -45,9 +58,10 @@ const LaborHourReportCreatePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [reportMode, setReportMode] = useState<'personal' | 'team'>('personal');
   const [selectedEmployees, setSelectedEmployees] = useState<Employee[]>([]);
-  const [manualEmployees, setManualEmployees] = useState<Set<number>>(new Set()); // 手动添加的员工ID集合
+  const [employeeReportDataList, setEmployeeReportDataList] = useState<EmployeeReportData[]>([]);
+  const [manualEmployees, setManualEmployees] = useState<Set<number>>(new Set());
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<any | null>(null); // 存储完整的账户对象
+  const [selectedAccount, setSelectedAccount] = useState<any | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>('小时');
   const [selectedAttendanceCode, setSelectedAttendanceCode] = useState<AttendanceCode | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
@@ -68,7 +82,6 @@ const LaborHourReportCreatePage: React.FC = () => {
     queryFn: async () => {
       try {
         const response = await request.get('/calculate/attendance-code-definitions');
-        console.log('出勤代码定义数据:', response);
         return response;
       } catch (error) {
         console.error('获取出勤代码定义失败:', error);
@@ -92,21 +105,16 @@ const LaborHourReportCreatePage: React.FC = () => {
   // 创建工时报工申请
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      console.log('=== 提交工时报工申请 ===');
-      console.log('提交数据:', data);
       try {
         const response = await request.post('/labor-hour-report/requests', data);
-        console.log('创建成功响应:', response);
         return response;
       } catch (error: any) {
         console.error('创建失败详细错误:', error);
-        console.error('错误堆栈:', error.stack);
         throw error;
       }
     },
     onSuccess: (response) => {
       message.success('工时报工申请创建成功');
-      // 跳转到详情页
       if (response?.data?.id || response?.id) {
         navigate(`/labor-hour-report/${response.data?.id || response?.id}`);
       } else {
@@ -115,103 +123,75 @@ const LaborHourReportCreatePage: React.FC = () => {
       setLoading(false);
     },
     onError: (error: any) => {
-      console.error('=== 创建失败 ===');
-      console.error('错误对象:', error);
-      console.error('错误响应:', error.response);
-      console.error('错误消息:', error.message);
-
       let errorMsg = '创建失败';
       if (error.response?.data?.message) {
         errorMsg = error.response.data.message;
       } else if (error.message) {
         errorMsg = error.message;
-      } else if (typeof error === 'string') {
-        errorMsg = error;
       }
-
       message.error(errorMsg);
       setLoading(false);
     },
   });
 
-
   // 报工模式变更
   const handleReportModeChange = (e: any) => {
     const mode = e.target.value;
     setReportMode(mode);
-    // 清空相关字段
     setSelectedEmployees([]);
-    setManualEmployees(new Set()); // 清空手动员工标记
+    setManualEmployees(new Set());
     setSelectedOrgId(null);
+    setEmployeeReportDataList([]);
     form.setFieldValue('organizationId', null);
     form.setFieldValue('employeeId', undefined);
-    form.setFieldValue('employeeNo', undefined);
-    form.setFieldValue('employeeName', undefined);
+    form.setFieldValue('startTime', undefined);
+    form.setFieldValue('endTime', undefined);
+    form.setFieldValue('value', undefined);
   };
 
   // 组织选择变更
   const handleOrganizationChange = (orgId: number) => {
     setSelectedOrgId(orgId);
-    // 不清空手动添加的员工，只清空表单显示
-    // 加载该组织的员工
     if (orgId) {
       refetchOrgEmployees();
     }
   };
 
-  // 当组织员工加载完成后，自动填充到人员选择字段
+  // 当组织员工加载完成后，自动填充到表格中
   useEffect(() => {
     if (reportMode === 'team' && orgEmployees?.items && orgEmployees.items.length > 0) {
-      // 获取手动添加的员工（不在新团队中的员工）
-      const manualAddedEmployees = selectedEmployees.filter(emp =>
-        manualEmployees.has(emp.id) && !orgEmployees.items.some((orgEmp: Employee) => orgEmp.id === emp.id)
-      );
+      console.log('=== 自动导入团队成员到表格 ===');
+      console.log('组织员工数量:', orgEmployees.items.length);
 
-      // 合并新团队成员和手动添加的员工
-      const mergedEmployees = [...orgEmployees.items, ...manualAddedEmployees];
-      setSelectedEmployees(mergedEmployees);
+      // 获取当前统一设置的时间作为默认值
+      const startTime = form.getFieldValue('startTime');
+      const endTime = form.getFieldValue('endTime');
+      const value = form.getFieldValue('value');
 
-      // 同时设置到表单的 employeeId 字段（用于显示）
-      const employeeIds = mergedEmployees.map(emp => emp.id);
-      form.setFieldValue('employeeId', employeeIds);
+      setEmployeeReportDataList(() => {
+        const list = orgEmployees.items.map(emp => ({
+          employee: emp,
+          startTime,
+          endTime,
+          value,
+        }));
+        console.log('初始化员工报工数据列表，数量:', list.length);
+        return list;
+      });
+
+      // 更新 selectedEmployees（用于提交）
+      setSelectedEmployees(orgEmployees.items);
+      console.log('==================================');
     }
   }, [orgEmployees, reportMode]);
 
-  // 移除报工人员
-  const handleRemoveEmployee = (employeeId: number) => {
-    setSelectedEmployees(prev => {
-      const updated = prev.filter(emp => emp.id !== employeeId);
-      // 同步更新表单字段
-      form.setFieldValue('employeeId', updated.map(emp => emp.id));
-      return updated;
-    });
-  };
-
-  // 添加报工���员
-  const handleAddEmployee = (employee: Employee) => {
-    const exists = selectedEmployees.some(emp => emp.id === employee.id);
-    if (!exists) {
-      setSelectedEmployees(prev => {
-        const updated = [...prev, employee];
-        // 同步更新表单字段
-        form.setFieldValue('employeeId', updated.map(emp => emp.id));
-        return updated;
-      });
-    }
-  };
-
-  // 人员选择变更（统一处理个人和团队模式）
+  // 人员选择变更
   const handleEmployeeChange = (value: number | number[] | null | undefined, employeeData?: Employee | Employee[]) => {
-    console.log('handleEmployeeChange 被调用:', value, 'employeeData:', employeeData, 'reportMode:', reportMode);
-
-    // Form.Item 会自动处理 employeeId 字段，这里只需要更新状态和隐藏字段
     const employeeIds = value;
     const ids = Array.isArray(employeeIds) ? employeeIds : (employeeIds ? [employeeIds] : []);
 
     if (ids.length > 0) {
-      // 优先使用传入的 employeeData，否则从 employees 列表中查找
       let employeeList: Employee[] = [];
-
       if (employeeData) {
         if (Array.isArray(employeeData)) {
           employeeList = employeeData;
@@ -219,27 +199,21 @@ const LaborHourReportCreatePage: React.FC = () => {
           employeeList = [employeeData];
         }
       } else {
-        // 降级：从 employees 列表中查找
-        employeeList = (employees?.items || []).filter((emp: Employee) =>
-          ids.includes(emp.id)
-        );
+        employeeList = (employees?.items || []).filter((emp: Employee) => ids.includes(emp.id));
       }
 
       setSelectedEmployees(employeeList);
 
-      // 标记手动操作的员工（团队模式下）
       if (reportMode === 'team') {
         const previousIds = new Set(selectedEmployees.map(emp => emp.id));
         const idsSet = new Set(ids);
 
-        // 新增的员工标记为手动添加
         ids.forEach(id => {
           if (!previousIds.has(id)) {
             setManualEmployees(prev => new Set(prev).add(id));
           }
         });
 
-        // 删除的员工从手动添加集合中移除
         previousIds.forEach(id => {
           if (!idsSet.has(id)) {
             setManualEmployees(prev => {
@@ -249,21 +223,30 @@ const LaborHourReportCreatePage: React.FC = () => {
             });
           }
         });
-      }
 
-      // 个人模式：更新隐藏字段
-      if (reportMode === 'personal' && employeeList.length > 0) {
-        console.log('个人模式：设置隐藏字段', {
-          employeeNo: employeeList[0].employeeNo,
-          employeeName: employeeList[0].name,
+        // 初始化员工报工数据列表，使用统一设置作为默认值
+        const startTime = form.getFieldValue('startTime');
+        const endTime = form.getFieldValue('endTime');
+        const value = form.getFieldValue('value');
+
+        setEmployeeReportDataList(prev => {
+          const existingDataMap = new Map(prev.map(item => [item.employee.id, item]));
+          return employeeList.map(emp => {
+            const existing = existingDataMap.get(emp.id);
+            return existing || {
+              employee: emp,
+              startTime,
+              endTime,
+              value,
+            };
+          });
         });
-        form.setFieldValue('employeeNo', employeeList[0].employeeNo);
-        form.setFieldValue('employeeName', employeeList[0].name);
       }
     } else {
       setSelectedEmployees([]);
       if (reportMode === 'team') {
         setManualEmployees(new Set());
+        setEmployeeReportDataList([]);
       }
     }
   };
@@ -275,7 +258,6 @@ const LaborHourReportCreatePage: React.FC = () => {
       setSelectedAttendanceCode(code);
       form.setFieldValue('hourTypeName', code.name);
       form.setFieldValue('hourType', code.code);
-      // 自动读取单位
       if (code.unit) {
         setSelectedUnit(code.unit);
         form.setFieldValue('unit', code.unit);
@@ -289,120 +271,257 @@ const LaborHourReportCreatePage: React.FC = () => {
     setSelectedAccount(account || null);
   };
 
-  // 计算工时数量
-  const calculateHours = () => {
-    const startTime = form.getFieldValue('startTime');
-    const endTime = form.getFieldValue('endTime');
+  // 统一时间字段变化处理
+  const handleTimeChange = (field: 'startTime' | 'endTime' | 'value', value: any) => {
+    form.setFieldValue(field, value);
 
-    if (startTime && endTime) {
-      const start = dayjs(startTime);
-      const end = dayjs(endTime);
-      const diff = end.diff(start, 'hour', true);
-      if (diff > 0) {
-        form.setFieldValue('value', parseFloat(diff.toFixed(2)));
-      } else {
-        form.setFieldValue('value', 0);
+    // 如果是团队模式，同时更新表格中所有员工的数据
+    if (reportMode === 'team') {
+      setEmployeeReportDataList(prev =>
+        prev.map(item => ({
+          ...item,
+          [field]: value,
+        }))
+      );
+
+      // 如果修改了开始或结束时间，自动计算工时
+      if (field === 'startTime' || field === 'endTime') {
+        const startTime = field === 'startTime' ? value : form.getFieldValue('startTime');
+        const endTime = field === 'endTime' ? value : form.getFieldValue('endTime');
+        if (startTime && endTime) {
+          const start = dayjs(startTime);
+          const end = dayjs(endTime);
+          const diff = end.diff(start, 'hour', true);
+          if (diff > 0) {
+            const calculatedValue = parseFloat(diff.toFixed(2));
+            form.setFieldValue('value', calculatedValue);
+            setEmployeeReportDataList(prev =>
+              prev.map(item => ({
+                ...item,
+                value: calculatedValue,
+              }))
+            );
+          }
+        }
+      }
+    } else {
+      // 个人模式：自动计算工时
+      const startTime = form.getFieldValue('startTime');
+      const endTime = form.getFieldValue('endTime');
+      if (startTime && endTime) {
+        const start = dayjs(startTime);
+        const end = dayjs(endTime);
+        const diff = end.diff(start, 'hour', true);
+        if (diff > 0) {
+          form.setFieldValue('value', parseFloat(diff.toFixed(2)));
+        } else {
+          form.setFieldValue('value', 0);
+        }
       }
     }
   };
 
-  // 时间字段变化处理
-  const handleTimeChange = (field: 'startTime' | 'endTime', value: any) => {
-    // 设置当前字段值
-    form.setFieldValue(field, value);
+  // 员工字段变更处理（表格中单独修改）
+  const handleEmployeeFieldChange = (
+    employeeIndex: number,
+    field: keyof EmployeeReportData,
+    value: any
+  ) => {
+    setEmployeeReportDataList(prev => {
+      const updated = [...prev];
+      updated[employeeIndex] = {
+        ...updated[employeeIndex],
+        [field]: value,
+      };
 
-    // 如果填写了开始时间或结束时间，验证另一个字段是否已填写
+      // 如果同时设置了开始时间和结束时间，自动计算工时
+      if (field === 'startTime' || field === 'endTime') {
+        const record = updated[employeeIndex];
+        if (record.startTime && record.endTime) {
+          const start = dayjs(record.startTime);
+          const end = dayjs(record.endTime);
+          const diff = end.diff(start, 'hour', true);
+          if (diff > 0) {
+            updated[employeeIndex] = {
+              ...updated[employeeIndex],
+              value: parseFloat(diff.toFixed(2)),
+            };
+          }
+        }
+      }
+
+      return updated;
+    });
+  };
+
+  // 移除员工
+  const handleRemoveEmployee = (employeeId: number) => {
+    setSelectedEmployees(prev => {
+      const updated = prev.filter(emp => emp.id !== employeeId);
+
+      // 不再通过更新表单字段来触发handleEmployeeChange，
+      // 因为我们已经在手动管理员工列表了
+      return updated;
+    });
+
+    setEmployeeReportDataList(prev =>
+      prev.filter(item => item.employee.id !== employeeId)
+    );
+
+    setManualEmployees(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(employeeId);
+      return newSet;
+    });
+  };
+
+  // 添加新员工行
+  const handleAddEmployeeRow = () => {
     const startTime = form.getFieldValue('startTime');
     const endTime = form.getFieldValue('endTime');
+    const value = form.getFieldValue('value');
 
-    // 如果其中一个已填写，另一个未填写，提示用户
-    if ((startTime && !endTime) || (!startTime && endTime)) {
-      // 不提示，因为不是必填
-    }
+    // 创建一个临时员工（id为负数表示新添加）
+    const tempEmployee: Employee = {
+      id: Date.now() * -1, // 临时ID
+      employeeNo: '',
+      name: '',
+    };
 
-    // 如果两个都填写了，自动计算工时
-    if (startTime && endTime) {
-      calculateHours();
-    }
+    setEmployeeReportDataList(prev => [
+      ...prev,
+      {
+        employee: tempEmployee,
+        startTime,
+        endTime,
+        value,
+      },
+    ]);
+  };
+
+  // 更新员工行的员工信息
+  const handleEmployeeSelectChange = (index: number, employee: Employee) => {
+    setEmployeeReportDataList(prev => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        employee: employee,
+      };
+      return updated;
+    });
+
+    // 同时更新selectedEmployees
+    setSelectedEmployees(prev => {
+      const exists = prev.some(emp => emp.id === employee.id);
+      if (!exists) {
+        return [...prev, employee];
+      }
+      return prev;
+    });
+
+    setManualEmployees(prev => new Set(prev).add(employee.id));
   };
 
   // 提交表单
   const handleSubmit = async (values: any) => {
     setLoading(true);
 
-    // 验证账户选择
     if (!selectedAccountId) {
       message.error('请选择报工归属账户');
       setLoading(false);
       return;
     }
 
-    // 验证报工人员
-    if (reportMode === 'personal' && selectedEmployees.length === 0) {
-      message.error('请选择报工人员');
+    if (selectedEmployees.length === 0) {
+      message.error('请添加报工人员');
       setLoading(false);
       return;
     }
 
-    if (reportMode === 'team' && selectedEmployees.length === 0) {
-      message.error('请选择组织并添加报工人员');
-      setLoading(false);
-      return;
-    }
-
-    // 使用已存储的账户对象，避免额外的API调用
     let account = selectedAccount;
-
-    // 如果没有存储的账户对象，尝试从API获取
     if (!account) {
       try {
         account = await request.get(`/account/accounts/${selectedAccountId}`);
       } catch (error: any) {
-        console.error('获取账户信息失败:', error);
-        const errorMsg = error?.response?.data?.message || error?.message || '获取账户信息失败，请检查账户是否有效';
+        const errorMsg = error?.response?.data?.message || error?.message || '获取账户信息失败';
         message.error(errorMsg);
         setLoading(false);
         return;
       }
     }
 
-    // 验证账户对象是否包含必需的字段
     if (!account || !account.id || !account.code || !account.path) {
       message.error('账户信息不完整，请重新选择账户');
       setLoading(false);
       return;
     }
 
-    // 准备报工人员列表
-    const reportEmployees = reportMode === 'personal'
-      ? selectedEmployees
-      : selectedEmployees;
+    let employees;
+    let totalValue = values.value;
+
+    if (reportMode === 'team') {
+      // 验证是否有员工数据
+      if (employeeReportDataList.length === 0) {
+        message.error('请先选择团队，成员将自动导入到表格');
+        setLoading(false);
+        return;
+      }
+
+      // 验证每个员工是否都有有效的工时数据
+      const invalidEmployees = employeeReportDataList.filter(item => !item.employee || !item.employee.name || item.employee.id < 0);
+      if (invalidEmployees.length > 0) {
+        message.error('请为所有新增的员工行选择员工');
+        setLoading(false);
+        return;
+      }
+
+      console.log('提交团队报工，员工数量:', employeeReportDataList.length);
+
+      employees = employeeReportDataList.map(item => ({
+        employeeId: item.employee.id,
+        employeeNo: item.employee.employeeNo,
+        employeeName: item.employee.employeeName || item.employee.name,
+        startTime: item.startTime?.format('HH:mm'),
+        endTime: item.endTime?.format('HH:mm'),
+        value: item.value || 0, // 确保有默认值
+      }));
+      totalValue = employees.reduce((sum, emp) => sum + (emp.value || 0), 0);
+    } else {
+      employees = selectedEmployees.map(emp => ({
+        employeeId: emp.id,
+        employeeNo: emp.employeeNo,
+        employeeName: emp.employeeName || emp.name,
+      }));
+    }
+
+    // 确保总工时有值
+    if (!totalValue || totalValue <= 0) {
+      message.error('请填写工时数量');
+      setLoading(false);
+      return;
+    }
 
     const data = {
       workflowCode: 'LABOR_HOUR_REPORT',
       title: reportMode === 'personal'
-        ? `${reportEmployees[0].name} - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`
-        : `团队报工(${reportEmployees.length}人) - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`,
+        ? `${selectedEmployees[0].name} - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`
+        : `团队报工(${selectedEmployees.length}人) - ${values.hourTypeName} - ${values.reportDate.format('YYYY-MM-DD')}`,
       reportDate: values.reportDate.format('YYYY-MM-DD'),
       reportMode: reportMode,
-      employeeId: reportMode === 'personal' ? reportEmployees[0].id : undefined,
-      employeeNo: reportMode === 'personal' ? reportEmployees[0].employeeNo : undefined,
-      employeeName: reportMode === 'personal' ? (reportEmployees[0].employeeName || reportEmployees[0].name) : undefined,
-      employees: reportEmployees.map(emp => ({
-        employeeId: emp.id,
-        employeeNo: emp.employeeNo,
-        employeeName: emp.employeeName || emp.name,
-      })),
+      employeeId: reportMode === 'personal' ? selectedEmployees[0].id : undefined,
+      employeeNo: reportMode === 'personal' ? selectedEmployees[0].employeeNo : undefined,
+      employeeName: reportMode === 'personal' ? (selectedEmployees[0].employeeName || selectedEmployees[0].name) : undefined,
+      employees: employees,
       hourType: selectedAttendanceCode?.code || values.hourType,
       hourTypeName: values.hourTypeName,
       startTime: values.startTime && values.startTime.isValid() ? values.startTime.format('HH:mm') : undefined,
       endTime: values.endTime && values.endTime.isValid() ? values.endTime.format('HH:mm') : undefined,
-      value: values.value,
+      value: totalValue,
       unit: selectedUnit || values.unit || '小时',
       description: values.description,
       accountId: account.id,
       accountCode: account.code,
-      accountPath: account.path, // ✅ 添加路径字段
+      accountPath: account.path,
       accountName: account.name || account.namePath,
       requesterId: user?.id,
       requesterName: user?.name,
@@ -410,6 +529,104 @@ const LaborHourReportCreatePage: React.FC = () => {
 
     createMutation.mutate(data);
   };
+
+  // 表格列定义
+  const columns = [
+    {
+      title: '员工',
+      dataIndex: ['employee', 'name'],
+      width: 200,
+      fixed: 'left' as const,
+      render: (text: string, record: EmployeeReportData, index: number) => {
+        // 只有额外添加的员工（临时ID或手动添加）才能选择
+        const isManualAdded = record.employee.id < 0 || manualEmployees.has(record.employee.id);
+        if (!isManualAdded) {
+          return <span>{record.employee.name}</span>;
+        }
+        return (
+          <EmployeeSelect
+            placeholder="选择员工"
+            value={record.employee.id < 0 ? undefined : record.employee.id}
+            onChange={(value, employee) => handleEmployeeSelectChange(index, employee as Employee)}
+            style={{ width: '100%' }}
+            status="ACTIVE"
+          />
+        );
+      },
+    },
+    {
+      title: '开始时间',
+      dataIndex: 'startTime',
+      width: 150,
+      render: (time: dayjs.Dayjs, record: EmployeeReportData, index: number) => {
+        // 只有额外添加的员工才能修改
+        const isManualAdded = record.employee.id < 0 || manualEmployees.has(record.employee.id);
+        return (
+          <TimePicker
+            format="HH:mm"
+            value={time}
+            onChange={(value) => handleEmployeeFieldChange(index, 'startTime', value)}
+            style={{ width: '100%' }}
+            disabled={!isManualAdded}
+          />
+        );
+      },
+    },
+    {
+      title: '结束时间',
+      dataIndex: 'endTime',
+      width: 150,
+      render: (time: dayjs.Dayjs, record: EmployeeReportData, index: number) => {
+        // 只有额外添加的员工才能修改
+        const isManualAdded = record.employee.id < 0 || manualEmployees.has(record.employee.id);
+        return (
+          <TimePicker
+            format="HH:mm"
+            value={time}
+            onChange={(value) => handleEmployeeFieldChange(index, 'endTime', value)}
+            style={{ width: '100%' }}
+            disabled={!isManualAdded}
+          />
+        );
+      },
+    },
+    {
+      title: '工时数量',
+      dataIndex: 'value',
+      width: 120,
+      render: (val: number, record: EmployeeReportData, index: number) => {
+        // 只有额外添加的员工才能修改
+        const isManualAdded = record.employee.id < 0 || manualEmployees.has(record.employee.id);
+        return (
+          <InputNumber
+            min={0}
+            precision={2}
+            value={val}
+            onChange={(value) => handleEmployeeFieldChange(index, 'value', value)}
+            style={{ width: '100%' }}
+            addonAfter="小时"
+            disabled={!isManualAdded}
+          />
+        );
+      },
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 80,
+      fixed: 'right' as const,
+      render: (_: any, record: EmployeeReportData) => (
+        <Button
+          type="link"
+          danger
+          onClick={() => handleRemoveEmployee(record.employee.id)}
+          style={{ padding: 0 }}
+        >
+          移除
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <Card
@@ -446,56 +663,58 @@ const LaborHourReportCreatePage: React.FC = () => {
           <Col span={12}></Col>
         </Row>
 
-        {/* 团队报工模式：选择组织 */}
+        {/* 团队报工模式：选择组织和人员 */}
         {reportMode === 'team' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="团队"
-                name="organizationId"
-                rules={[{ required: reportMode === 'team', message: '请选择团队' }]}
-              >
-                <OrganizationTreeSelect
-                  placeholder="请选择团队"
-                  onChange={handleOrganizationChange}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}></Col>
-          </Row>
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label="团队"
+                  name="organizationId"
+                  rules={[{ required: reportMode === 'team', message: '请选择团队' }]}
+                >
+                  <OrganizationTreeSelect
+                    placeholder="请选择团队"
+                    onChange={handleOrganizationChange}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label="提示"
+                >
+                  <div style={{ color: '#52c41a', fontSize: 12, fontWeight: 500 }}>
+                    ✓ 选择团队后，成员将自动导入下方表格
+                  </div>
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
         )}
 
-
-        {/* 报工人员选择（两种模式下都显示，团队模式为���选） */}
-        <Row gutter={16}>
-          <Col span={reportMode === 'personal' ? 12 : 24}>
-            <Form.Item
-              label="报工人员"
-              name="employeeId"
-              rules={[{ required: true, message: '请选择报工人员' }]}
-            >
-              <EmployeeSelect
-                placeholder={reportMode === 'personal' ? '请选择报工人员' : '请选择报工人员（可多选）'}
-                onChange={handleEmployeeChange}
-                mode={reportMode === 'team' ? 'multiple' : undefined}
-                style={{ width: '100%' }}
-                status="ACTIVE"
-              />
-            </Form.Item>
-          </Col>
-          {reportMode === 'personal' && <Col span={12}></Col>}
-        </Row>
-
-        {/* 个人报工模式：隐藏字段 */}
+        {/* 个人报工模式：选择人员 */}
         {reportMode === 'personal' && (
           <>
-            <Form.Item name="employeeNo" hidden>
-              <Input />
-            </Form.Item>
-            <Form.Item name="employeeName" hidden>
-              <Input />
-            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label="报工人员"
+                  name="employeeId"
+                  rules={[{ required: true, message: '请选择报工人员' }]}
+                >
+                  <EmployeeSelect
+                    placeholder="请选择报工人员"
+                    onChange={handleEmployeeChange}
+                    style={{ width: '100%' }}
+                    status="ACTIVE"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}></Col>
+            </Row>
+            <Form.Item name="employeeNo" hidden><Input /></Form.Item>
+            <Form.Item name="employeeName" hidden><Input /></Form.Item>
           </>
         )}
 
@@ -525,7 +744,6 @@ const LaborHourReportCreatePage: React.FC = () => {
                 loading={isLoadingCodes}
               >
                 {(attendanceCodes || []).filter((code: AttendanceCode) => {
-                  // 更宽松的过滤条件
                   const isActive = code.status === 'ACTIVE' || code.status === 'active';
                   const shouldCalculate = code.calculateHours === true || code.calculateHours === 1 || code.calculateHours === '1';
                   return isActive && shouldCalculate;
@@ -536,71 +754,123 @@ const LaborHourReportCreatePage: React.FC = () => {
                 ))}
               </Select>
             </Form.Item>
-            <Form.Item name="hourTypeName" hidden>
-              <Input />
-            </Form.Item>
+            <Form.Item name="hourTypeName" hidden><Input /></Form.Item>
           </Col>
           <Col span={12}></Col>
         </Row>
 
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              label="开始时间"
-              name="startTime"
-            >
-              <TimePicker
-                style={{ width: '100%' }}
-                format="HH:mm"
-                onChange={(value) => handleTimeChange('startTime', value)}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              label="结束时间"
-              name="endTime"
-            >
-              <TimePicker
-                style={{ width: '100%' }}
-                format="HH:mm"
-                onChange={(value) => handleTimeChange('endTime', value)}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item
-              label="工时数量"
-              name="value"
-              rules={[{ required: true, message: '请输入工时数量' }]}
-            >
-              <InputNumber
-                min={0}
-                precision={2}
-                style={{ width: '100%' }}
-                addonAfter="小时"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              label="单位"
-              name="unit"
-              rules={[{ required: true, message: '请输入单位' }]}
-            >
-              <Input placeholder="小时" />
-            </Form.Item>
-          </Col>
-        </Row>
+        {/* 时间和工时字段 */}
+        {reportMode === 'personal' ? (
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="开始时间" name="startTime">
+                  <TimePicker
+                    style={{ width: '100%' }}
+                    format="HH:mm"
+                    onChange={(value) => handleTimeChange('startTime', value)}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="结束时间" name="endTime">
+                  <TimePicker
+                    style={{ width: '100%' }}
+                    format="HH:mm"
+                    onChange={(value) => handleTimeChange('endTime', value)}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label="工时数量"
+                  name="value"
+                  rules={[{ required: true, message: '请输入工时数量' }]}
+                >
+                  <InputNumber
+                    min={0}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    addonAfter="小时"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label="单位"
+                  name="unit"
+                  rules={[{ required: true, message: '请输入单位' }]}
+                >
+                  <Input placeholder="小时" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
+        ) : (
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label="开始时间（统一设置）"
+                  name="startTime"
+                  tooltip="设置后会自动应用到下方所有员工"
+                >
+                  <TimePicker
+                    style={{ width: '100%' }}
+                    format="HH:mm"
+                    onChange={(value) => handleTimeChange('startTime', value)}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label="结束时间（统一设置）"
+                  name="endTime"
+                  tooltip="设置后会自动应用到下方所有员工"
+                >
+                  <TimePicker
+                    style={{ width: '100%' }}
+                    format="HH:mm"
+                    onChange={(value) => handleTimeChange('endTime', value)}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label="工时数量（统一设置）"
+                  name="value"
+                  tooltip="设置后会自动应用到���方所有员工"
+                >
+                  <InputNumber
+                    min={0}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    addonAfter="小时"
+                    onChange={(value) => handleTimeChange('value', value)}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label="单位"
+                  name="unit"
+                  rules={[{ required: true, message: '请输入单位' }]}
+                >
+                  <Input placeholder="小时" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
+        )}
 
         <Form.Item
           label="报工归属"
           name="accountId"
           rules={[{ required: true, message: '请选择报工归属账户' }]}
-          tooltip="选择该工时归属的账户"
         >
           <AccountSelect
             placeholder="选择报工归属账户"
@@ -611,12 +881,36 @@ const LaborHourReportCreatePage: React.FC = () => {
           />
         </Form.Item>
 
-        <Form.Item
-          label="详细描述"
-          name="description"
-        >
-          <TextArea rows={4} placeholder="请输入详细描述（可选）" />
-        </Form.Item>
+        {/* 团队报工模式：显示员工报工明细表格 */}
+        {reportMode === 'team' && employeeReportDataList.length > 0 && (
+          <>
+            <Divider orientation="left">员工报工明细（可单独修改）</Divider>
+            <div style={{ marginBottom: 16 }}>
+              <Button
+                type="dashed"
+                icon={<PlusOutlined />}
+                onClick={handleAddEmployeeRow}
+              >
+                添加额外员工
+              </Button>
+            </div>
+            <Table
+              columns={columns}
+              dataSource={employeeReportDataList}
+              rowKey={(record) => record.employee.id}
+              scroll={{ x: 900, y: 400 }}
+              pagination={false}
+              size="small"
+            />
+          </>
+        )}
+
+        {/* 个人报工模式：显示详细描述 */}
+        {reportMode === 'personal' && (
+          <Form.Item label="详细描述" name="description">
+            <Input.TextArea rows={4} placeholder="请输入详细描述（可选）" />
+          </Form.Item>
+        )}
 
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={loading} block>

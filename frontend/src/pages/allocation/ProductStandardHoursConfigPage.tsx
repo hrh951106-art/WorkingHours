@@ -196,6 +196,7 @@ const ProductStandardHoursConfigPage: React.FC = () => {
         accountPath,
         standardHours: parseFloat(data.standardHours) || 0,
         quantity: data.quantity ? parseFloat(data.quantity) : null,
+        unit: data.unit || null,
         effectiveDate: data.effectiveDate ? data.effectiveDate.format('YYYY-MM-DD') : null,
         expiryDate: data.expiryDate ? data.expiryDate.format('YYYY-MM-DD') : null,
         createdById: user?.id || 1,
@@ -259,6 +260,7 @@ const ProductStandardHoursConfigPage: React.FC = () => {
       isGlobalConfig: isGlobal,
       standardHours: record.standardHours,
       quantity: record.quantity,
+      unit: record.unit,
       effectiveDate: record.effectiveDate ? dayjs(record.effectiveDate) : null,
       expiryDate: record.expiryDate ? dayjs(record.expiryDate) : null,
     };
@@ -650,7 +652,7 @@ const ProductStandardHoursConfigPage: React.FC = () => {
 
             <Form.Item label="标准">
               <Row gutter={16}>
-                <Col span={12}>
+                <Col span={8}>
                   <Form.Item
                     name="quantity"
                     tooltip="可选，用于记录批量生产时的数量"
@@ -666,20 +668,35 @@ const ProductStandardHoursConfigPage: React.FC = () => {
                     />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
-                  <Form.Item
-                    name="standardHours"
-                    rules={[{ required: true, message: '请输入标准' }]}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <InputNumber
-                      min={0}
-                      step={0.1}
-                      precision={2}
-                      style={{ width: '100%' }}
-                      placeholder="标准"
-                    />
-                  </Form.Item>
+                <Col span={16}>
+                  <div style={{ display: 'flex', gap: 0 }}>
+                    <Form.Item
+                      name="standardHours"
+                      rules={[{ required: true, message: '请输入标准' }]}
+                      style={{ marginBottom: 0, flex: 1, marginRight: 0 }}
+                    >
+                      <InputNumber
+                        min={0}
+                        step={0.1}
+                        precision={2}
+                        style={{ width: '100%', borderRadius: '6px 0 0 6px' }}
+                        placeholder="标准"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="unit"
+                      style={{ marginBottom: 0, width: '120px', marginLeft: '-1px' }}
+                    >
+                      <Select
+                        placeholder="单位"
+                        allowClear
+                        style={{ width: '100%', borderRadius: '0 6px 6px 0' }}
+                      >
+                        <Select.Option value="小时">小时</Select.Option>
+                        <Select.Option value="元">元</Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </div>
                 </Col>
               </Row>
             </Form.Item>

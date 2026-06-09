@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateLaborHourReportRequestDto } from './dto/create-request.dto';
+import { CreateLaborHourReportRequestDto, ReportEmployeeDto } from './dto/create-request.dto';
 import { ApproveLaborHourReportRequestDto } from './dto/approve-request.dto';
 import { WorkflowInstanceService } from '../workflow/workflow-instance.service';
 import { ApiResponse } from '../../common/dto/response.dto';
@@ -55,12 +55,16 @@ export class LaborHourReportService {
         employeeNo = firstEmployee.employeeNo;
         employeeName = firstEmployee.employeeName;
 
-        // 准备所有员工数据用于关联表
+        // 准备所有员工数据用于关联表（包含独立报工数据）
         dto.employees.forEach(emp => {
           employeesData.push({
             employeeId: emp.employeeId,
             employeeNo: emp.employeeNo,
             employeeName: emp.employeeName,
+            startTime: emp.startTime,   // 员工独立开始时间
+            endTime: emp.endTime,       // 员工独立结束时间
+            value: emp.value,           // 员工独立工时数量
+            description: emp.description, // 员工独立描述
           });
         });
       }
@@ -107,43 +111,77 @@ export class LaborHourReportService {
 
       const instanceId = workflowInstance.data?.id;
 
-      const request = await this.prisma.laborHourReportRequest.create({
-        data: {
-          requestNo,
-          workflowCode: 'LABOR_HOUR_REPORT',
-          title: dto.title,
-          reportDate: new Date(dto.reportDate),
-          reportMode: dto.reportMode,
-          employeeId,
-          employeeNo,
-          employeeName,
-          hourType: dto.hourType,
-          hourTypeName: dto.hourTypeName,
-          startTime: dto.startTime,
-          endTime: dto.endTime,
-          value: dto.value,
-          unit: dto.unit || '小时',
-          description: dto.description,
-          accountId: dto.accountId,
-          accountCode: dto.accountCode,
-          accountName: dto.accountName,
-          status: 'PENDING',
-          requesterId: dto.requesterId,
-          requesterName: dto.requesterName,
-          instanceId,
-          // 团队报工时创建员工关联记录
-          ...(dto.reportMode === 'team' && employeesData.length > 0
-            ? { employees: { create: employeesData } }
-            : {}
-          ),
-        },
-        // 如果是团队报工，包含员工数据
-        ...(dto.reportMode === 'team' ? {
-          include: { employees: true }
-        } : {})
-      });
+      // 🔍 实时检查数据库表结构
+      console.log('=== 🔍 实时检查数据库表结构 ===');
+      try {
+        const tableInfo = await this.prisma.$queryRaw`PRAGMA table_info(LaborHourReportRequest)`;
+        console.log('表结构查询结果:', JSON.stringify(tableInfo, (key, value) =>
+          typeof value === 'bigint' ? value.toString() : value, 2));
+        const hasValue = (tableInfo as any[]).find((col: any) => col.name === 'value');
+        console.log('Value 列存在?', !!hasValue);
+        if (!hasValue) {
+          console.error('❌❌❌ 致命错误：数据库中没有 value 列！❌❌❌');
+        }
+      } catch (e) {
+        console.error('查询表结构失败:', e);
+      }
+      console.log('===============================');
 
-      return ApiResponse.ok(request, '工时报表申请创建成功');
+      // 🔧 使用原始SQL绕过Prisma查询构建器的缓存问题
+      console.log('使用原始SQL创建记录...');
+
+      // 使用原始SQL插入主记录
+      const now = new Date();
+      const insertResult = await this.prisma.$queryRaw`
+        INSERT INTO LaborHourReportRequest (
+          requestNo, workflowCode, title, reportDate, reportMode,
+          employeeId, employeeNo, employeeName, hourType, hourTypeName,
+          startTime, endTime, value, unit, description,
+          accountId, accountCode, accountPath, accountName,
+          status, requesterId, requesterName, instanceId,
+          createdAt, updatedAt
+        ) VALUES (
+          ${requestNo}, 'LABOR_HOUR_REPORT', ${dto.title}, ${new Date(dto.reportDate)}, ${dto.reportMode},
+          ${employeeId}, ${employeeNo}, ${employeeName}, ${dto.hourType}, ${dto.hourTypeName},
+          ${dto.startTime}, ${dto.endTime}, ${dto.value}, ${dto.unit || '小时'}, ${dto.description},
+          ${dto.accountId}, ${dto.accountCode}, ${dto.accountPath}, ${dto.accountName},
+          'PENDING', ${dto.requesterId}, ${dto.requesterName}, ${instanceId},
+          ${now}, ${now}
+        ) RETURNING *
+      `;
+
+      const request = (insertResult as any)[0];
+      console.log('主记录创建成功，ID:', request.id);
+
+      // 如果是团队报工，创建员工关联记录
+      if (dto.reportMode === 'team' && employeesData.length > 0) {
+        console.log('创建员工关联记录，数量:', employeesData.length);
+        const now = new Date();
+        for (const emp of employeesData) {
+          await this.prisma.$queryRaw`
+            INSERT INTO LaborHourReportEmployee (
+              requestId, employeeId, employeeNo, employeeName,
+              startTime, endTime, value, description, createdAt
+            ) VALUES (
+              ${request.id}, ${emp.employeeId}, ${emp.employeeNo}, ${emp.employeeName},
+              ${emp.startTime}, ${emp.endTime}, ${emp.value}, ${emp.description}, ${now}
+            )
+          `;
+        }
+        console.log('员工关联记录创建完成');
+
+        // 查询完整的申请信息（包含员工）
+        const fullRequest = await this.prisma.$queryRaw`
+          SELECT * FROM LaborHourReportRequest WHERE id = ${request.id}
+        ` as any[];
+
+        const employees = await this.prisma.$queryRaw`
+          SELECT * FROM LaborHourReportEmployee WHERE requestId = ${request.id}
+        ` as any[];
+
+        (fullRequest[0] as any).employees = employees;
+        return ApiResponse.ok(fullRequest[0], '工时报表申请创建成功');
+      }
     } catch (error: any) {
       console.error('创建工时报工申请失败:', error);
       throw new BadRequestException(error.message || '创建工时报工申请失败');
@@ -369,32 +407,64 @@ export class LaborHourReportService {
         namePath: account.namePath,
       });
 
+      // 🔍 调试：检查员工数据
+      console.log('=== 员工数据检查 ===');
+      console.log('request.reportMode:', request.reportMode);
+      console.log('request.employees:', JSON.stringify(request.employees, null, 2));
+      console.log('=====================');
+
       // 3. 确定要创建工时结果的员工列表
-      let employeesToCreate: Array<{ employeeId: number; employeeNo: string; employeeName: string }> = [];
+      let employeesToCreate: Array<{
+        employeeId: number;
+        employeeNo: string;
+        employeeName: string;
+        startTime?: string;
+        endTime?: string;
+        value?: number;
+        description?: string;
+      }> = [];
 
       if (request.reportMode === 'team' && request.employees && request.employees.length > 0) {
-        // ✅ 团队报工模式：为每个员工创建记录
+        // ✅ 团队报工模式：为每个员工创建记录（包含所有独立数据）
         employeesToCreate = request.employees.map(emp => ({
           employeeId: emp.employeeId,
           employeeNo: emp.employeeNo,
           employeeName: emp.employeeName,
+          startTime: emp.startTime,
+          endTime: emp.endTime,
+          value: emp.value,
+          description: emp.description,
         }));
+        console.log('团队报工员工数据（包含独立字段）:', employeesToCreate);
       } else {
         // ✅ 个人报工模式：使用主员工信息
         employeesToCreate = [{
           employeeId: request.employeeId!,
           employeeNo: request.employeeNo!,
           employeeName: request.employeeName!,
+          startTime: request.startTime,
+          endTime: request.endTime,
+          value: request.value,
+          description: request.description,
         }];
+        console.log('个人报工员工数据:', employeesToCreate);
       }
 
       // 4. 为每个员工创建工时结果记录
       for (const employee of employeesToCreate) {
+        // 直接使用员工数据，不需要再次查找
+        const empStartTime = employee.startTime ? parseTime(employee.startTime, request.reportDate) : startTime;
+        const empEndTime = employee.endTime ? parseTime(employee.endTime, request.reportDate) : endTime;
+        const empWorkHours = employee.value ?? request.value;
+        const empDescription = employee.description ?? request.description;
+
         console.log('创建工时结果记录，员工:', employee.employeeNo);
         console.log('definitionAttendanceCodeId:', definitionAttendanceCode.id);
         console.log('definitionAttendanceCodeStr (code):', definitionAttendanceCode.code);
         console.log('calcAttendanceCode:', definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code);
         console.log('accountPath (代码路径):', account.path);
+        console.log('员工数据 - 工时:', empWorkHours, '开始时间:', empStartTime, '结束时间:', empEndTime);
+        console.log('是否使用独立工时数据:', !!employee.value, '独立值:', employee.value);
 
         // ✅ 计算金额
         // 根据申报时选择的出勤代码（hourType）到 DefinitionAttendanceCode 表找到对应的计算代码
@@ -405,14 +475,14 @@ export class LaborHourReportService {
         try {
           console.log('开始计算金额，员工:', employee.employeeNo);
           console.log('计算出勤代码:', calcAttendanceCode);
-          console.log('工时数:', request.value);
+          console.log('工时数:', empWorkHours);
           console.log('账户路径:', account.path);
           console.log('计算日期:', request.reportDate);
 
           // 调用金额计算服务
           amount = await this.amountCalculateService.calculateAmountByNo({
             employeeNo: employee.employeeNo,
-            workHours: request.value,
+            workHours: empWorkHours,
             attendanceCode: calcAttendanceCode, // 使用计算代码
             accountPath: account.path,
             calcDate: request.reportDate,
@@ -434,19 +504,19 @@ export class LaborHourReportService {
             accountPath: account.path, // ✅ 使用代码路径
             workDate: request.reportDate,
             calcDate: request.reportDate, // ✅ 添加 calcDate 字段
-            startTime: startTime, // ✅ 添加 startTime 字段
-            endTime: endTime, // ✅ 添加 endTime 字段
+            startTime: empStartTime, // ✅ 使用员工独立开始时间
+            endTime: empEndTime, // ✅ 使用员工独立结束时间
             definitionAttendanceCodeId: definitionAttendanceCode.id, // ✅ 使用新字段
             definitionAttendanceCodeStr: definitionAttendanceCode.code, // ✅ 修复：存储代码而非名称
             calcAttendanceCode: calcAttendanceCode, // ✅ 添加 calcAttendanceCode
             attendanceCode: request.hourType, // 保留旧字段以兼容
             attendanceCodeName: request.hourTypeName, // 保留旧字段以兼容
-            workHours: request.value,
+            workHours: empWorkHours, // ✅ 使用员工独立工时数量
             amount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
             calculateAmount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
             sourceType: 'LABOR_HOUR_REPORT',
             sourceId: request.id,
-            source: `工时报表申请: ${request.employeeName || request.employeeNo} - ${request.hourTypeName} - ${new Date(request.reportDate).toLocaleDateString('zh-CN')}`, // ✅ 动态生成描述
+            source: `工时报表申请: ${employee.employeeName} - ${request.hourTypeName} - ${new Date(request.reportDate).toLocaleDateString('zh-CN')}`, // ✅ 动态生成描述
             status: 'ACTIVE',
           },
         });

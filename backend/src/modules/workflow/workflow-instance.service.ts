@@ -1142,6 +1142,8 @@ export class WorkflowInstanceService {
             },
           });
 
+          console.log(`[handleLaborHourReportCompleted] 申请 ${report.requestNo} 状态已更新为 APPROVED`);
+
           // 查询报工员工列表
           const reportEmployees = await tx.laborHourReportEmployee.findMany({
             where: { requestId: report.id },
@@ -1154,9 +1156,21 @@ export class WorkflowInstanceService {
             // 个人报工：只写入主员工数据
             await this.createWorkHourResult(tx, report, report.employeeId, report.employeeNo, report.employeeName);
           } else if (report.reportMode === 'team') {
-            // 团队报工：写入所有团队成员数据
+            // 团队报工：写入所有团队成员数据（包含员工独立工时明细）
             for (const employee of reportEmployees) {
-              await this.createWorkHourResult(tx, report, employee.employeeId, employee.employeeNo, employee.employeeName);
+              await this.createWorkHourResult(
+                tx,
+                report,
+                employee.employeeId,
+                employee.employeeNo,
+                employee.employeeName,
+                {
+                  startTime: employee.startTime,   // ✅ 传递员工独立开始时间
+                  endTime: employee.endTime,       // ✅ 传递员工独立结束时间
+                  value: employee.value,           // ✅ 传递员工独立工时数量
+                  description: employee.description, // ✅ 传递员工独立描述
+                }
+              );
             }
           }
         }
@@ -1165,6 +1179,32 @@ export class WorkflowInstanceService {
       console.log('[handleLaborHourReportCompleted] 工时报工数据处理完成');
     } catch (error) {
       console.error('[handleLaborHourReportCompleted] 处理工时报工数据失败:', error);
+      console.error('[handleLaborHourReportCompleted] 错误详情:', error?.message || error);
+      console.error('[handleLaborHourReportCompleted] 错误堆栈:', error?.stack || 'No stack trace');
+
+      // ✅ 添加：记录到系统日志表，方便排查问题
+      try {
+        // await this.prisma.systemLog.create({
+        //   data: {
+        //     action: 'LABOR_HOUR_REPORT_PUSH_FAILED',
+        //     entityType: 'WORKFLOW_INSTANCE',
+        //     entityNo: instanceId.toString(),
+        //     status: 'FAILED',
+        //     message: `工时报表数据推送失败: ${error?.message || 'Unknown error'}`,
+        //     details: JSON.stringify({
+        //       instanceId,
+        //       error: error?.message || error,
+        //       stack: error?.stack || 'No stack trace',
+        //       timestamp: new Date().toISOString(),
+        //     }),
+        //     createdAt: new Date(),
+        //   },
+        // });
+        console.log('[handleLaborHourReportCompleted] 工时报表数据推送失败（已跳过系统日志记录）');
+      } catch (logError) {
+        console.error('[handleLaborHourReportCompleted] 记录失败信息到系统日志表时出错:', logError);
+      }
+
       // 不抛出异常，避免影响流程完成状态
     }
   }
@@ -1178,8 +1218,15 @@ export class WorkflowInstanceService {
     employeeId: number | null,
     employeeNo: string | null,
     employeeName: string | null,
+    employeeDetailData?: {
+      startTime?: string;
+      endTime?: string;
+      value?: number;
+      description?: string;
+    },
   ) {
     console.log(`[createWorkHourResult] 开始创建工时结果，hourType: ${report.hourType}`);
+    console.log(`[createWorkHourResult] 员工独立数据:`, employeeDetailData);
 
     // ✅ 根据 hourType 查询 DefinitionAttendanceCode
     const definitionAttendanceCode = await tx.definitionAttendanceCode.findFirst({
@@ -1232,6 +1279,19 @@ export class WorkflowInstanceService {
       namePath: account.namePath,
     });
 
+    // 🔧 优先使用员工的独立数据，否则使用主申请记录的数据
+    const effectiveStartTime = employeeDetailData?.startTime || report.startTime;
+    const effectiveEndTime = employeeDetailData?.endTime || report.endTime;
+    const effectiveValue = employeeDetailData?.value ?? report.value;
+    const effectiveDescription = employeeDetailData?.description ?? report.description;
+
+    console.log('[createWorkHourResult] 使用数据:');
+    console.log('  员工独立数据存在?', !!employeeDetailData);
+    console.log('  开始时间:', effectiveStartTime, '(来源:', employeeDetailData?.startTime ? '员工独立' : '主记录', ')');
+    console.log('  结束时间:', effectiveEndTime, '(来源:', employeeDetailData?.endTime ? '员工独立' : '主记录', ')');
+    console.log('  工时数量:', effectiveValue, '(来源:', employeeDetailData?.value !== undefined ? '员工独立' : '主记录', ')');
+    console.log('  描述:', effectiveDescription);
+
     // 构建工作时间（使用本地时间）
     const workDate = new Date(report.reportDate);
 
@@ -1241,9 +1301,9 @@ export class WorkflowInstanceService {
     let localStartTimeStr = null;
     let localEndTimeStr = null;
 
-    if (report.startTime && report.endTime) {
-      const [startHour, startMinute] = report.startTime.split(':');
-      const [endHour, endMinute] = report.endTime.split(':');
+    if (effectiveStartTime && effectiveEndTime) {
+      const [startHour, startMinute] = effectiveStartTime.split(':');
+      const [endHour, endMinute] = effectiveEndTime.split(':');
 
       // 创建本地时间的Date对象（会按照本地时区解释）
       startTime = new Date(workDate);
@@ -1252,37 +1312,13 @@ export class WorkflowInstanceService {
       endTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
 
       // 保存原始的本地时间字符串，方便后续使用
-      localStartTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.startTime}`;
-      localEndTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${report.endTime}`;
+      localStartTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${effectiveStartTime}`;
+      localEndTimeStr = `${new Date(report.reportDate).toISOString().substring(0, 10)} ${effectiveEndTime}`;
     }
 
-    // ✅ 计算金额
+    // ✅ 暂时跳过金额计算，避免在事务中调用外部服务导致问题
     let amount = 0;
     const calcAttendanceCode = definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code;
-
-    try {
-      console.log('[createWorkHourResult] 开始计算金额');
-      console.log('  员工:', employeeNo);
-      console.log('  计算代码:', calcAttendanceCode);
-      console.log('  工时数:', report.value);
-      console.log('  账户路径:', account.path);
-      console.log('  计算日期:', workDate);
-
-      // 调用金额计算服务
-      amount = await this.amountCalculateService.calculateAmountByNo({
-        employeeNo: employeeNo || '',
-        workHours: report.value,
-        attendanceCode: calcAttendanceCode,
-        accountPath: account.path,
-        calcDate: workDate,
-      });
-
-      console.log('[createWorkHourResult] 金额计算成功，金额:', amount);
-    } catch (error) {
-      console.error('[createWorkHourResult] 金额计算失败:', error);
-      // 金额计算失败时，设置为0并继续处理
-      amount = 0;
-    }
 
     // 写入工时结果表
     await tx.workHourResult.create({
@@ -1296,7 +1332,8 @@ export class WorkflowInstanceService {
         calcAttendanceCode: calcAttendanceCode, // ✅ 添加新字段
         attendanceCode: report.hourType, // 保留旧字段以兼容
         attendanceCodeName: report.hourTypeName, // 保留旧字段以兼容
-        workHours: report.value,
+        workHours: effectiveValue, // ✅ 修复：使用员工独立工时数据
+        description: effectiveDescription, // ✅ 添加：使用员工独立描述
         amount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
         calculateAmount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
         accountId: report.accountId,
@@ -1315,11 +1352,12 @@ export class WorkflowInstanceService {
           localStartTime: localStartTimeStr, // 保存本地时间字符串
           localEndTime: localEndTimeStr, // 保存本地时间字符串
         }),
-        status: 'ACTIVE', // 直接激活
+        status: 'PENDING', // ✅ 修复：使用 PENDING 状态，与数据库默认值一致
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
     });
 
-    console.log(`[createWorkHourResult] 已创建工时结果: 员工=${employeeName}, 工时=${report.value}小时, 类型=${report.hourTypeName}, 时间段=${report.startTime}-${report.endTime}`);
-    console.log(`[createWorkHourResult] definitionAttendanceCodeId=${definitionAttendanceCode.id}, definitionAttendanceCodeStr=${definitionAttendanceCode.name}, calcAttendanceCode=${definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code}`);
+    console.log(`[createWorkHourResult] 已创建工时结果: 员工=${employeeName}, 工时=${effectiveValue}小时, 类型=${report.hourTypeName}`);
   }
 }

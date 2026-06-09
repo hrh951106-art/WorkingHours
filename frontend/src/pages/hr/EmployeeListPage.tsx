@@ -54,6 +54,43 @@ const EmployeeListPage: React.FC = () => {
     queryFn: () => request.get('/hr/organizations/tree').then((res: any) => res || []),
   });
 
+  const { data: dataSources } = useQuery({
+    queryKey: ['dataSources'],
+    queryFn: () => request.get('/hr/data-sources').then((res: any) => res || []),
+  });
+
+  // 根据数据源代码获取选项
+  const getOptionsByDataSourceCode = (dataSourceCode: string) => {
+    const dataSource = dataSources?.find((ds: any) => ds.code === dataSourceCode);
+    if (!dataSource || !dataSource.options) {
+      return [];
+    }
+    return dataSource.options
+      .filter((opt: any) => opt.isActive)
+      .map((opt: any) => ({
+        id: opt.id,
+        value: opt.value,
+        label: opt.label,
+      }));
+  };
+
+  // 获取性别选项
+  const genderOptions = getOptionsByDataSourceCode('GENDER');
+
+  // 根据性别值获取显示标签
+  const getGenderLabel = (genderValue: string) => {
+    const option = genderOptions.find((opt: any) => opt.value === genderValue);
+    return option?.label || genderValue;
+  };
+
+  // 根据性别值获取标签颜色
+  const getGenderColor = (genderValue: string) => {
+    // 可以从数据源配置中获取颜色，这里使用默认颜色
+    if (genderValue === 'MALE') return 'blue';
+    if (genderValue === 'FEMALE') return 'pink';
+    return 'default';
+  };
+
   const flattenOrgs = (orgs: any[]): any[] => {
     const result: any[] = [];
     orgs.forEach((org) => {
@@ -104,8 +141,8 @@ const EmployeeListPage: React.FC = () => {
       key: 'gender',
       width: 80,
       render: (gender: string) => (
-        <Tag color={gender === 'MALE' ? 'blue' : 'pink'}>
-          {gender === 'MALE' ? '男' : '女'}
+        <Tag color={getGenderColor(gender)}>
+          {getGenderLabel(gender)}
         </Tag>
       ),
     },

@@ -228,7 +228,7 @@ const WorkHourBasicConfigPage: React.FC = () => {
               {hierarchyLevels
                 .filter((level: any) => level.mappingType === 'ORG_TYPE' || level.mappingType === 'ORG')
                 .map((level: any) => (
-                  <Select.Option key={level.id} value={String(level.level)} label={level.name}>
+                  <Select.Option key={level.id} value={level.name} label={level.name}>
                     {level.name}
                   </Select.Option>
                 ))}
@@ -255,7 +255,7 @@ const WorkHourBasicConfigPage: React.FC = () => {
               }
             >
               {hierarchyLevels.map((level: any) => (
-                <Select.Option key={level.id} value={String(level.id)} label={level.name}>
+                <Select.Option key={level.id} value={level.name} label={level.name}>
                   {level.name}
                 </Select.Option>
               ))}

@@ -44,6 +44,7 @@ const WorkHourBasicConfigPage = lazy(() => import('@/pages/allocation/WorkHourBa
 const ProductStandardHoursConfigPage = lazy(() => import('@/pages/allocation/ProductStandardHoursConfigPage'));
 const AllocationCalculatePage = lazy(() => import('@/pages/allocation/AllocationCalculatePage'));
 const AllocationResultPage = lazy(() => import('@/pages/allocation/AllocationResultPage'));
+const EarnedHoursReportPage = lazy(() => import('@/pages/allocation/EarnedHoursReportPage'));
 const LineMaintenancePage = lazy(() => import('@/pages/allocation/LineMaintenancePage'));
 const ProductConfigPage = lazy(() => import('@/pages/allocation/ProductConfigPage'));
 const ProductionRecordPage = lazy(() => import('@/pages/allocation/ProductionRecordPage'));
@@ -369,6 +370,14 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <AllocationResultPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'earned-hours-report',
+            element: (
+              <SuspenseWrapper>
+                <EarnedHoursReportPage />
               </SuspenseWrapper>
             ),
           },
@@ -974,6 +983,14 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <AttendanceCodeDefinitionPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'earned-hours-report',
+            element: (
+              <SuspenseWrapper>
+                <EarnedHoursReportPage />
               </SuspenseWrapper>
             ),
           },
