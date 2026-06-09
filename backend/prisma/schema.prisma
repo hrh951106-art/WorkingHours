@@ -512,6 +512,7 @@ model Product {
   updatedAt            DateTime               @updatedAt
   deletedAt                DateTime?
   productStandardHours     ProductStandardHours[]
+  productStandardHourByLevels ProductStandardHourByLevel[]
 }
 
 model ProductionLine {
@@ -1745,6 +1746,8 @@ model ProductStandardHourByLevel {
   createdByName         String
   createdAt             DateTime                 @default(now())
   deletedAt             DateTime?
+
+  product               Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId, effectiveDate, expiryDate, status])
   @@index([accountLevel])
