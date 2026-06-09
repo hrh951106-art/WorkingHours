@@ -47,6 +47,7 @@ const AllocationResultPage = lazy(() => import('@/pages/allocation/AllocationRes
 const EarnedHoursReportPage = lazy(() => import('@/pages/allocation/EarnedHoursReportPage'));
 const LineMaintenancePage = lazy(() => import('@/pages/allocation/LineMaintenancePage'));
 const ProductConfigPage = lazy(() => import('@/pages/allocation/ProductConfigPage'));
+const ProductMaintenancePage = lazy(() => import('@/pages/allocation/ProductMaintenancePage'));
 const ProductionRecordPage = lazy(() => import('@/pages/allocation/ProductionRecordPage'));
 const NewProductionRecordPage = lazy(() => import('@/pages/allocation/NewProductionRecordPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
@@ -402,6 +403,14 @@ const router = createBrowserRouter([
             element: (
               <SuspenseWrapper>
                 <ProductConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
+            path: 'product-maintenance',
+            element: (
+              <SuspenseWrapper>
+                <ProductMaintenancePage />
               </SuspenseWrapper>
             ),
           },
