@@ -173,6 +173,12 @@ const SettingsManagementPage: React.FC = () => {
       icon: <PieChartOutlined />,
       items: [
         {
+          key: '/embed/allocation/product-maintenance',
+          label: '产品维护',
+          path: '/embed/allocation/product-maintenance',
+          icon: <AppstoreOutlined />,
+        },
+        {
           key: '/embed/allocation/work-hour-basic-config',
           label: '工时基础配置',
           path: '/embed/allocation/work-hour-basic-config',
