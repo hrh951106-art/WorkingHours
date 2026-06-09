@@ -36,18 +36,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$connect();
     console.log('Database connected');
 
-    // 测试查询以验证数据库
+    // 测��数据库连接
     try {
-      const result = await this.$queryRaw`PRAGMA database_list`;
-      console.log('Database list:', result);
-      const tableInfo = await this.$queryRaw`PRAGMA table_info(LaborHourReportRequest)`;
-      const hasValue = (tableInfo as any[]).find((col: any) => col.name === 'value');
-      console.log('Value column exists:', !!hasValue);
-      if (!hasValue) {
-        console.error('❌ VALUE COLUMN MISSING IN DATABASE!');
-      }
+      await this.$queryRaw`SELECT 1`;
+      console.log('Database connection test passed');
     } catch (error) {
-      console.error('Error checking database:', error);
+      console.error('Database connection test failed:', error);
     }
   }
 
