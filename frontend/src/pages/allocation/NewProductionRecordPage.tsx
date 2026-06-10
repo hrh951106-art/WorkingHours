@@ -90,29 +90,27 @@ const NewProductionRecordPage: React.FC = () => {
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
   const [selectedEmployeeNo, setSelectedEmployeeNo] = useState<string>('');
 
-  // 获取产品列表（从数据源获取，与产品配置页面保持一致）
+  // 获取产品列表（从Product表获取）
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
     queryFn: async () => {
       try {
-        // 先获取产品数据源ID
-        const dataSources = await request.get('/hr/data-sources');
-        const productDataSource = dataSources.find((ds: any) => ds.code === 'PRODUCT');
+        // 从Product表获取产品列表
+        const result = await request.get('/allocation/products');
+        const productList = result?.items || result || [];
 
-        if (productDataSource) {
-          // 从数据源获取产品选项
-          const options = await request.get(`/hr/data-sources/${productDataSource.id}/options`);
-          return options.map((item: any) => ({
-            id: item.id,
-            label: item.label,
-            value: item.id,
-            name: item.label.split(' - ')[1] || item.label,
-            code: item.value,
-          }));
-        } else {
-          console.warn('未找到产品数据源');
-          return [];
-        }
+        return productList.map((item: any) => ({
+          id: item.id,
+          label: item.name || item.code,
+          value: item.id,
+          name: item.name,
+          code: item.code,
+          specification: item.specification,
+          unit: item.unit,
+          status: item.status,
+          standardHours: item.standardHours,
+          conversionFactor: item.conversionFactor,
+        })).filter((item: any) => item.status === 'ACTIVE'); // 只显示启用状态的产品
       } catch (error) {
         console.error('获取产品列表失败:', error);
         return [];
