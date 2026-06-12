@@ -2033,13 +2033,15 @@ const EmployeeDetailPage: React.FC = () => {
 
     const label = getFieldLabel(fieldCode, fieldName);
 
-    // 判断是否应该禁用字段：工作信息页签编辑模式下，工号、入职日期、在职状态不可编辑
+    // 判断是否应该禁用字段：
+    // 1. 工作信息页签编辑模式下，工号、入职日期、在职状态不可编辑
+    // 2. 员工编号（employeeNo）在编辑模式下始终不允许��改
     const isWorkInfoEditing = editingTabCode === 'work_info';
+    const isEditingMode = editingTabCode !== null && id !== 'new';
     const shouldDisable = isWorkInfoEditing && (
-      fieldCode === 'employeeNo' || fieldCode === 'employee_no' ||
       fieldCode === 'entryDate' || fieldCode === 'entry_date' ||
       fieldCode === 'status'
-    );
+    ) || (fieldCode === 'employeeNo' || fieldCode === 'employee_no') && isEditingMode;
 
     switch (fieldCode) {
       case 'employeeNo':
