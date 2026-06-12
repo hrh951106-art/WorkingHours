@@ -1220,6 +1220,8 @@ export class HrService {
   async getEmployeeInfoConfigs() {
     // 获取员工信息页签中所有配置了数据源的字段（包括系统字段和自定义字段）
     // 只有配置在页签中的字段才能在劳动力账户层级映射时使用
+
+    // 1. 获取页签字段（EmployeeInfoTabField表）
     const tabFields = await this.prisma.employeeInfoTabField.findMany({
       where: {
         dataSourceId: { not: null },
@@ -1246,7 +1248,26 @@ export class HrService {
       orderBy: [{ tab: { sort: 'asc' } }, { sort: 'asc' }],
     });
 
-    // 转换页签字段
+    // 2. 获取自定义字段（CustomField表）
+    const customFields = await this.prisma.customField.findMany({
+      where: {
+        status: 'ACTIVE',
+        dataSourceId: { not: null },
+      },
+      include: {
+        dataSource: {
+          include: {
+            options: {
+              where: { isActive: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // 3. 转换页签字段
     const tabFieldConfigs = tabFields
       .filter(
         (field) =>
@@ -1268,11 +1289,38 @@ export class HrService {
       }))
       .filter((config) => config.options.length > 0);
 
-    console.log('=== getEmployeeInfoConfigs 返回数据 ===');
-    console.log('字段总数:', tabFieldConfigs.length);
-    console.log('字段列表:', tabFieldConfigs.map(f => `${f.field} (${f.name})`).join(', '));
+    // 4. 转换自定义字段（将自定义字段也作为页签字段返回，便于前端统一处理）
+    const customFieldConfigs = customFields
+      .filter(
+        (field) =>
+          field.dataSource && field.dataSource.options && field.dataSource.options.length > 0,
+      )
+      .map((field) => ({
+        field: field.code,
+        name: field.name,
+        tabCode: 'custom_field', // 自定义字段统一标记为custom_field
+        tabName: '自定义字段',
+        isSystem: false, // 自定义字段都标记为非系统字段
+        options: field.dataSource.options.map((opt) => ({
+          id: opt.id,
+          name: opt.label,
+          label: opt.label,
+          value: opt.value,
+          code: opt.value,
+        })),
+      }))
+      .filter((config) => config.options.length > 0);
 
-    return tabFieldConfigs;
+    // 5. 合并两种字段（页签字段在前，自定义字段在后）
+    const allConfigs = [...tabFieldConfigs, ...customFieldConfigs];
+
+    console.log('=== getEmployeeInfoConfigs 返回数据 ===');
+    console.log('页签字段数:', tabFieldConfigs.length);
+    console.log('自定义字段数:', customFieldConfigs.length);
+    console.log('字段总数:', allConfigs.length);
+    console.log('字段列表:', allConfigs.map(f => `${f.field} (${f.name}) [${f.isSystem ? '系统' : '自定义'}]`).join(', '));
+
+    return allConfigs;
   }
 
   /**
