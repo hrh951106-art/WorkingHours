@@ -1237,6 +1237,7 @@ const EmployeeDetailPage: React.FC = () => {
   const handleCancelEdit = () => {
     setEditingTabCode(null);
     setIsBasicInfoEdit(false);  // 重置基本信息编辑标记
+    setEditModalVisible(false);  // 关闭编辑模态框
     form.resetFields();
   };
 
