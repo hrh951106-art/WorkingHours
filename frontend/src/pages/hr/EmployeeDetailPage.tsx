@@ -3579,10 +3579,10 @@ const EmployeeDetailPage: React.FC = () => {
         </Row>
       </Card>
 
-      {/* 工作信息更新弹窗 */}
+      {/* 工作信息更新弹窗 - 仅在工作信息编辑时显示 */}
       <Modal
         title="创建新版本 - 选择生效日期"
-        open={editModalVisible}
+        open={editModalVisible && !isBasicInfoEdit}
         onCancel={() => {
           setEditModalVisible(false);
           setEffectiveDate(null);
