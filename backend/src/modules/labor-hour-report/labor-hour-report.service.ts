@@ -124,14 +124,14 @@ export class LaborHourReportService {
           requestNo, workflowCode, title, reportDate, reportMode,
           employeeId, employeeNo, employeeName, hourType, hourTypeName,
           startTime, endTime, value, unit, description,
-          accountId, accountCode, accountPath, accountName,
+          accountId, accountCode, accountPath, accountName, hierarchyValues,
           status, requesterId, requesterName, instanceId,
           createdAt, updatedAt
         ) VALUES (
           ${requestNo}, 'LABOR_HOUR_REPORT', ${dto.title}, ${new Date(dto.reportDate)}, ${dto.reportMode},
           ${employeeId}, ${employeeNo}, ${employeeName}, ${dto.hourType}, ${dto.hourTypeName},
           ${dto.startTime}, ${dto.endTime}, ${dto.value}, ${dto.unit || '小时'}, ${dto.description},
-          ${dto.accountId}, ${dto.accountCode}, ${dto.accountPath}, ${dto.accountName},
+          ${dto.accountId}, ${dto.accountCode}, ${dto.accountPath}, ${dto.accountName}, ${dto.hierarchyValues || '{}'},
           'PENDING', ${dto.requesterId}, ${dto.requesterName}, ${instanceId},
           ${now}, ${now}
         ) RETURNING *

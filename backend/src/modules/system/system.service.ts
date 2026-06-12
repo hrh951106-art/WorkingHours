@@ -271,7 +271,7 @@ export class SystemService {
       isAllData = true,
       dataScopeRuleGroups = [],
       isDefault = false,
-      status = 'ACTIVE'
+      status = 'ACTIVE',
     } = dto;
 
     // 检查角色编码是否已存在
@@ -296,9 +296,10 @@ export class SystemService {
         description,
         functionalPermissions: JSON.stringify(permissions),
         dataScopeType,
-        dataScopeRuleGroups: !isAllData && dataScopeRuleGroups && dataScopeRuleGroups.length > 0
-          ? JSON.stringify(dataScopeRuleGroups)
-          : null,
+        dataScopeRuleGroups:
+          !isAllData && dataScopeRuleGroups && dataScopeRuleGroups.length > 0
+            ? JSON.stringify(dataScopeRuleGroups)
+            : null,
         isDefault,
         status,
       },
@@ -316,7 +317,7 @@ export class SystemService {
       isAllData,
       dataScopeRuleGroups,
       isDefault,
-      status
+      status,
     } = dto;
 
     const existingRole = await this.prisma.role.findUnique({
@@ -362,15 +363,16 @@ export class SystemService {
     // 根据isAllData设置dataScopeType
     if (isAllData !== undefined) {
       updateData.dataScopeType = isAllData ? 'ALL' : 'CUSTOM';
-      updateData.dataScopeRuleGroups = isAllData ? null : (
+      updateData.dataScopeRuleGroups = isAllData
+        ? null
+        : dataScopeRuleGroups && dataScopeRuleGroups.length > 0
+          ? JSON.stringify(dataScopeRuleGroups)
+          : null;
+    } else if (dataScopeRuleGroups !== undefined) {
+      updateData.dataScopeRuleGroups =
         dataScopeRuleGroups && dataScopeRuleGroups.length > 0
           ? JSON.stringify(dataScopeRuleGroups)
-          : null
-      );
-    } else if (dataScopeRuleGroups !== undefined) {
-      updateData.dataScopeRuleGroups = dataScopeRuleGroups && dataScopeRuleGroups.length > 0
-        ? JSON.stringify(dataScopeRuleGroups)
-        : null;
+          : null;
     }
 
     await this.prisma.role.update({

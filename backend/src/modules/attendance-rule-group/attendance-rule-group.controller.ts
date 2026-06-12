@@ -24,9 +24,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 @Controller('attendance-rule-groups')
 @UseGuards(JwtAuthGuard)
 export class AttendanceRuleGroupController {
-  constructor(
-    private readonly attendanceRuleGroupService: AttendanceRuleGroupService,
-  ) {}
+  constructor(private readonly attendanceRuleGroupService: AttendanceRuleGroupService) {}
 
   /**
    * 获取考勤规则组列表
@@ -95,10 +93,7 @@ export class AttendanceRuleGroupController {
    * 批量授予员工考勤规则组
    */
   @Post('grant-to-employees')
-  async grantToEmployees(
-    @Body() data: GrantRuleGroupToEmployeesDto,
-    @Request() req,
-  ) {
+  async grantToEmployees(@Body() data: GrantRuleGroupToEmployeesDto, @Request() req) {
     return this.attendanceRuleGroupService.grantToEmployees({
       ...data,
       createdById: req.user.userId,
@@ -114,10 +109,7 @@ export class AttendanceRuleGroupController {
     @Param('employeeId', ParseIntPipe) employeeId: number,
     @Query() query: any,
   ) {
-    return this.attendanceRuleGroupService.getEmployeeRuleGroups(
-      employeeId,
-      query,
-    );
+    return this.attendanceRuleGroupService.getEmployeeRuleGroups(employeeId, query);
   }
 
   /**
@@ -144,10 +136,7 @@ export class AttendanceRuleGroupController {
     @Query('targetDate') targetDate?: string,
   ) {
     const date = targetDate ? new Date(targetDate) : undefined;
-    return this.attendanceRuleGroupService.getActiveRuleGroup(
-      employeeId,
-      date,
-    );
+    return this.attendanceRuleGroupService.getActiveRuleGroup(employeeId, date);
   }
 
   /**

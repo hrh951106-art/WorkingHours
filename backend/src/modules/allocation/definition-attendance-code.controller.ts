@@ -1,23 +1,11 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { DefinitionAttendanceCodeService } from './definition-attendance-code.service';
 
 @Controller('allocation/definition-attendance-codes')
 @UseGuards(JwtAuthGuard)
 export class DefinitionAttendanceCodeController {
-  constructor(
-    private readonly definitionAttendanceCodeService: DefinitionAttendanceCodeService,
-  ) {}
+  constructor(private readonly definitionAttendanceCodeService: DefinitionAttendanceCodeService) {}
 
   /**
    * 查询定义出勤代码列表

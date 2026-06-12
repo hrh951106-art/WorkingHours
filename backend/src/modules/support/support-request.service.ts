@@ -36,7 +36,7 @@ export class SupportRequestService {
     ]);
 
     // 格式化返回数据以适配前端
-    const formattedItems = items.map(item => ({
+    const formattedItems = items.map((item) => ({
       ...item,
       instanceNo: item.requestNo, // 映射 requestNo 到 instanceNo
       // 申请人：表单中选择的员工（支援人员）
@@ -56,7 +56,10 @@ export class SupportRequestService {
     };
   }
 
-  async findMyRequests(params: { page?: number; pageSize?: number; status?: string } = {}, userId: number) {
+  async findMyRequests(
+    params: { page?: number; pageSize?: number; status?: string } = {},
+    userId: number,
+  ) {
     const { page = 1, pageSize = 10, status } = params;
     const skip = (page - 1) * pageSize;
 
@@ -87,7 +90,7 @@ export class SupportRequestService {
     ]);
 
     // 格式化返回数据以适配前端
-    const formattedItems = items.map(item => ({
+    const formattedItems = items.map((item) => ({
       ...item,
       instanceNo: item.requestNo, // 映射 requestNo 到 instanceNo
       // 申请人：表单中选择的员工（支援人员）
@@ -134,7 +137,7 @@ export class SupportRequestService {
     ]);
 
     // 格式化返回数据以适配前端
-    const formattedItems = items.map(item => ({
+    const formattedItems = items.map((item) => ({
       ...item,
       instanceNo: item.requestNo, // 映射 requestNo 到 instanceNo
       // 申请人：表单中选择的员工（支援人员）
@@ -187,10 +190,11 @@ export class SupportRequestService {
     }
 
     // 解析审批节点的 approverStrategy
-    const nodesWithApprovers = request.instance?.definition?.nodes?.map(node => ({
-      ...node,
-      approverStrategy: node.approverStrategy ? JSON.parse(node.approverStrategy) : [],
-    })) || [];
+    const nodesWithApprovers =
+      request.instance?.definition?.nodes?.map((node) => ({
+        ...node,
+        approverStrategy: node.approverStrategy ? JSON.parse(node.approverStrategy) : [],
+      })) || [];
 
     // 格式化返回数据以适配前端
     return {
@@ -203,13 +207,17 @@ export class SupportRequestService {
       initiatorName: request.requesterName,
       initiatorId: request.requesterId,
       // 包含解析后的节点信息
-      instance: request.instance ? {
-        ...request.instance,
-        definition: request.instance.definition ? {
-          ...request.instance.definition,
-          nodes: nodesWithApprovers,
-        } : null,
-      } : null,
+      instance: request.instance
+        ? {
+            ...request.instance,
+            definition: request.instance.definition
+              ? {
+                  ...request.instance.definition,
+                  nodes: nodesWithApprovers,
+                }
+              : null,
+          }
+        : null,
     };
   }
 
@@ -257,13 +265,19 @@ export class SupportRequestService {
     const updateData: any = {};
 
     if (updateDto.supportMode !== undefined) updateData.supportMode = updateDto.supportMode;
-    if (updateDto.supportEmployeeId !== undefined) updateData.supportEmployeeId = updateDto.supportEmployeeId;
-    if (updateDto.supportEmployeeName !== undefined) updateData.supportEmployeeName = updateDto.supportEmployeeName;
-    if (updateDto.supportEmployeeNo !== undefined) updateData.supportEmployeeNo = updateDto.supportEmployeeNo;
-    if (updateDto.supportAccountId !== undefined) updateData.supportAccountId = updateDto.supportAccountId;
-    if (updateDto.supportAccountName !== undefined) updateData.supportAccountName = updateDto.supportAccountName;
+    if (updateDto.supportEmployeeId !== undefined)
+      updateData.supportEmployeeId = updateDto.supportEmployeeId;
+    if (updateDto.supportEmployeeName !== undefined)
+      updateData.supportEmployeeName = updateDto.supportEmployeeName;
+    if (updateDto.supportEmployeeNo !== undefined)
+      updateData.supportEmployeeNo = updateDto.supportEmployeeNo;
+    if (updateDto.supportAccountId !== undefined)
+      updateData.supportAccountId = updateDto.supportAccountId;
+    if (updateDto.supportAccountName !== undefined)
+      updateData.supportAccountName = updateDto.supportAccountName;
     if (updateDto.description !== undefined) updateData.description = updateDto.description;
-    if (updateDto.calculatedHours !== undefined) updateData.calculatedHours = updateDto.calculatedHours;
+    if (updateDto.calculatedHours !== undefined)
+      updateData.calculatedHours = updateDto.calculatedHours;
     if (updateDto.startDate !== undefined) updateData.startDate = updateDto.startDate;
     if (updateDto.endDate !== undefined) updateData.endDate = updateDto.endDate;
     if (updateDto.startTime !== undefined) updateData.startTime = updateDto.startTime;

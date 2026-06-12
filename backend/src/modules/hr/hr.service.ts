@@ -1218,7 +1218,8 @@ export class HrService {
 
   // 获取人事信息字段配置（用于劳动力账户层级）
   async getEmployeeInfoConfigs() {
-    // 1. 获取员工信息页签中所有配置了数据源的字段（包括系统字段和自定义字段）
+    // 获取员工信息页签中所有配置了数据源的字段（包括系统字段和自定义字段）
+    // 只有配置在页签中的字段才能在劳动力账户层级映射时使用
     const tabFields = await this.prisma.employeeInfoTabField.findMany({
       where: {
         dataSourceId: { not: null },
@@ -1245,26 +1246,7 @@ export class HrService {
       orderBy: [{ tab: { sort: 'asc' } }, { sort: 'asc' }],
     });
 
-    // 2. 获取所有配置了数据源的自定义字段（包括未配置在页签中的）
-    const customFields = await this.prisma.customField.findMany({
-      where: {
-        status: 'ACTIVE',
-        dataSourceId: { not: null },
-      },
-      include: {
-        dataSource: {
-          include: {
-            options: {
-              where: { isActive: true },
-              orderBy: { sort: 'asc' },
-            },
-          },
-        },
-      },
-      orderBy: { sort: 'asc' },
-    });
-
-    // 3. 转换页签字段
+    // 转换页签字段
     const tabFieldConfigs = tabFields
       .filter(
         (field) =>
@@ -1286,40 +1268,11 @@ export class HrService {
       }))
       .filter((config) => config.options.length > 0);
 
-    // 4. 转换自定义字段（只添加没有在页签字段中的）
-    const tabFieldCodes = new Set(tabFieldConfigs.map((config) => config.field));
-    const customFieldConfigs = customFields
-      .filter(
-        (field) =>
-          field.dataSource && field.dataSource.options && field.dataSource.options.length > 0,
-      )
-      .filter((field) => !tabFieldCodes.has(field.code)) // 排除已存在于页签中的
-      .map((field) => ({
-        field: field.code,
-        name: field.name,
-        tabCode: 'custom_field',
-        tabName: '自定义字段',
-        isSystem: field.isSystem,
-        options: field.dataSource.options.map((opt) => ({
-          id: opt.id,
-          name: opt.label,
-          label: opt.label,
-          value: opt.value,
-          code: opt.value,
-        })),
-      }))
-      .filter((config) => config.options.length > 0);
-
-    // 5. 合并结果
-    const result = [...tabFieldConfigs, ...customFieldConfigs];
-
     console.log('=== getEmployeeInfoConfigs 返回数据 ===');
-    console.log('页签字段数量:', tabFieldConfigs.length);
-    console.log('自定义字段数量:', customFields.length);
-    console.log('字段总数:', result.length);
-    console.log('返回数据:', JSON.stringify(result, null, 2));
+    console.log('字段总数:', tabFieldConfigs.length);
+    console.log('字段列表:', tabFieldConfigs.map(f => `${f.field} (${f.name})`).join(', '));
 
-    return result;
+    return tabFieldConfigs;
   }
 
   /**

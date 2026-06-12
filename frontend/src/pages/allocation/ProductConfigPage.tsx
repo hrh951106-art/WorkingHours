@@ -781,12 +781,6 @@ const ProductConfigPage: React.FC = () => {
                 >
                   查询
                 </Button>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={handleResetFilters}
-                >
-                  重置
-                </Button>
               </Space>
             </Form.Item>
           </Form>
@@ -886,28 +880,19 @@ const ProductConfigPage: React.FC = () => {
       <Modal
         title="编辑产品"
         open={isModalVisible}
-        onOk={() => {}}
         onCancel={() => {
           setIsModalVisible(false);
           setEditingProduct(null);
           form.resetFields();
         }}
         width={600}
-        footer={[
-          <Button key="back" onClick={() => setIsModalVisible(false)}>
-            取消
-          </Button>,
-          <Button
-            key="submit"
-            type="primary"
-            onClick={() => {
-              setIsModalVisible(false);
-              message.success('产品信息仅供查看，如需修改请联系管理员');
-            }}
-          >
-            确定
-          </Button>,
-        ]}
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         <Form form={form} layout="vertical" disabled>
           <Form.Item
@@ -944,6 +929,18 @@ const ProductConfigPage: React.FC = () => {
             </Select>
           </Form.Item>
         </Form>
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={() => setIsModalVisible(false)}>取消</Button>
+          <Button
+            type="primary"
+            onClick={() => {
+              setIsModalVisible(false);
+              message.success('产品信息仅供查看，如需修改请联系管理员');
+            }}
+          >
+            确定
+          </Button>
+        </div>
       </Modal>
 
       {/* 标准工时编辑Modal */}
@@ -954,14 +951,15 @@ const ProductConfigPage: React.FC = () => {
             : (editingByLevel ? '编辑层级标准工时' : '新增层级标准工时')
         }
         open={isStandardHoursModalVisible}
-        onOk={handleStandardHoursSubmit}
         onCancel={handleStandardHoursCancel}
         width={600}
-        confirmLoading={
-          configMode === ConfigMode.GLOBAL
-            ? (createStandardHoursMutation.isPending || updateStandardHoursMutation.isPending)
-            : (createByLevelMutation.isPending || updateByLevelMutation.isPending)
-        }
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         <Form form={standardHoursForm} layout="vertical">
           {/* 全局模式：显示工序选择（可选） */}
@@ -1172,6 +1170,14 @@ const ProductConfigPage: React.FC = () => {
             <TextArea rows={3} placeholder="请输入备注信息" />
           </Form.Item>
         </Form>
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={handleStandardHoursCancel}>取消</Button>
+          <Button type="primary" onClick={handleStandardHoursSubmit} loading={
+            configMode === ConfigMode.GLOBAL
+              ? (createStandardHoursMutation.isPending || updateStandardHoursMutation.isPending)
+              : (createByLevelMutation.isPending || updateByLevelMutation.isPending)
+          }>确定</Button>
+        </div>
       </Modal>
     </div>
   );

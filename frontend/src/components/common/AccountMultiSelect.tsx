@@ -240,13 +240,14 @@ const AccountMultiSelect: React.FC<AccountMultiSelectProps> = ({
           setModalVisible(false);
           setSearchText('');
         }}
-        onOk={() => {
-          setModalVisible(false);
-          setSearchText('');
-        }}
         width={1000}
-        okText="确定"
-        cancelText="取消"
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         <Row gutter={16} style={{ height: 500 }}>
           {/* 左侧：层级列表 */}
@@ -435,6 +436,16 @@ const AccountMultiSelect: React.FC<AccountMultiSelectProps> = ({
             </div>
           </Col>
         </Row>
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={() => {
+            setModalVisible(false);
+            setSearchText('');
+          }}>取消</Button>
+          <Button type="primary" onClick={() => {
+            setModalVisible(false);
+            setSearchText('');
+          }}>确定</Button>
+        </div>
       </Modal>
     </>
   );

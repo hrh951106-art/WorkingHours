@@ -198,8 +198,8 @@ export class AccountService {
     }
 
     if (fieldCode) {
-      // 如果映射类型是 CUSTOM_* 或 FIELD_*，需要从对应的自定义字段获取数据源
-      // 首先从 CustomField 表中查找该字段关联的数据源
+      // 如果映射类型是 CUSTOM_* 或 FIELD_*，需要从对应的字段获取数据源
+      // 优先从 CustomField 表中查找该字段关联的数据源
       const customField = await tx.customField.findFirst({
         where: {
           OR: [
@@ -214,28 +214,59 @@ export class AccountService {
         },
       });
 
-      if (!customField) {
-        console.warn(`未找到自定义字段: ${fieldCode} 或 ${mappingType}`);
-        return [];
-      }
+      let dataSource: any = null;
 
-      if (!customField.dataSourceId) {
-        console.warn(`自定义字段 ${customField.code} 没有关联数据源`);
-        return [];
-      }
-
-      const dataSource = await tx.dataSource.findUnique({
-        where: { id: customField.dataSourceId },
-        include: {
-          options: {
-            where: { isActive: true },
-            orderBy: { sort: 'asc' },
+      if (customField && customField.dataSourceId) {
+        // 自定义字段存在且有关联数据源
+        dataSource = await tx.dataSource.findUnique({
+          where: { id: customField.dataSourceId },
+          include: {
+            options: {
+              where: { isActive: true },
+              orderBy: { sort: 'asc' },
+            },
           },
-        },
-      });
+        });
+      } else {
+        // 如果不是自定义字��（可能是系统内置字段），尝试直接查找同名数据源
+        // 系统内置字段映射规则：position → POSITION, jobLevel → JOB_LEVEL
+        let dataSourceCode = fieldCode.toUpperCase();
 
-      if (!dataSource || !dataSource.options) {
-        console.warn(`数据源 ${customField.dataSourceId} 没有选项数据`);
+        // 处理驼峰命名，转换为下划线命名
+        // 需要在转换为大写之前检查原始字符串是否有驼峰模式
+        // jobLevel → JOB_LEVEL, workStatus → WORK_STATUS, maritalStatus → MARITAL_STATUS
+        if (/[a-z][A-Z]/.test(fieldCode)) {
+          // 原始字符串有驼峰命名，先转换为下划线命名，再转换为大写
+          // jobLevel → job_Level → JOB_LEVEL
+          const withUnderscores = fieldCode.replace(/([a-z])([A-Z])/g, '$1_$2');
+          dataSourceCode = withUnderscores.toUpperCase();
+        }
+
+        console.log(`字段 ${fieldCode} 不是自定义字段，尝试查找数据源 ${dataSourceCode}`);
+
+        dataSource = await tx.dataSource.findFirst({
+          where: {
+            code: dataSourceCode,
+            status: 'ACTIVE',
+          },
+          include: {
+            options: {
+              where: { isActive: true },
+              orderBy: { sort: 'asc' },
+            },
+          },
+        });
+
+        if (!dataSource) {
+          console.warn(`未找到数据源: ${dataSourceCode} (字段: ${fieldCode})`);
+          return [];
+        }
+
+        console.log(`找到数据源 ${dataSourceCode}，选项数量: ${dataSource.options?.length || 0}`);
+      }
+
+      if (!dataSource || !dataSource.options || dataSource.options.length === 0) {
+        console.warn(`数据源没有选项数据`);
         return [];
       }
 
@@ -1339,7 +1370,11 @@ export class AccountService {
    * 获取字段的标签
    */
   private async getFieldLabel(tx: any, fieldCode: string, value: string): Promise<string> {
-    // 查找自定义字段配置
+    if (!value || value === '-') {
+      return value;
+    }
+
+    // 1. 先尝试从CustomField查找
     const customField = await tx.customField.findUnique({
       where: { code: fieldCode },
       include: {
@@ -1353,13 +1388,39 @@ export class AccountService {
       },
     });
 
-    if (!customField || !customField.dataSource) {
-      return value;
+    if (customField && customField.dataSource) {
+      // 从数据源选项中查找对应的标签
+      const option = customField.dataSource.options.find((opt: any) => opt.value === value);
+      return option?.label || value;
     }
 
-    // 从数据源选项中查找对应的标签
-    const option = customField.dataSource.options.find((opt: any) => opt.value === value);
-    return option?.label || value;
+    // 2. 如果不是CustomField（可能是系统内置字段），尝试直接查找DataSource
+    // 处理驼峰命名：position → POSITION, jobLevel → JOB_LEVEL
+    let dataSourceCode = fieldCode.toUpperCase();
+    if (/[a-z][A-Z]/.test(fieldCode)) {
+      const withUnderscores = fieldCode.replace(/([a-z])([A-Z])/g, '$1_$2');
+      dataSourceCode = withUnderscores.toUpperCase();
+    }
+
+    const dataSource = await tx.dataSource.findFirst({
+      where: {
+        code: dataSourceCode,
+        status: 'ACTIVE',
+      },
+      include: {
+        options: {
+          where: { isActive: true },
+        },
+      },
+    });
+
+    if (dataSource && dataSource.options) {
+      const option = dataSource.options.find((opt: any) => opt.value === value);
+      return option?.label || value;
+    }
+
+    // 3. 找不到标签，返回原始值
+    return value;
   }
 
   /**

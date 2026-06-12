@@ -521,8 +521,9 @@ const LaborHourReportCreatePage: React.FC = () => {
       description: values.description,
       accountId: account.id,
       accountCode: account.code,
-      accountPath: account.path,
-      accountName: account.name || account.namePath,
+      accountPath: account.path || '',  // 代码路径：DH/DH01/DH0101//A01（对标LaborAccount.path）
+      accountName: account.namePath || account.name,  // 名称路径：杭州工厂/W1总装车间/W1总装L1产线//焊接（对标LaborAccount.namePath）
+      hierarchyValues: account.hierarchyValues || '{}',  // 层级值JSON
       requesterId: user?.id,
       requesterName: user?.name,
     };

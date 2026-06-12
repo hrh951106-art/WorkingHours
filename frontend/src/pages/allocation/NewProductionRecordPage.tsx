@@ -18,13 +18,14 @@ import {
   Upload,
   Tabs,
 } from 'antd';
-import { PlusOutlined, SearchOutlined, ReloadOutlined, LeftOutlined, RightOutlined, UploadOutlined, ImportOutlined, UserOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, ReloadOutlined, LeftOutlined, RightOutlined, UploadOutlined, ImportOutlined, UserOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import request from '@/utils/request';
 import AccountSelect from '@/components/common/AccountSelect';
 import AccountMultiSelect from '@/components/common/AccountMultiSelect';
 import EmployeeSelect from '@/components/common/EmployeeSelect';
+import LineSelectModal from '@/components/common/LineSelectModal';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -79,9 +80,16 @@ const NewProductionRecordPage: React.FC = () => {
   const [personalForm] = Form.useForm();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isPersonalModalVisible, setIsPersonalModalVisible] = useState(false);
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
+  const [importType, setImportType] = useState<'team' | 'personal'>('team');
   const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null);
   const [editingPersonalRecord, setEditingPersonalRecord] = useState<PersonalProductionRecord | null>(null);
   const [activeTab, setActiveTab] = useState('team');
+
+  // 产线选择弹窗状态
+  const [isLineSelectModalVisible, setIsLineSelectModalVisible] = useState(false);
+  const [selectedLineOrgIds, setSelectedLineOrgIds] = useState<number[]>([]);
+  const [selectedLineLevels, setSelectedLineLevels] = useState<Record<number, any[]>>({});
 
   // 查询条件 - 默认为当天
   const [currentDate, setCurrentDate] = useState(dayjs());
@@ -501,7 +509,7 @@ const NewProductionRecordPage: React.FC = () => {
     personalForm.resetFields();
   };
 
-  // 提交个人记录表单
+  // 提���个人记录表单
   const handlePersonalModalOk = async () => {
     try {
       const values = await personalForm.validateFields();
@@ -510,6 +518,52 @@ const NewProductionRecordPage: React.FC = () => {
       console.error('表单验证失败:', error);
     }
   };
+
+  // 导入处理
+  const handleImport = (type: 'team' | 'personal') => {
+    setImportType(type);
+    setIsImportModalVisible(true);
+  };
+
+  // 取消导入弹窗
+  const handleImportModalCancel = () => {
+    setIsImportModalVisible(false);
+    setImportType('team');
+  };
+
+  // 打开产线选择弹窗
+  const handleOpenLineSelectModal = () => {
+    setIsLineSelectModalVisible(true);
+  };
+
+  // 取消产线选择弹窗
+  const handleLineSelectModalCancel = () => {
+    setIsLineSelectModalVisible(false);
+  };
+
+  // 确认产线选择
+  const handleLineSelectConfirm = (orgIds: number[], levels: Record<number, any[]>) => {
+    setSelectedLineOrgIds(orgIds);
+    setSelectedLineLevels(levels);
+    setIsLineSelectModalVisible(false);
+
+    // 将选中的组织和层级ID合并用于查询
+    const allAccountIds = [
+      ...orgIds,
+      ...Object.values(levels).flat().map((item: any) => item.id || item.value || item)
+    ];
+    setSelectedAccountIds(allAccountIds);
+  };
+
+  // 清空产线选择
+  const handleClearLineSelection = () => {
+    setSelectedLineOrgIds([]);
+    setSelectedLineLevels({});
+    setSelectedAccountIds([]);
+  };
+
+  // 计算总选择数量
+  const totalLineSelectionCount = selectedLineOrgIds.length + Object.values(selectedLineLevels).flat().length;
 
   // 表格列定义
   const columns = [
@@ -724,14 +778,24 @@ const NewProductionRecordPage: React.FC = () => {
           tabBarExtraContent={
             <Space>
               {activeTab === 'team' && (
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-                  新增团队产量
-                </Button>
+                <>
+                  <Button icon={<ImportOutlined />} onClick={() => handleImport('team')}>
+                    导入
+                  </Button>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+                    新增
+                  </Button>
+                </>
               )}
               {activeTab === 'personal' && (
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleAddPersonal}>
-                  新增个人产量
-                </Button>
+                <>
+                  <Button icon={<ImportOutlined />} onClick={() => handleImport('personal')}>
+                    导入
+                  </Button>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={handleAddPersonal}>
+                    新增
+                  </Button>
+                </>
               )}
             </Space>
           }
@@ -767,13 +831,28 @@ const NewProductionRecordPage: React.FC = () => {
           <Col style={{ minWidth: 300 }}>
             <Space>
               <Text strong>产线：</Text>
-              <AccountMultiSelect
-                value={selectedAccountIds}
-                onChange={setSelectedAccountIds}
-                placeholder="请选择"
-                allowClear
+              <Button
+                icon={<ApartmentOutlined />}
+                onClick={handleOpenLineSelectModal}
                 style={{ minWidth: 220 }}
-              />
+              >
+                选择产线
+                {totalLineSelectionCount > 0 && (
+                  <Tag color="blue" style={{ marginLeft: 8 }}>
+                    已选 {totalLineSelectionCount} 项
+                  </Tag>
+                )}
+              </Button>
+              {totalLineSelectionCount > 0 && (
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  onClick={handleClearLineSelection}
+                >
+                  清空
+                </Button>
+              )}
             </Space>
           </Col>
 
@@ -896,13 +975,28 @@ const NewProductionRecordPage: React.FC = () => {
           <Col style={{ minWidth: 300 }}>
             <Space>
               <Text strong>产线：</Text>
-              <AccountMultiSelect
-                value={selectedAccountIds}
-                onChange={setSelectedAccountIds}
-                placeholder="请选择"
-                allowClear
+              <Button
+                icon={<ApartmentOutlined />}
+                onClick={handleOpenLineSelectModal}
                 style={{ minWidth: 220 }}
-              />
+              >
+                选择产线
+                {totalLineSelectionCount > 0 && (
+                  <Tag color="blue" style={{ marginLeft: 8 }}>
+                    已选 {totalLineSelectionCount} 项
+                  </Tag>
+                )}
+              </Button>
+              {totalLineSelectionCount > 0 && (
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  onClick={handleClearLineSelection}
+                >
+                  清空
+                </Button>
+              )}
             </Space>
           </Col>
 
@@ -986,16 +1080,22 @@ const NewProductionRecordPage: React.FC = () => {
       <Modal
         title={editingRecord ? '编辑产量记录' : '新增产量记录'}
         open={isModalVisible}
-        onOk={handleModalOk}
         onCancel={handleModalCancel}
-        confirmLoading={saveMutation.isPending}
         width={600}
         destroyOnClose
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '0'
+          }
+        }}
       >
-        <Form
-          form={form}
-          layout="vertical"
-        >
+        <div style={{ padding: '24px 12px' }}>
+          <Form
+            form={form}
+            layout="vertical"
+          >
           <Form.Item
             label="记录日期"
             name="recordDate"
@@ -1068,23 +1168,34 @@ const NewProductionRecordPage: React.FC = () => {
               placeholder="请输入实际产量"
             />
           </Form.Item>
-        </Form>
+          </Form>
+          <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px 0 0 0' }}>
+            <Button onClick={handleModalCancel}>取消</Button>
+            <Button type="primary" onClick={handleModalOk} loading={saveMutation.isPending}>确定</Button>
+          </div>
+        </div>
       </Modal>
 
       {/* 新增/编辑个人产量记录弹窗 */}
       <Modal
         title={editingPersonalRecord ? '编辑个人产量记录' : '新增个人产量记录'}
         open={isPersonalModalVisible}
-        onOk={handlePersonalModalOk}
         onCancel={handlePersonalModalCancel}
-        confirmLoading={savePersonalMutation.isPending}
         width={600}
         destroyOnClose
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '0'
+          }
+        }}
       >
-        <Form
-          form={personalForm}
-          layout="vertical"
-        >
+        <div style={{ padding: '24px 12px' }}>
+          <Form
+            form={personalForm}
+            layout="vertical"
+          >
           <Form.Item
             label="记录日期"
             name="recordDate"
@@ -1178,8 +1289,66 @@ const NewProductionRecordPage: React.FC = () => {
               placeholder="请输入实际产量"
             />
           </Form.Item>
-        </Form>
+          </Form>
+          <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px 0 0 0' }}>
+            <Button onClick={handlePersonalModalCancel}>取消</Button>
+            <Button type="primary" onClick={handlePersonalModalOk} loading={savePersonalMutation.isPending}>确定</Button>
+          </div>
+        </div>
       </Modal>
+
+      {/* 导入弹窗 */}
+      <Modal
+        title={importType === 'team' ? '导入团队产量' : '导入个人产量'}
+        open={isImportModalVisible}
+        onCancel={handleImportModalCancel}
+        footer={null}
+        width={600}
+        destroyOnClose
+        centered
+        styles={{
+          body: {
+            padding: '0'
+          }
+        }}
+      >
+        <div style={{ padding: '24px 12px' }}>
+          <p style={{ marginBottom: '16px' }}>
+            请选择Excel文件进行导入。文件格式请参考模板。
+          </p>
+          <Upload
+            accept=".xlsx,.xls"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              // 这里可以添加文件上传逻辑
+              message.info('导入功能开发中，请稍后使用');
+              return false;
+            }}
+          >
+            <Button icon={<UploadOutlined />} size="large" style={{ width: '100%' }}>
+              点击上传文件
+            </Button>
+          </Upload>
+          <div style={{ marginTop: '16px', textAlign: 'center' }}>
+            <Button type="link">
+              下载导入模板
+            </Button>
+          </div>
+        </div>
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px 0 0 0' }}>
+          <Button onClick={handleImportModalCancel}>关闭</Button>
+        </div>
+      </Modal>
+
+      {/* 产线选择弹窗 */}
+      <LineSelectModal
+        visible={isLineSelectModalVisible}
+        onCancel={handleLineSelectModalCancel}
+        onConfirm={handleLineSelectConfirm}
+        selectedOrgIds={selectedLineOrgIds}
+        selectedLevels={selectedLineLevels}
+        width={1000}
+      />
     </div>
   );
 };

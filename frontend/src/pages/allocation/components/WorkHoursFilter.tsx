@@ -71,12 +71,12 @@ const WorkHoursFilter: React.FC<WorkHoursFilterProps> = ({
     <div>
       <div style={{ marginBottom: 16 }}>
         <div style={{ marginBottom: 8, color: '#666', fontSize: 12 }}>
+          <span style={{ color: 'red', marginRight: 4 }}>*</span>
           出勤代码
         </div>
         <Select
           mode="multiple"
-          placeholder="选择出勤代码（可多选）"
-          allowClear
+          placeholder="请选择出勤代码（必填）"
           value={condition.attendanceCodes}
           onChange={(val) => updateCondition({ attendanceCodes: val })}
           disabled={disabled}

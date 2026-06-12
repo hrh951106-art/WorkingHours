@@ -274,7 +274,7 @@ export class ShiftService {
           where: { employeeNo: dataScopeFilter.employeeNo.in || dataScopeFilter.employeeNo },
           select: { id: true },
         });
-        where.employeeId = { in: employees.map(e => e.id) };
+        where.employeeId = { in: employees.map((e) => e.id) };
       }
     }
 
@@ -337,45 +337,47 @@ export class ShiftService {
     });
 
     // 合并班段覆盖信息
-    const schedulesWithOverrides = await Promise.all(schedules.map(async (schedule: any) => {
-      let segments = schedule.shift.segments || [];
+    const schedulesWithOverrides = await Promise.all(
+      schedules.map(async (schedule: any) => {
+        let segments = schedule.shift.segments || [];
 
-      // 如果有班段覆盖信息，则合并
-      if (schedule.adjustedSegments) {
-        try {
-          const overrides = JSON.parse(schedule.adjustedSegments);
-          segments = segments.map((seg: any) => {
-            const override = overrides.find((o: any) => o.id === seg.id);
-            return override ? { ...seg, ...override } : seg;
-          });
-        } catch (e) {
-          console.error('Failed to parse adjustedSegments:', e);
-        }
-      }
-
-      // 收集所有需要查询account的segments
-      const segmentsWithAccountIds = segments.filter((seg: any) => seg.accountId);
-      if (segmentsWithAccountIds.length > 0) {
-        const accountIds = segmentsWithAccountIds.map((seg: any) => seg.accountId);
-        const accounts = await this.prisma.laborAccount.findMany({
-          where: { id: { in: accountIds } },
-        });
-
-        // 为每个segment添加account对象
-        segments = segments.map((seg: any) => {
-          if (seg.accountId) {
-            const account = accounts.find((acc: any) => acc.id === seg.accountId);
-            return { ...seg, account: account || null };
+        // 如果有班段覆盖信息，则合并
+        if (schedule.adjustedSegments) {
+          try {
+            const overrides = JSON.parse(schedule.adjustedSegments);
+            segments = segments.map((seg: any) => {
+              const override = overrides.find((o: any) => o.id === seg.id);
+              return override ? { ...seg, ...override } : seg;
+            });
+          } catch (e) {
+            console.error('Failed to parse adjustedSegments:', e);
           }
-          return seg;
-        });
-      }
+        }
 
-      return {
-        ...schedule,
-        segments,
-      };
-    }));
+        // 收集所有需要查询account的segments
+        const segmentsWithAccountIds = segments.filter((seg: any) => seg.accountId);
+        if (segmentsWithAccountIds.length > 0) {
+          const accountIds = segmentsWithAccountIds.map((seg: any) => seg.accountId);
+          const accounts = await this.prisma.laborAccount.findMany({
+            where: { id: { in: accountIds } },
+          });
+
+          // 为每个segment添加account对象
+          segments = segments.map((seg: any) => {
+            if (seg.accountId) {
+              const account = accounts.find((acc: any) => acc.id === seg.accountId);
+              return { ...seg, account: account || null };
+            }
+            return seg;
+          });
+        }
+
+        return {
+          ...schedule,
+          segments,
+        };
+      }),
+    );
 
     // 如果有组织过滤或搜索，在返回前过滤
     let filteredSchedules = schedulesWithOverrides;
@@ -385,9 +387,8 @@ export class ShiftService {
     }
 
     if (search) {
-      filteredSchedules = filteredSchedules.filter((s: any) =>
-        s.employee?.name?.includes(search) ||
-        s.employee?.employeeNo?.includes(search)
+      filteredSchedules = filteredSchedules.filter(
+        (s: any) => s.employee?.name?.includes(search) || s.employee?.employeeNo?.includes(search),
       );
     }
 

@@ -131,20 +131,23 @@ export class DefinitionAttendanceCodeService {
   /**
    * 更新定义出勤代码
    */
-  async update(id: number, data: {
-    code?: string;
-    name?: string;
-    type?: string;
-    unit?: string;
-    calculateHours?: boolean;
-    showInDetailPage?: boolean;
-    showInAttendanceCard?: boolean;
-    priority?: number;
-    color?: string;
-    status?: string;
-    calcAttendanceCode?: string;
-    description?: string;
-  }) {
+  async update(
+    id: number,
+    data: {
+      code?: string;
+      name?: string;
+      type?: string;
+      unit?: string;
+      calculateHours?: boolean;
+      showInDetailPage?: boolean;
+      showInAttendanceCard?: boolean;
+      priority?: number;
+      color?: string;
+      status?: string;
+      calcAttendanceCode?: string;
+      description?: string;
+    },
+  ) {
     // 检查代码是否存在
     await this.findOne(id);
 
@@ -200,7 +203,7 @@ export class DefinitionAttendanceCodeService {
 
     if (workHourResultsCount > 0 || allocationWorkHoursCount > 0) {
       throw new BadRequestException(
-        `该出勤代码已被 ${workHourResultsCount} 条工时结果和 ${allocationWorkHoursCount} 条分摊工时使用，无法删除`
+        `该出勤代码已被 ${workHourResultsCount} 条工时结果和 ${allocationWorkHoursCount} 条分摊工时使用，无法删除`,
       );
     }
 

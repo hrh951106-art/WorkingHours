@@ -199,7 +199,7 @@ export class EarnedHoursAllocationController {
     };
 
     // 获取涉及的所有组织账户
-    const orgIds = [...new Set(allocationResults.map(ar => ar.sourceAccountId).filter(Boolean))];
+    const orgIds = [...new Set(allocationResults.map((ar) => ar.sourceAccountId).filter(Boolean))];
 
     if (orgIds.length > 0) {
       teamProductionWhere.orgId = { in: orgIds };
@@ -213,7 +213,9 @@ export class EarnedHoursAllocationController {
     });
 
     // 查询产品标准配置（用于获取标准信息）
-    const productIds = [...new Set(teamProductionRecords.map(pr => pr.productId).filter(Boolean))];
+    const productIds = [
+      ...new Set(teamProductionRecords.map((pr) => pr.productId).filter(Boolean)),
+    ];
     const productStandards = await this.prisma.productStandardHourByLevel.findMany({
       where: {
         productId: { in: productIds },
@@ -224,7 +226,7 @@ export class EarnedHoursAllocationController {
 
     // 构建产品标准映射（productId -> 标准信息），使用最新创建的配置
     const productStandardMap = new Map<number, any>();
-    productStandards.forEach(ps => {
+    productStandards.forEach((ps) => {
       // 只保留每个产品的第一个（最新创建的）配置
       if (!productStandardMap.has(ps.productId)) {
         productStandardMap.set(ps.productId, {
@@ -237,7 +239,7 @@ export class EarnedHoursAllocationController {
 
     // 构建团队产量映射（日期+组织 -> 产品信息）
     const teamProductionMap = new Map<string, any>();
-    teamProductionRecords.forEach(pr => {
+    teamProductionRecords.forEach((pr) => {
       const key = `${pr.recordDate.getTime()}_${pr.orgId}`;
       // 只保存第一条记录的产品信息（假设同一组织同一天的产品相同）
       if (!teamProductionMap.has(key)) {
@@ -255,7 +257,7 @@ export class EarnedHoursAllocationController {
     });
 
     // 获取分摊配置的考勤代码信息
-    const configIds = [...new Set(allocationResults.map(ar => ar.configId))];
+    const configIds = [...new Set(allocationResults.map((ar) => ar.configId))];
     const configs = await this.prisma.earnedHoursAllocationConfig.findMany({
       where: { id: { in: configIds } },
       select: { id: true, sourceConfig: true },
@@ -263,11 +265,12 @@ export class EarnedHoursAllocationController {
 
     // 构建配置映射
     const configMap = new Map<number, any>();
-    configs.forEach(config => {
+    configs.forEach((config) => {
       try {
-        const sourceConfig = typeof config.sourceConfig === 'string'
-          ? JSON.parse(config.sourceConfig)
-          : config.sourceConfig;
+        const sourceConfig =
+          typeof config.sourceConfig === 'string'
+            ? JSON.parse(config.sourceConfig)
+            : config.sourceConfig;
         configMap.set(config.id, {
           attendanceCodes: sourceConfig.attendanceCodes || [],
         });
@@ -278,7 +281,7 @@ export class EarnedHoursAllocationController {
 
     // 查询考勤代码名称
     const allAttendanceCodes = new Set<string>();
-    configs.forEach(config => {
+    configs.forEach((config) => {
       const cfg = configMap.get(config.id);
       if (cfg?.attendanceCodes) {
         cfg.attendanceCodes.forEach((code: string) => allAttendanceCodes.add(code));
@@ -291,23 +294,45 @@ export class EarnedHoursAllocationController {
     });
 
     const attendanceCodeMap = new Map<string, string>();
-    attendanceCodes.forEach(ac => {
+    attendanceCodes.forEach((ac) => {
       attendanceCodeMap.set(ac.code, ac.name);
     });
 
-    // 构建个人产量映射
+    // 构建个人产量映射（同一个人同一天相同账户的记录会合并）
     const personalMap = new Map<string, any>();
     personalRecords.forEach((r) => {
-      const key = `${r.employeeNo}_${new Date(r.recordDate).getTime()}`;
-      personalMap.set(key, r);
+      const key = `${r.employeeNo}_${r.orgId}_${new Date(r.recordDate).getTime()}`;
+
+      const existing = personalMap.get(key);
+      if (existing) {
+        // 合并记录：累加产量和挣得工时
+        existing.actualQty += r.actualQty;
+        existing.earnedHours += r.earnedHours;
+      } else {
+        // 新记录
+        personalMap.set(key, r);
+      }
     });
 
-    // 构建分摊工时映射（包含单位信息、账户信息和考勤代码）
-    const allocationMap = new Map<string, { hours: number; unit: string; orgId: number; orgName: string; employeeName: string; attendanceCodeNames: string[] }>();
+    // 构建分摊工时映射（包含单位信息、账户信息和考勤代码，key包含employeeNo、orgId和recordDate）
+    const allocationMap = new Map<
+      string,
+      {
+        hours: number;
+        unit: string;
+        orgId: number;
+        orgName: string;
+        employeeName: string;
+        attendanceCodeNames: string[];
+      }
+    >();
     allocationResults.forEach((ar) => {
-      const key = `${ar.sourceEmployeeNo}_${ar.recordDate.getTime()}`;
+      const key = `${ar.sourceEmployeeNo}_${ar.sourceAccountId}_${ar.recordDate.getTime()}`;
       const config = configMap.get(ar.configId);
-      const attendanceCodeNames = config?.attendanceCodes?.map((code: string) => attendanceCodeMap.get(code) || code).join(', ') || '';
+      const attendanceCodeNames =
+        config?.attendanceCodes
+          ?.map((code: string) => attendanceCodeMap.get(code) || code)
+          .join(', ') || '';
 
       const current = allocationMap.get(key) || {
         hours: 0,
@@ -328,18 +353,23 @@ export class EarnedHoursAllocationController {
     });
 
     // 收集所有唯一键
-    const allKeys = new Set([
-      ...personalMap.keys(),
-      ...allocationMap.keys(),
-    ]);
+    const allKeys = new Set([...personalMap.keys(), ...allocationMap.keys()]);
 
     // 组合结果
     const results = Array.from(allKeys).map((key, i) => {
-      const [empNo, dateStr] = key.split('_');
-      const recordDate = new Date(Number(dateStr));
+      const keyParts = key.split('_');
+      const empNo = keyParts[0];
+      const orgId = keyParts[1] ? Number(keyParts[1]) : null;
+      const recordDate = new Date(Number(keyParts[2]));
 
       const personalRecord = personalMap.get(key);
-      const teamAllocation = allocationMap.get(key) || { hours: 0, unit: '小时', orgId: 0, orgName: '', employeeName: '' };
+      const teamAllocation = allocationMap.get(key) || {
+        hours: 0,
+        unit: '小时',
+        orgId: 0,
+        orgName: '',
+        employeeName: '',
+      };
       const personalHours = personalRecord?.earnedHours || 0;
       const hasPersonalProduction = personalRecord && personalRecord.actualQty > 0;
 
@@ -349,8 +379,15 @@ export class EarnedHoursAllocationController {
 
       // 计算团队挣得（团队产量 / 标准数量 * 标准工时）
       let teamProductionEarned = 0;
-      if (teamProduction && teamProduction.actualQty > 0 && teamProduction.standardQuantity > 0 && teamProduction.standardHours > 0) {
-        teamProductionEarned = (teamProduction.actualQty / teamProduction.standardQuantity) * teamProduction.standardHours;
+      if (
+        teamProduction &&
+        teamProduction.actualQty > 0 &&
+        teamProduction.standardQuantity > 0 &&
+        teamProduction.standardHours > 0
+      ) {
+        teamProductionEarned =
+          (teamProduction.actualQty / teamProduction.standardQuantity) *
+          teamProduction.standardHours;
       }
 
       return {
@@ -360,13 +397,21 @@ export class EarnedHoursAllocationController {
         employeeName: personalRecord?.employeeName || teamAllocation.employeeName || '',
         orgId: personalRecord?.orgId || teamAllocation.orgId || null,
         orgName: personalRecord?.orgName || teamAllocation.orgName || '',
-        productId: hasPersonalProduction ? (personalRecord?.productId || null) : (teamProduction?.productId || null),
-        productCode: hasPersonalProduction ? (personalRecord?.productCode || '') : (teamProduction?.productCode || ''),
-        productName: hasPersonalProduction ? (personalRecord?.productName || '') : (teamProduction?.productName || ''),
+        productId: hasPersonalProduction
+          ? personalRecord?.productId || null
+          : teamProduction?.productId || null,
+        productCode: hasPersonalProduction
+          ? personalRecord?.productCode || ''
+          : teamProduction?.productCode || '',
+        productName: hasPersonalProduction
+          ? personalRecord?.productName || ''
+          : teamProduction?.productName || '',
         actualQty: personalRecord?.actualQty || 0,
-        standardQuantity: hasPersonalProduction ? 1 : (teamProduction?.standardQuantity || 100),
-        standardHours: hasPersonalProduction ? (personalRecord?.standardHours || 0) : (teamProduction?.standardHours || 0),
-        standardUnit: hasPersonalProduction ? '件' : (teamProduction?.standardUnit || '件'),
+        standardQuantity: hasPersonalProduction ? 1 : teamProduction?.standardQuantity || 100,
+        standardHours: hasPersonalProduction
+          ? personalRecord?.standardHours || 0
+          : teamProduction?.standardHours || 0,
+        standardUnit: hasPersonalProduction ? '件' : teamProduction?.standardUnit || '件',
         accountPath: personalRecord?.orgName || teamAllocation.orgName || '',
         // 团队产量相关
         teamProductionQty: teamProduction?.actualQty || 0,

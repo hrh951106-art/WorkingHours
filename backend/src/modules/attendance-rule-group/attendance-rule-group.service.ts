@@ -10,14 +10,7 @@ export class AttendanceRuleGroupService {
    * 获取考勤规则组列表
    */
   async findAll(query: any) {
-    const {
-      code,
-      name,
-      status,
-      isDefault,
-      page = 1,
-      pageSize = 10,
-    } = query;
+    const { code, name, status, isDefault, page = 1, pageSize = 10 } = query;
 
     const skip = (page - 1) * pageSize;
 
@@ -94,7 +87,7 @@ export class AttendanceRuleGroupService {
       select: { code: true },
       where: { deletedAt: null },
     });
-    const codes = existingCodes.map(c => c.code);
+    const codes = existingCodes.map((c) => c.code);
     const { StringUtils } = require('../../common/utils');
     return {
       code: StringUtils.generateSequentialCode('ARG', codes),
@@ -104,21 +97,19 @@ export class AttendanceRuleGroupService {
   /**
    * 创建考勤规则组
    */
-  async create(
-    data: {
-      code?: string;
-      name: string;
-      description?: string;
-      isDefault?: boolean;
-      attendanceCodeIds?: number[];
-      amountPolicyIds?: number[];
-      amountPolicyGroupIds?: number[];
-      attendancePunchRuleId?: number;
-      leanPunchRuleId?: number;
-      createdById: number;
-      createdByName: string;
-    },
-  ) {
+  async create(data: {
+    code?: string;
+    name: string;
+    description?: string;
+    isDefault?: boolean;
+    attendanceCodeIds?: number[];
+    amountPolicyIds?: number[];
+    amountPolicyGroupIds?: number[];
+    attendancePunchRuleId?: number;
+    leanPunchRuleId?: number;
+    createdById: number;
+    createdByName: string;
+  }) {
     const {
       code: originalCode,
       name,
@@ -155,7 +146,7 @@ export class AttendanceRuleGroupService {
     }
 
     // 确保数组不为 undefined
-    let attendanceCodeIds = originalAttendanceCodeIds || [];
+    const attendanceCodeIds = originalAttendanceCodeIds || [];
     let code = originalCode;
     amountPolicyIds = amountPolicyIds || [];
 
@@ -164,7 +155,7 @@ export class AttendanceRuleGroupService {
       const existingCodes = await this.prisma.attendanceRuleGroup.findMany({
         select: { code: true },
       });
-      const codes = existingCodes.map(c => c.code);
+      const codes = existingCodes.map((c) => c.code);
       const { StringUtils } = require('../../common/utils');
       code = StringUtils.generateSequentialCode('ARG', codes);
     }
@@ -329,12 +320,10 @@ export class AttendanceRuleGroupService {
                 ? leanPunchRuleId
                 : existing.details[0]?.leanPunchRuleId,
             attendanceCodeIds: JSON.stringify(
-              attendanceCodeIds ||
-                JSON.parse(existing.details[0]?.attendanceCodeIds || '[]'),
+              attendanceCodeIds || JSON.parse(existing.details[0]?.attendanceCodeIds || '[]'),
             ),
             amountPolicyIds: JSON.stringify(
-              finalAmountPolicyIds ||
-                JSON.parse(existing.details[0]?.amountPolicyIds || '[]'),
+              finalAmountPolicyIds || JSON.parse(existing.details[0]?.amountPolicyIds || '[]'),
             ),
           },
         });
@@ -402,7 +391,7 @@ export class AttendanceRuleGroupService {
       // 将这些员工的其他当前规则组设置为非当前
       await tx.employeeAttendanceRuleGroup.updateMany({
         where: {
-          employeeNo: { in: employees.map(e => e.employeeNo) },
+          employeeNo: { in: employees.map((e) => e.employeeNo) },
           isCurrent: true,
         },
         data: {
@@ -485,12 +474,15 @@ export class AttendanceRuleGroupService {
   /**
    * 更新员工考勤规则组
    */
-  async updateEmployeeRuleGroup(employeeId: number, data: {
-    ruleGroupId: number;
-    effectiveDate: string;
-    expiryDate?: string;
-    reason?: string;
-  }) {
+  async updateEmployeeRuleGroup(
+    employeeId: number,
+    data: {
+      ruleGroupId: number;
+      effectiveDate: string;
+      expiryDate?: string;
+      reason?: string;
+    },
+  ) {
     const { ruleGroupId, effectiveDate, expiryDate, reason } = data;
 
     // 验证规则组是否存在
@@ -602,10 +594,7 @@ export class AttendanceRuleGroupService {
         employeeNo: employee.employeeNo,
         isCurrent: true,
         effectiveDate: { lte: date },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gt: date } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gt: date } }],
       },
       include: {
         ruleGroup: {

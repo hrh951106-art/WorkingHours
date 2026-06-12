@@ -173,6 +173,12 @@ const SettingsManagementPage: React.FC = () => {
       icon: <PieChartOutlined />,
       items: [
         {
+          key: '/embed/allocation/config',
+          label: '分配规则',
+          path: '/embed/allocation/config',
+          icon: <ControlOutlined />,
+        },
+        {
           key: '/embed/allocation/product-maintenance',
           label: '产品维护',
           path: '/embed/allocation/product-maintenance',

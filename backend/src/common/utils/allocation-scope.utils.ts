@@ -26,7 +26,7 @@ export function extractLevelFromAccountName(accountName: string, level: number):
   }
 
   // 按 "/" 分割账户名称
-  const parts = accountName.split('/').map(p => p.trim());
+  const parts = accountName.split('/').map((p) => p.trim());
 
   // 检查层级是否在范围内
   if (level > parts.length) {
@@ -53,7 +53,7 @@ export function extractLevelFromAccountName(accountName: string, level: number):
  */
 export function extractMultipleLevelsFromAccountName(
   accountName: string,
-  levels: number[]
+  levels: number[],
 ): Record<number, string | null> {
   const result: Record<number, string | null> = {};
 
@@ -75,7 +75,7 @@ export function extractMultipleLevelsFromAccountName(
 export function matchLineShiftsByLevel(
   lineShifts: any[],
   level: number,
-  levelValue: string
+  levelValue: string,
 ): any[] {
   if (!lineShifts || lineShifts.length === 0 || !levelValue) {
     return [];
@@ -115,7 +115,7 @@ export function matchLineShiftsByLevel(
  */
 export function extractWH1001LevelFromLineShift(
   lineShift: any,
-  targetLevel?: number
+  targetLevel?: number,
 ): string | null {
   if (!lineShift) {
     return null;
@@ -139,15 +139,13 @@ export function extractWH1001LevelFromLineShift(
  */
 export function extractWH1001LevelsFromLineShifts(
   lineShifts: any[],
-  targetLevel?: number
+  targetLevel?: number,
 ): (string | null)[] {
   if (!lineShifts || lineShifts.length === 0) {
     return [];
   }
 
-  return lineShifts.map((lineShift) =>
-    extractWH1001LevelFromLineShift(lineShift, targetLevel)
-  );
+  return lineShifts.map((lineShift) => extractWH1001LevelFromLineShift(lineShift, targetLevel));
 }
 
 /**
@@ -181,9 +179,7 @@ export function filterParticipatingLineShifts(lineShifts: any[]): any[] {
     return [];
   }
 
-  return lineShifts.filter((lineShift) =>
-    shouldParticipateInAllocation(lineShift)
-  );
+  return lineShifts.filter((lineShift) => shouldParticipateInAllocation(lineShift));
 }
 
 /**
@@ -205,34 +201,25 @@ export function matchAllocationScope(
   sourceAccountName: string,
   allocationScopeLevel: number,
   lineShifts: any[],
-  wh1001TargetLevel?: number
+  wh1001TargetLevel?: number,
 ): any[] {
   // 第一步：从源账户名称中提取分摊范围层级的值
-  const scopeValue = extractLevelFromAccountName(
-    sourceAccountName,
-    allocationScopeLevel
-  );
+  const scopeValue = extractLevelFromAccountName(sourceAccountName, allocationScopeLevel);
 
   if (!scopeValue) {
-    console.log(
-      `无法从账户名称 "${sourceAccountName}" 中提取层级 ${allocationScopeLevel} 的值`
-    );
+    console.log(`无法从账户名称 "${sourceAccountName}" 中提取层级 ${allocationScopeLevel} 的值`);
     return [];
   }
 
   console.log(
-    `从账户名称 "${sourceAccountName}" 中提取层级 ${allocationScopeLevel} 的值: "${scopeValue}"`
+    `从账户名称 "${sourceAccountName}" 中提取层级 ${allocationScopeLevel} 的值: "${scopeValue}"`,
   );
 
   // 第二步：在开线计划表中匹配该层级的数据
-  const matchedLineShifts = matchLineShiftsByLevel(
-    lineShifts,
-    allocationScopeLevel,
-    scopeValue
-  );
+  const matchedLineShifts = matchLineShiftsByLevel(lineShifts, allocationScopeLevel, scopeValue);
 
   console.log(
-    `在开线计划表中匹配到 ${matchedLineShifts.length} 条层级 ${allocationScopeLevel} = "${scopeValue}" 的记录`
+    `在开线计划表中匹配到 ${matchedLineShifts.length} 条层级 ${allocationScopeLevel} = "${scopeValue}" 的记录`,
   );
 
   if (matchedLineShifts.length === 0) {
@@ -241,24 +228,14 @@ export function matchAllocationScope(
 
   // 第三步：从匹配的记录中解析 WH1001 配置的层级（如果需要）
   if (wh1001TargetLevel) {
-    const wh1001Levels = extractWH1001LevelsFromLineShifts(
-      matchedLineShifts,
-      wh1001TargetLevel
-    );
-    console.log(
-      `从匹配的记录中解析 WH1001 层级 ${wh1001TargetLevel} 的值:`,
-      wh1001Levels
-    );
+    const wh1001Levels = extractWH1001LevelsFromLineShifts(matchedLineShifts, wh1001TargetLevel);
+    console.log(`从匹配的记录中解析 WH1001 层级 ${wh1001TargetLevel} 的值:`, wh1001Levels);
   }
 
   // 第四步：过滤出应该参与分摊的记录
-  const participatingLineShifts = filterParticipatingLineShifts(
-    matchedLineShifts
-  );
+  const participatingLineShifts = filterParticipatingLineShifts(matchedLineShifts);
 
-  console.log(
-    `过滤后应该参与分摊的记录数: ${participatingLineShifts.length}`
-  );
+  console.log(`过滤后应该参与分摊的记录数: ${participatingLineShifts.length}`);
 
   return participatingLineShifts;
 }
@@ -282,7 +259,7 @@ export function getAccountNameHierarchy(accountName: string): {
     };
   }
 
-  const parts = accountName.split('/').map(p => p.trim());
+  const parts = accountName.split('/').map((p) => p.trim());
   const levels: Record<number, string | null> = {};
 
   for (let i = 1; i <= 7; i++) {

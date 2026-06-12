@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, IsNumber, IsEnum, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  IsNumber,
+  IsEnum,
+  IsDateString,
+} from 'class-validator';
 
 export enum SupportMode {
   FULL_DAY = 'FULL_DAY',

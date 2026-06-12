@@ -593,12 +593,6 @@ const LineMaintenancePage: React.FC = () => {
               >
                 查询
               </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={handleResetFilters}
-              >
-                重置
-              </Button>
             </Space>
           </Form.Item>
         </Form>
@@ -619,12 +613,18 @@ const LineMaintenancePage: React.FC = () => {
       <Modal
         title={editingRecord ? '编辑开线记录' : '新增开线记录'}
         open={isModalVisible}
-        onOk={handleSubmit}
         onCancel={handleCancel}
         width={600}
-        confirmLoading={createMutation.isPending || updateMutation.isPending}
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '0'
+          }
+        }}
       >
-        <Form form={form} layout="vertical">
+        <div style={{ padding: '24px 12px' }}>
+          <Form form={form} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -741,7 +741,12 @@ const LineMaintenancePage: React.FC = () => {
           >
             <Input placeholder="请输入描述" />
           </Form.Item>
-        </Form>
+          </Form>
+          <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px 0 0 0' }}>
+            <Button onClick={handleCancel}>取消</Button>
+            <Button type="primary" onClick={handleSubmit} loading={createMutation.isPending || updateMutation.isPending}>确定</Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

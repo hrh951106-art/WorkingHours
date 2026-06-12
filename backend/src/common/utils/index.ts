@@ -41,8 +41,8 @@ export class StringUtils {
   static generateSequentialCode(prefix: string, existingCodes: string[]): string {
     // 过滤出相同前缀的编���
     const samePrefixCodes = existingCodes
-      .filter(code => code?.startsWith(`${prefix}_`))
-      .map(code => {
+      .filter((code) => code?.startsWith(`${prefix}_`))
+      .map((code) => {
         const parts = code.split('_');
         const numStr = parts[parts.length - 1];
         const num = parseInt(numStr, 10);

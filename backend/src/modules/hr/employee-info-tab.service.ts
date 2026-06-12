@@ -48,7 +48,9 @@ export class EmployeeInfoTabService {
       }));
 
       // 处理未分组的字段
-      const ungroupedFields = tab.fields.map((field) => this.enrichFieldWithType(field, customFields));
+      const ungroupedFields = tab.fields.map((field) =>
+        this.enrichFieldWithType(field, customFields),
+      );
 
       return {
         ...tab,
@@ -128,13 +130,17 @@ export class EmployeeInfoTabService {
     return tabs
       .filter((tab) => {
         // 检查页签是否有启用的分组，或有未分组的字段
-        const hasActiveGroupsWithFields = tab.groups.some((group) => group.fields && group.fields.length > 0);
+        const hasActiveGroupsWithFields = tab.groups.some(
+          (group) => group.fields && group.fields.length > 0,
+        );
         const hasUngroupedFields = tab.fields && tab.fields.length > 0;
         return hasActiveGroupsWithFields || hasUngroupedFields;
       })
       .map((tab) => {
         // 只保留有字段的启用分组
-        const activeGroupsWithFields = tab.groups.filter((group) => group.fields && group.fields.length > 0);
+        const activeGroupsWithFields = tab.groups.filter(
+          (group) => group.fields && group.fields.length > 0,
+        );
 
         // 处理分组内的字段
         const groupsWithFields = activeGroupsWithFields.map((group) => ({
@@ -145,7 +151,7 @@ export class EmployeeInfoTabService {
         // 打印分组字段（用于调试）
         if (tab.code === 'basic_info') {
           console.log('=== basic_info 页签分组字段 ===');
-          groupsWithFields.forEach(group => {
+          groupsWithFields.forEach((group) => {
             group.fields.forEach((field: any) => {
               if (field.fieldCode === 'nation' || field.fieldCode === 'emergencyRelation') {
                 console.log(`字段: ${field.fieldCode}`);
@@ -159,7 +165,9 @@ export class EmployeeInfoTabService {
         }
 
         // 处理未分组的字段
-        const ungroupedFields = tab.fields.map((field) => this.enrichFieldWithType(field, customFields));
+        const ungroupedFields = tab.fields.map((field) =>
+          this.enrichFieldWithType(field, customFields),
+        );
 
         return {
           ...tab,
@@ -243,7 +251,9 @@ export class EmployeeInfoTabService {
     }));
 
     // 处理未分组的字段
-    const ungroupedFields = tab.fields.map((field) => this.enrichFieldWithType(field, customFields));
+    const ungroupedFields = tab.fields.map((field) =>
+      this.enrichFieldWithType(field, customFields),
+    );
 
     return {
       ...tab,
@@ -434,7 +444,7 @@ export class EmployeeInfoTabService {
       this.prisma.employeeInfoTabGroup.update({
         where: { id: group.id },
         data: { sort: group.sort },
-      })
+      }),
     );
 
     await this.prisma.$transaction(updates);
@@ -474,7 +484,7 @@ export class EmployeeInfoTabService {
       const allowedTabCodes = ['basic_info', 'work_info'];
       if (!allowedTabCodes.includes(tab.code)) {
         throw new BadRequestException(
-          `系统字段只能添加到基本信息或工作信息页签，不能添加到${tab.name}页签`
+          `系统字段只能添加到基本信息或工作信息页签，不能添加到${tab.name}页签`,
         );
       }
     }
@@ -486,7 +496,7 @@ export class EmployeeInfoTabService {
       // 如果是系统页签，只允许 basic_info 和 work_info
       if (tab.isSystem && !allowedSystemTabCodes.includes(tab.code)) {
         throw new BadRequestException(
-          `自定义字段不能添加到系统页签（${tab.name}），只能添加到基本信息、工作信息或自定义页签`
+          `自定义字段不能添加到系统页签（${tab.name}），只能添加到基本信息、工作信息或自定义页签`,
         );
       }
     }
@@ -532,7 +542,7 @@ export class EmployeeInfoTabService {
 
     // 过滤掉 undefined 的字段
     const updateData = Object.fromEntries(
-      Object.entries(allowedFields).filter(([_, value]) => value !== undefined)
+      Object.entries(allowedFields).filter(([_, value]) => value !== undefined),
     );
 
     return this.prisma.employeeInfoTabField.update({
@@ -575,7 +585,7 @@ export class EmployeeInfoTabService {
       const allowedTabCodes = ['basic_info', 'work_info'];
       if (!allowedTabCodes.includes(targetGroup.tab.code)) {
         throw new BadRequestException(
-          `系统字段只能移动到基本信息或工作信息页签，不能移动到${targetGroup.tab.name}页签`
+          `系统字段只能移动到基本信息或工作信息页签，不能移动到${targetGroup.tab.name}页签`,
         );
       }
     }
@@ -587,7 +597,7 @@ export class EmployeeInfoTabService {
       // 如果是系统页签，只允许 basic_info 和 work_info
       if (targetGroup.tab.isSystem && !allowedSystemTabCodes.includes(targetGroup.tab.code)) {
         throw new BadRequestException(
-          `自定义字段不能移动到系统页签（${targetGroup.tab.name}），只能移动到基本信息、工作信息或自定义页签`
+          `自定义字段不能移动到系统页签（${targetGroup.tab.name}），只能移动到基本信息、工作信息或自定义页签`,
         );
       }
     }
@@ -604,7 +614,7 @@ export class EmployeeInfoTabService {
       this.prisma.employeeInfoTabField.update({
         where: { id: field.id },
         data: { sort: field.sort },
-      })
+      }),
     );
 
     await this.prisma.$transaction(updates);

@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -133,10 +144,7 @@ export class ShiftController {
   @Delete('shifts/:id/properties/:propertyKey')
   @RequirePermissions('shift:shift:edit')
   @ApiOperation({ summary: '删除班次属性' })
-  async deleteShiftProperty(
-    @Param('id') id: string,
-    @Param('propertyKey') propertyKey: string
-  ) {
+  async deleteShiftProperty(@Param('id') id: string, @Param('propertyKey') propertyKey: string) {
     return this.shiftService.deleteShiftProperty(+id, propertyKey);
   }
 

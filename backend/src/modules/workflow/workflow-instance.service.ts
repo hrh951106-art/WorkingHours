@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateWorkflowInstanceDto, SubmitApprovalDto, GetInstancesDto, ForceApprovalDto, InstanceStatus } from './dto/workflow-instance.dto';
+import {
+  CreateWorkflowInstanceDto,
+  SubmitApprovalDto,
+  GetInstancesDto,
+  ForceApprovalDto,
+  InstanceStatus,
+} from './dto/workflow-instance.dto';
 import { AmountCalculateService } from '../amount/amount-calculate.service';
 
 @Injectable()
@@ -15,13 +21,16 @@ export class WorkflowInstanceService {
    */
   private generateInstanceNo(category: string): string {
     const now = new Date();
-    const timestamp = now.getFullYear().toString() +
+    const timestamp =
+      now.getFullYear().toString() +
       (now.getMonth() + 1).toString().padStart(2, '0') +
       now.getDate().toString().padStart(2, '0') +
       now.getHours().toString().padStart(2, '0') +
       now.getMinutes().toString().padStart(2, '0') +
       now.getSeconds().toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const random = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0');
     const categoryPrefix = category.replace(/_/g, '');
     return `${categoryPrefix}${timestamp}${random}`;
   }
@@ -63,7 +72,9 @@ export class WorkflowInstanceService {
     const instanceNo = this.generateInstanceNo(dto.category);
 
     // 3. 获取第一个审批节点
-    const firstNode = workflow.nodes.find(n => n.sortOrder === 0 || workflow.nodes[0]?.id === n.id);
+    const firstNode = workflow.nodes.find(
+      (n) => n.sortOrder === 0 || workflow.nodes[0]?.id === n.id,
+    );
     const currentNodes = firstNode ? [firstNode.id] : [];
 
     // 4. 创建工作流实例
@@ -212,8 +223,8 @@ export class WorkflowInstanceService {
             where: { roleId },
             include: { user: true },
           });
-          const activeUserRoles = userRoles.filter(ur => ur.user.status === 'ACTIVE');
-          approvers.push(...activeUserRoles.map(ur => ({ id: ur.user.id, name: ur.user.name })));
+          const activeUserRoles = userRoles.filter((ur) => ur.user.status === 'ACTIVE');
+          approvers.push(...activeUserRoles.map((ur) => ({ id: ur.user.id, name: ur.user.name })));
         }
         console.log('[getApprovers] 旧格式找到审批人:', approvers.length);
         return approvers;
@@ -238,7 +249,7 @@ export class WorkflowInstanceService {
           },
         });
         console.log('[getApprovers] 找到用户:', users);
-        approvers.push(...users.map(u => ({ id: u.id, name: u.name })));
+        approvers.push(...users.map((u) => ({ id: u.id, name: u.name })));
       }
     } else if (strategy.type === 'role') {
       // 角色审批
@@ -254,9 +265,9 @@ export class WorkflowInstanceService {
         });
         console.log('[getApprovers] 找到角色用户关系:', userRoles.length);
         // 只返回状态为ACTIVE的用户
-        const activeUserRoles = userRoles.filter(ur => ur.user.status === 'ACTIVE');
+        const activeUserRoles = userRoles.filter((ur) => ur.user.status === 'ACTIVE');
         console.log('[getApprovers] 活跃用户:', activeUserRoles.length);
-        approvers.push(...activeUserRoles.map(ur => ({ id: ur.user.id, name: ur.user.name })));
+        approvers.push(...activeUserRoles.map((ur) => ({ id: ur.user.id, name: ur.user.name })));
       }
     } else if (strategy.type === 'org_leader') {
       // 部门主管
@@ -325,11 +336,14 @@ export class WorkflowInstanceService {
     }
 
     // 检查第一个节点的审批记录
-    const firstNodeApprovals = instance.approvals.filter(a => a.nodeId === firstNode.id);
+    const firstNodeApprovals = instance.approvals.filter((a) => a.nodeId === firstNode.id);
 
     // 如果第一个节点的所有审批记录都是自动通过的（无审批人），则流转到下一节点
     // 注意：moveToNextNode 会重新加载实例，所以不需要在这里加载 definition
-    if (firstNodeApprovals.length > 0 && firstNodeApprovals.every(a => a.action === 'APPROVED' && a.approverId === 0)) {
+    if (
+      firstNodeApprovals.length > 0 &&
+      firstNodeApprovals.every((a) => a.action === 'APPROVED' && a.approverId === 0)
+    ) {
       await this.moveToNextNode(instance, firstNode.id, false);
     }
   }
@@ -381,8 +395,8 @@ export class WorkflowInstanceService {
     }
 
     // 3. 查找当前节点的审批记录
-    const currentApprovals = instance.approvals.filter(a =>
-      currentNodes.includes(a.nodeId) && !a.action,
+    const currentApprovals = instance.approvals.filter(
+      (a) => currentNodes.includes(a.nodeId) && !a.action,
     );
 
     if (currentApprovals.length === 0) {
@@ -390,7 +404,7 @@ export class WorkflowInstanceService {
     }
 
     // 4. 验证审批权限
-    const userApproval = currentApprovals.find(a => a.approverId === userId);
+    const userApproval = currentApprovals.find((a) => a.approverId === userId);
     if (!userApproval) {
       throw new BadRequestException('您没有权限审批此节点');
     }
@@ -407,9 +421,9 @@ export class WorkflowInstanceService {
     });
 
     // 6. 判断节点是否完成
-    const nodeApprovals = instance.approvals.filter(a => a.nodeId === userApproval.nodeId);
-    const allApproved = nodeApprovals.every(a => a.action === 'APPROVED');
-    const anyRejected = nodeApprovals.some(a => a.action === 'REJECTED');
+    const nodeApprovals = instance.approvals.filter((a) => a.nodeId === userApproval.nodeId);
+    const allApproved = nodeApprovals.every((a) => a.action === 'APPROVED');
+    const anyRejected = nodeApprovals.some((a) => a.action === 'REJECTED');
 
     if (anyRejected || (allApproved && nodeApprovals.length === 1)) {
       // 节点完成，流转到下一节点
@@ -516,7 +530,10 @@ export class WorkflowInstanceService {
     });
 
     // 如果该节点的所有审批记录都是自动通过（无审批人），继续流转
-    if (approvals.length > 0 && approvals.every(a => a.action === 'APPROVED' && a.approverId === 0)) {
+    if (
+      approvals.length > 0 &&
+      approvals.every((a) => a.action === 'APPROVED' && a.approverId === 0)
+    ) {
       const instance = await this.prisma.workflowInstance.findUnique({
         where: { id: instanceId },
         include: {
@@ -665,7 +682,7 @@ export class WorkflowInstanceService {
     let filteredItems = items;
     if (keyword) {
       const keywordLower = keyword.toLowerCase();
-      filteredItems = items.filter(item => {
+      filteredItems = items.filter((item) => {
         // 搜索发起人姓名
         if (item.initiatorName && item.initiatorName.toLowerCase().includes(keywordLower)) {
           return true;
@@ -684,10 +701,16 @@ export class WorkflowInstanceService {
             }
           } else if (item.category === 'SUPPORT_REQUEST') {
             // 支援申请：搜索发起人或支援人员
-            if (data.supportEmployeeName && data.supportEmployeeName.toLowerCase().includes(keywordLower)) {
+            if (
+              data.supportEmployeeName &&
+              data.supportEmployeeName.toLowerCase().includes(keywordLower)
+            ) {
               return true;
             }
-            if (data.supportEmployeeNo && data.supportEmployeeNo.toLowerCase().includes(keywordLower)) {
+            if (
+              data.supportEmployeeNo &&
+              data.supportEmployeeNo.toLowerCase().includes(keywordLower)
+            ) {
               return true;
             }
           }
@@ -700,15 +723,15 @@ export class WorkflowInstanceService {
     }
 
     // 格式化返回数据
-    const formattedItems = filteredItems.map(item => {
+    const formattedItems = filteredItems.map((item) => {
       // 获取当前节点信息
       const currentStep = item.currentStep;
-      const currentNodes = item.definition.nodes.filter(node => node.nodeName === currentStep);
+      const currentNodes = item.definition.nodes.filter((node) => node.nodeName === currentStep);
 
       return {
         ...item,
         workflowName: item.definition.name,
-        currentNodes: currentNodes.map(node => ({
+        currentNodes: currentNodes.map((node) => ({
           id: node.id,
           name: node.nodeName,
           code: node.nodeCode,
@@ -767,7 +790,7 @@ export class WorkflowInstanceService {
     }
 
     // 2. 查找目标节点的审批记录
-    const nodeApprovals = instance.approvals.filter(a => a.nodeId === nodeId);
+    const nodeApprovals = instance.approvals.filter((a) => a.nodeId === nodeId);
 
     if (nodeApprovals.length === 0) {
       throw new NotFoundException('未找到该节点的审批记录');
@@ -775,7 +798,7 @@ export class WorkflowInstanceService {
 
     // 3. 更新所有该节点的审批记录为管理员强制通过
     await Promise.all(
-      nodeApprovals.map(approval =>
+      nodeApprovals.map((approval) =>
         this.prisma.workflowApproval.update({
           where: { id: approval.id },
           data: {
@@ -784,8 +807,8 @@ export class WorkflowInstanceService {
             approvedAt: new Date(),
             status: 'APPROVED',
           },
-        })
-      )
+        }),
+      ),
     );
 
     // 4. 流转到下一节点
@@ -800,7 +823,10 @@ export class WorkflowInstanceService {
   /**
    * 根据参与人配置code获取审批人列表
    */
-  private async getApproversByParticipantCode(code: string, context: CreateWorkflowInstanceDto): Promise<any[]> {
+  private async getApproversByParticipantCode(
+    code: string,
+    context: CreateWorkflowInstanceDto,
+  ): Promise<any[]> {
     const approvers: any[] = [];
 
     console.log('[getApproversByParticipantCode] 查询参与人配置:', code);
@@ -820,7 +846,9 @@ export class WorkflowInstanceService {
       return approvers;
     }
 
-    console.log(`[getApproversByParticipantCode] 找到参与人配置: ${participantConfig.name}, 类型: ${participantConfig.type}`);
+    console.log(
+      `[getApproversByParticipantCode] 找到参与人配置: ${participantConfig.name}, 类型: ${participantConfig.type}`,
+    );
 
     // 解析配置
     let config: any = {};
@@ -833,7 +861,9 @@ export class WorkflowInstanceService {
     // 解析participants
     let participants: any[] = [];
     try {
-      participants = participantConfig.participants ? JSON.parse(participantConfig.participants) : [];
+      participants = participantConfig.participants
+        ? JSON.parse(participantConfig.participants)
+        : [];
     } catch (e) {
       console.error('[getApproversByParticipantCode] 解析participants失败:', e);
     }
@@ -852,7 +882,7 @@ export class WorkflowInstanceService {
               status: 'ACTIVE',
             },
           });
-          approvers.push(...users.map(u => ({ id: u.id, name: u.name })));
+          approvers.push(...users.map((u) => ({ id: u.id, name: u.name })));
         }
         break;
 
@@ -863,11 +893,19 @@ export class WorkflowInstanceService {
           const subjectType = participants[0].subjectType;
           const orgLevel = participants[0].orgLevel;
 
-          console.log('[getApproversByParticipantCode] subjectType:', subjectType, 'orgLevel:', orgLevel);
+          console.log(
+            '[getApproversByParticipantCode] subjectType:',
+            subjectType,
+            'orgLevel:',
+            orgLevel,
+          );
 
           // 如果是SUBMITTER，从context中获取发起人信息
           if (subjectType === 'SUBMITTER' && context.initiatorOrgId) {
-            console.log('[getApproversByParticipantCode] 获取提交人所在组��主管, orgId:', context.initiatorOrgId);
+            console.log(
+              '[getApproversByParticipantCode] 获取提交人所在组��主管, orgId:',
+              context.initiatorOrgId,
+            );
 
             // 查询组织信息
             const org = await this.prisma.organization.findUnique({
@@ -898,7 +936,10 @@ export class WorkflowInstanceService {
                   approvers.push({ id: user.id, name: user.name });
                   console.log('[getApproversByParticipantCode] 找到组织主管:', user.name);
                 } else {
-                  console.log('[getApproversByParticipantCode] 未找到对应的User, employeeNo:', employee.employeeNo);
+                  console.log(
+                    '[getApproversByParticipantCode] 未找到对应的User, employeeNo:',
+                    employee.employeeNo,
+                  );
                 }
               }
             }
@@ -917,8 +958,10 @@ export class WorkflowInstanceService {
               where: { roleId },
               include: { user: true },
             });
-            const activeUserRoles = userRoles.filter(ur => ur.user.status === 'ACTIVE');
-            approvers.push(...activeUserRoles.map(ur => ({ id: ur.user.id, name: ur.user.name })));
+            const activeUserRoles = userRoles.filter((ur) => ur.user.status === 'ACTIVE');
+            approvers.push(
+              ...activeUserRoles.map((ur) => ({ id: ur.user.id, name: ur.user.name })),
+            );
           }
         }
         break;
@@ -989,7 +1032,10 @@ export class WorkflowInstanceService {
     const remainingNodes = nodes.slice(startIndex);
 
     console.log(`[forceApproval] 剩余节点数量: ${remainingNodes.length}`);
-    console.log(`[forceApproval] 剩余节点:`, remainingNodes.map((n: any) => n.nodeName));
+    console.log(
+      `[forceApproval] 剩余节点:`,
+      remainingNodes.map((n: any) => n.nodeName),
+    );
 
     // 5. 批量强制通过所有剩余节点
     let totalUpdated = 0;
@@ -1005,7 +1051,9 @@ export class WorkflowInstanceService {
           },
         });
 
-        console.log(`[forceApproval] 节点 ${node.nodeName} 待审批记录数: ${pendingApprovals.length}`);
+        console.log(
+          `[forceApproval] 节点 ${node.nodeName} 待审批记录数: ${pendingApprovals.length}`,
+        );
 
         if (pendingApprovals.length === 0) {
           // 如果该节点没有待审批记录，检查是否所有记录都已审批
@@ -1019,7 +1067,7 @@ export class WorkflowInstanceService {
           console.log(`[forceApproval] 节点 ${node.nodeName} 总审批记录数: ${allApprovals.length}`);
 
           // 如果所有记录都已审批（status不是PENDING），跳过
-          if (allApprovals.length > 0 && allApprovals.every(a => a.status !== 'PENDING')) {
+          if (allApprovals.length > 0 && allApprovals.every((a) => a.status !== 'PENDING')) {
             console.log(`[forceApproval] 节点 ${node.nodeName} 所有记录已审批，跳过`);
             continue;
           }
@@ -1126,7 +1174,12 @@ export class WorkflowInstanceService {
         return;
       }
 
-      console.log(`[handleLaborHourReportCompleted] 找到 ${laborHourReports.length} 条工时报工申请记录`);
+      console.log(
+        `[handleLaborHourReportCompleted] 找到 ${laborHourReports.length} 条工时报工申请记录`,
+      );
+
+      // 收集所有创建的 WorkHourResult ID，用于异步金额计算
+      const allCreatedWorkHourResultIds: number[] = [];
 
       // 4. 处理每条工时报工申请记录
       await this.prisma.$transaction(async (tx) => {
@@ -1142,41 +1195,73 @@ export class WorkflowInstanceService {
             },
           });
 
-          console.log(`[handleLaborHourReportCompleted] 申请 ${report.requestNo} 状态已更新为 APPROVED`);
+          console.log(
+            `[handleLaborHourReportCompleted] 申请 ${report.requestNo} 状态已更新为 APPROVED`,
+          );
 
           // 查询报工员工列表
           const reportEmployees = await tx.laborHourReportEmployee.findMany({
             where: { requestId: report.id },
           });
 
-          console.log(`[handleLaborHourReportCompleted] 申请 ${report.requestNo} 包含 ${reportEmployees.length} 个员工`);
+          console.log(
+            `[handleLaborHourReportCompleted] 申请 ${report.requestNo} 包含 ${reportEmployees.length} 个员工`,
+          );
 
           // 根据报工模式处理数据
           if (report.reportMode === 'personal') {
             // 个人报工：只写入主员工数据
-            await this.createWorkHourResult(tx, report, report.employeeId, report.employeeNo, report.employeeName);
+            const workHourResultId = await this.createWorkHourResult(
+              tx,
+              report,
+              report.employeeId,
+              report.employeeNo,
+              report.employeeName,
+            );
+            if (workHourResultId) {
+              allCreatedWorkHourResultIds.push(workHourResultId);
+            }
           } else if (report.reportMode === 'team') {
             // 团队报工：写入所有团队成员数据（包含员工独立工时明细）
             for (const employee of reportEmployees) {
-              await this.createWorkHourResult(
+              const workHourResultId = await this.createWorkHourResult(
                 tx,
                 report,
                 employee.employeeId,
                 employee.employeeNo,
                 employee.employeeName,
                 {
-                  startTime: employee.startTime,   // ✅ 传递员工独立开始时间
-                  endTime: employee.endTime,       // ✅ 传递员工独立结束时间
-                  value: employee.value,           // ✅ 传递员工独立工时数量
+                  startTime: employee.startTime, // ✅ 传递员工独立开始时间
+                  endTime: employee.endTime, // ✅ 传递员工独立结束时间
+                  value: employee.value, // ✅ 传递员工独立工时数量
                   description: employee.description, // ✅ 传递员工独立描述
-                }
+                },
               );
+              if (workHourResultId) {
+                allCreatedWorkHourResultIds.push(workHourResultId);
+              }
             }
           }
+
+          // ✅ WorkHourResult ID 已收集到 allCreatedWorkHourResultIds 数组
+          // 事务提交后将进行异步金额计算
         }
       });
 
-      console.log('[handleLaborHourReportCompleted] 工时报工数据处理完成');
+      console.log('[handleLaborHourReportCompleted] 工时报表数据处理完成');
+
+      // ✅ 事务提交成功后，异步计算所有创建的 WorkHourResult 的金额
+      if (allCreatedWorkHourResultIds && allCreatedWorkHourResultIds.length > 0) {
+        console.log(`[异步金额计算] 准备为 ${allCreatedWorkHourResultIds.length} 个 WorkHourResult 计算金额`);
+
+        // 异步计算金额（不阻塞主流程）
+        setImmediate(async () => {
+          for (const workHourResultId of allCreatedWorkHourResultIds) {
+            await this.calculateWorkHourResultAmount(workHourResultId);
+          }
+          console.log('[异步金额计算] 所有 WorkHourResult 金额计算完成');
+        });
+      }
     } catch (error) {
       console.error('[handleLaborHourReportCompleted] 处理工时报工数据失败:', error);
       console.error('[handleLaborHourReportCompleted] 错误详情:', error?.message || error);
@@ -1287,9 +1372,27 @@ export class WorkflowInstanceService {
 
     console.log('[createWorkHourResult] 使用数据:');
     console.log('  员工独立数据存在?', !!employeeDetailData);
-    console.log('  开始时间:', effectiveStartTime, '(来源:', employeeDetailData?.startTime ? '员工独立' : '主记录', ')');
-    console.log('  结束时间:', effectiveEndTime, '(来源:', employeeDetailData?.endTime ? '员工独立' : '主记录', ')');
-    console.log('  工时数量:', effectiveValue, '(来源:', employeeDetailData?.value !== undefined ? '员工独立' : '主记录', ')');
+    console.log(
+      '  开始时间:',
+      effectiveStartTime,
+      '(来源:',
+      employeeDetailData?.startTime ? '员工独立' : '主记录',
+      ')',
+    );
+    console.log(
+      '  结束时间:',
+      effectiveEndTime,
+      '(来源:',
+      employeeDetailData?.endTime ? '员工独立' : '主记录',
+      ')',
+    );
+    console.log(
+      '  工时数量:',
+      effectiveValue,
+      '(来源:',
+      employeeDetailData?.value !== undefined ? '员工独立' : '主记录',
+      ')',
+    );
     console.log('  描述:', effectiveDescription);
 
     // 构建工作时间（使用本地时间）
@@ -1317,28 +1420,33 @@ export class WorkflowInstanceService {
     }
 
     // ✅ 暂时跳过金额计算，避免在事务中调用外部服务导致问题
-    let amount = 0;
-    const calcAttendanceCode = definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code;
+    const amount = 0;
+    const calcAttendanceCode =
+      definitionAttendanceCode.calcAttendanceCode || definitionAttendanceCode.code;
 
     // 写入工时结果表
-    await tx.workHourResult.create({
+    const result = await tx.workHourResult.create({
       data: {
         employeeNo: employeeNo || '',
         employeeId: employeeId,
         workDate: workDate,
-        calcDate: workDate, // ✅ 修复：使用 workDate 而不是 new Date()
-        definitionAttendanceCodeId: definitionAttendanceCode.id, // ✅ 添加新字段
-        definitionAttendanceCodeStr: definitionAttendanceCode.code, // ✅ 修复：存储代码而非名称
-        calcAttendanceCode: calcAttendanceCode, // ✅ 添加新字段
+        calcDate: workDate,
+        definitionAttendanceCode: {
+          connect: {
+            id: definitionAttendanceCode.id
+          }
+        },
+        definitionAttendanceCodeStr: definitionAttendanceCode.code, // 存储代码字符串用于快速查询
+        calcAttendanceCode: calcAttendanceCode, // 计算出勤代码
         attendanceCode: report.hourType, // 保留旧字段以兼容
         attendanceCodeName: report.hourTypeName, // 保留旧字段以兼容
-        workHours: effectiveValue, // ✅ 修复：使用员工独立工时数据
-        description: effectiveDescription, // ✅ 添加：使用员工独立描述
-        amount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
-        calculateAmount: Math.round(amount * 100) / 100, // ✅ 添加计算出的金额
+        workHours: effectiveValue, // 使用员工独立工时数据
+        // 注意：描述信息存储在 customFields 中
+        amount: Math.round(amount * 100) / 100, // 计算出的金额
+        calculateAmount: Math.round(amount * 100) / 100, // 计算出的金额
         accountId: report.accountId,
-        accountName: account.namePath || account.name, // ✅ 修复：使用名称路径或名称
-        accountPath: account.path, // ✅ 修复：使用代码路径
+        accountName: account.namePath || account.name, // 使用名称路径或名称
+        accountPath: account.path, // 使用代码路径
         sourceType: 'LABOR_HOUR_REPORT', // 标记为工时报工填报数据
         sourceId: report.id,
         source: `工时报表申请: ${report.title}`,
@@ -1348,16 +1456,65 @@ export class WorkflowInstanceService {
           isManualInput: true, // 标记为手工填报数据
           requestNo: report.requestNo, // 申请单号
           reportMode: report.reportMode, // 报工模式
-          description: report.description, // 备注说明
+          description: effectiveDescription || report.description, // 备注说明
           localStartTime: localStartTimeStr, // 保存本地时间字符串
           localEndTime: localEndTimeStr, // 保存本地时间字符串
         }),
-        status: 'PENDING', // ✅ 修复：使用 PENDING 状态，与数据库默认值一致
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        status: 'PENDING',
       },
     });
 
-    console.log(`[createWorkHourResult] 已创建工时结果: 员工=${employeeName}, 工时=${effectiveValue}小时, 类型=${report.hourTypeName}`);
+    console.log(
+      `[createWorkHourResult] 已创建工时结果: 员工=${employeeName}, 工时=${effectiveValue}小时, 类型=${report.hourTypeName}`,
+    );
+
+    // 返回创建的记录ID，用于后续异步金额计算
+    return result.id;
+  }
+
+  /**
+   * 异步计算并更新 WorkHourResult 的金额
+   */
+  private async calculateWorkHourResultAmount(workHourResultId: number) {
+    try {
+      console.log(`[异步金额计算] 开始计算 WorkHourResult ID: ${workHourResultId}`);
+
+      // 1. 获取 WorkHourResult 记录
+      const workHourResult = await this.prisma.workHourResult.findUnique({
+        where: { id: workHourResultId },
+      });
+
+      if (!workHourResult) {
+        console.log(`[异步金额计算] WorkHourResult ID ${workHourResultId} 不存在`);
+        return;
+      }
+
+      // 2. 调用金额计算服务
+      const calculatedAmount = await this.amountCalculateService.calculateAmountByNo({
+        employeeNo: workHourResult.employeeNo,
+        workHours: workHourResult.workHours,
+        attendanceCode: workHourResult.calcAttendanceCode || workHourResult.attendanceCode || '',
+        accountPath: workHourResult.accountPath || '',
+        calcDate: workHourResult.workDate,
+      });
+
+      console.log(
+        `[异步金额计算] 员工=${workHourResult.employeeNo}, 工时=${workHourResult.workHours}, 计算金额=${calculatedAmount}`,
+      );
+
+      // 3. 更新 WorkHourResult 的金额字段
+      await this.prisma.workHourResult.update({
+        where: { id: workHourResultId },
+        data: {
+          amount: calculatedAmount,
+          calculateAmount: calculatedAmount,
+        },
+      });
+
+      console.log(`[异步金额计算] ✅ 已更新 WorkHourResult ID: ${workHourResultId}, 金额=${calculatedAmount}`);
+    } catch (error) {
+      console.error(`[异步金额计算] ❌ 计算 WorkHourResult ID ${workHourResultId} 失败:`, error.message);
+      // 不抛出异常，避免影响其他记录的计算
+    }
   }
 }

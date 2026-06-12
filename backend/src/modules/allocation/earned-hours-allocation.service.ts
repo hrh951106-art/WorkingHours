@@ -12,11 +12,11 @@ export class EarnedHoursAllocationService {
    */
   async executeEarnedHoursAllocation(dto: any) {
     const {
-      configId,          // 挣得工时配置ID
-      startDate,         // 计算开始日期
-      endDate,           // 计算结束日期
-      executeById,       // 执行人ID
-      executeByName,     // 执行人姓名
+      configId, // 挣得工时配置ID
+      startDate, // 计算开始日期
+      endDate, // 计算结束日期
+      executeById, // 执行人ID
+      executeByName, // 执行人姓名
     } = dto;
 
     this.logger.log(`[挣得工时分摊] 开始执行计算`);
@@ -99,7 +99,7 @@ export class EarnedHoursAllocationService {
     // 每个分组应该独立计算分摊，生成独立的批次号
     const recordGroups = new Map<string, any[]>();
 
-    productionRecords.forEach(record => {
+    productionRecords.forEach((record) => {
       // 日期需要转换为统一的格式（去掉时分秒）
       const dateKey = new Date(record.recordDate).toISOString().split('T')[0];
       const groupKey = `${dateKey}_${record.orgId}`;
@@ -135,7 +135,9 @@ export class EarnedHoursAllocationService {
       // 为每个分组生成独立的批次号
       const batchNo = `EHA-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-      this.logger.log(`处理分组 ${groupKey}，共 ${groupRecords.length} 条生产记录，批次号: ${batchNo}`);
+      this.logger.log(
+        `处理分组 ${groupKey}，共 ${groupRecords.length} 条生产记录，批次号: ${batchNo}`,
+      );
 
       // 合并同一分组的产量
       let totalQty = 0;
@@ -221,7 +223,7 @@ export class EarnedHoursAllocationService {
     recordDate.setHours(0, 0, 0, 0);
 
     this.logger.log(
-      `查询标准工时配置: productId=${record.productId}, orgId=${record.orgId}, orgName=${record.orgName}, recordDate=${recordDate.toISOString().substring(0, 10)}`
+      `查询标准工时配置: productId=${record.productId}, orgId=${record.orgId}, orgName=${record.orgName}, recordDate=${recordDate.toISOString().substring(0, 10)}`,
     );
 
     // 使用智能匹配逻辑查找标准工时配置
@@ -229,13 +231,11 @@ export class EarnedHoursAllocationService {
       record.productId,
       record.orgId,
       record.orgName || '',
-      recordDate
+      recordDate,
     );
 
     if (!finalConfig) {
-      this.logger.warn(
-        `未找到产品 ${record.productName} (ID:${record.productId}) 的标准工时配置`
-      );
+      this.logger.warn(`未找到产品 ${record.productName} (ID:${record.productId}) 的标准工时配置`);
       return null;
     }
 
@@ -245,7 +245,7 @@ export class EarnedHoursAllocationService {
     const totalEarnedHours = (record.actualQty / quantity) * standardHours;
 
     this.logger.log(
-      `生产记录: ${record.productName}, 产量: ${record.actualQty}, 标准配置: ${quantity}件=${standardHours}小时, 总得工时: ${totalEarnedHours.toFixed(2)}`
+      `生产记录: ${record.productName}, 产量: ${record.actualQty}, 标准配置: ${quantity}件=${standardHours}小时, 总得工时: ${totalEarnedHours.toFixed(2)}`,
     );
 
     if (totalEarnedHours <= 0) {
@@ -264,7 +264,7 @@ export class EarnedHoursAllocationService {
     const filteredAccounts = await this.filterAccountsByWorkHours(
       lineAccounts,
       workHoursFilter,
-      record.recordDate
+      record.recordDate,
     );
 
     this.logger.log(`过滤后的账户数量: ${filteredAccounts.length}`);
@@ -278,7 +278,7 @@ export class EarnedHoursAllocationService {
       filteredAccounts.map((a) => a.id),
       workHoursFilter.attendanceCodes,
       record.recordDate,
-      record
+      record,
     );
 
     this.logger.log(`账户下有工时的员工数量: ${employeesWithHours.length}`);
@@ -288,10 +288,7 @@ export class EarnedHoursAllocationService {
     }
 
     // 5. 根据人员筛选条件过滤员工
-    const filteredEmployees = await this.filterEmployees(
-      employeesWithHours,
-      employeeFilter
-    );
+    const filteredEmployees = await this.filterEmployees(employeesWithHours, employeeFilter);
 
     this.logger.log(`过滤后的员工数量: ${filteredEmployees.length}`);
 
@@ -300,10 +297,7 @@ export class EarnedHoursAllocationService {
     }
 
     // 6. 计算总工时
-    const totalWorkHours = filteredEmployees.reduce(
-      (sum, emp) => sum + (emp.workHours || 0),
-      0
-    );
+    const totalWorkHours = filteredEmployees.reduce((sum, emp) => sum + (emp.workHours || 0), 0);
 
     this.logger.log(`总工时: ${totalWorkHours}`);
 
@@ -359,10 +353,7 @@ export class EarnedHoursAllocationService {
         employeeId,
         type: 'MAIN',
         effectiveDate: { lte: targetDate },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gt: targetDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gt: targetDate } }],
       },
       orderBy: { level: 'desc' },
       take: 1,
@@ -386,7 +377,7 @@ export class EarnedHoursAllocationService {
    * 从 path 字符串解析出 hierarchyValues
    */
   private parsePathToHierarchyValues(path: string): string {
-    const segments = path.split('/').filter(s => s !== '');
+    const segments = path.split('/').filter((s) => s !== '');
 
     while (segments.length < 7) {
       segments.push('-');
@@ -454,8 +445,7 @@ export class EarnedHoursAllocationService {
       }
     });
 
-    const mergedValues = Array.from(mergedValuesMap.values())
-      .sort((a, b) => a.level - b.level);
+    const mergedValues = Array.from(mergedValuesMap.values()).sort((a, b) => a.level - b.level);
 
     return {
       id: priorityAccount.id,
@@ -469,8 +459,8 @@ export class EarnedHoursAllocationService {
    */
   private buildNamePath(hierarchyValues: any[]): string {
     return hierarchyValues
-      .filter(v => v.selectedValue)
-      .map(v => {
+      .filter((v) => v.selectedValue)
+      .map((v) => {
         if (v.selectedValueLabel) {
           return v.selectedValueLabel;
         }
@@ -485,11 +475,7 @@ export class EarnedHoursAllocationService {
   /**
    * 根据工时筛选条件过滤账户（实现层级筛选）
    */
-  private async filterAccountsByWorkHours(
-    accounts: any[],
-    workHoursFilter: any,
-    calcDate: Date
-  ) {
+  private async filterAccountsByWorkHours(accounts: any[], workHoursFilter: any, calcDate: Date) {
     if (!workHoursFilter.hierarchySelections || workHoursFilter.hierarchySelections.length === 0) {
       return accounts;
     }
@@ -499,9 +485,7 @@ export class EarnedHoursAllocationService {
     for (const account of accounts) {
       try {
         const hierarchyValues = JSON.parse(account.hierarchyValues || '[]');
-        const hierarchyValuesMap = new Map(
-          hierarchyValues.map((hv: any) => [hv.levelId, hv])
-        );
+        const hierarchyValuesMap = new Map(hierarchyValues.map((hv: any) => [hv.levelId, hv]));
 
         let match = true;
         for (const selection of workHoursFilter.hierarchySelections) {
@@ -512,7 +496,8 @@ export class EarnedHoursAllocationService {
           }
 
           // 优先使用 code 进行匹配（配置中存储的是 code），其次使用 id 或 value
-          const accountValueId = hv.selectedValue?.code || hv.selectedValue?.id || hv.selectedValue?.value;
+          const accountValueId =
+            hv.selectedValue?.code || hv.selectedValue?.id || hv.selectedValue?.value;
           if (!selection.valueIds.includes(accountValueId)) {
             match = false;
             break;
@@ -539,7 +524,7 @@ export class EarnedHoursAllocationService {
     accountIds: number[],
     attendanceCodes: string[],
     calcDate: Date,
-    productionRecord: any
+    productionRecord: any,
   ) {
     // 获取这些账户的路径
     const accounts = await this.prisma.laborAccount.findMany({
@@ -577,7 +562,9 @@ export class EarnedHoursAllocationService {
       where.attendanceCode = { in: attendanceCodes };
     }
 
-    this.logger.log(`查询工时结果条件: 日期=${calcDate.toISOString().substring(0, 10)}, 账户路径数=${accountPaths.size}, 出勤代码=${attendanceCodes.join(',')}`);
+    this.logger.log(
+      `查询工时结果条件: 日期=${calcDate.toISOString().substring(0, 10)}, 账户路径数=${accountPaths.size}, 出勤代码=${attendanceCodes.join(',')}`,
+    );
     this.logger.log(`账户路径列表: ${Array.from(accountPaths).join(', ')}`);
 
     // 查询工时结果
@@ -637,15 +624,16 @@ export class EarnedHoursAllocationService {
           accountsToMerge.push(mainAccount);
         }
 
-        const mergedAccount = accountsToMerge.length > 0
-          ? this.mergeMultipleAccounts(accountsToMerge)
-          : (workHourAccount || mainAccount || { id: whr.accountId, namePath: whr.accountName });
+        const mergedAccount =
+          accountsToMerge.length > 0
+            ? this.mergeMultipleAccounts(accountsToMerge)
+            : workHourAccount || mainAccount || { id: whr.accountId, namePath: whr.accountName };
 
         this.logger.debug(
           `员工 ${whr.employeeNo}: ` +
-          `工时账户[${whr.accountName || whr.accountPath}]` +
-          (mainAccount ? ` + 主账户[${mainAccount.namePath}]` : '') +
-          ` = 合并账户[${mergedAccount.namePath}]`
+            `工时账户[${whr.accountName || whr.accountPath}]` +
+            (mainAccount ? ` + 主账户[${mainAccount.namePath}]` : '') +
+            ` = 合并账户[${mergedAccount.namePath}]`,
         );
 
         employeeHoursMap.set(key, {
@@ -663,8 +651,8 @@ export class EarnedHoursAllocationService {
         });
       } else {
         const existing = employeeHoursMap.get(key);
-        existing.workHours += (whr.workHours || 0);
-        existing.amount += (whr.amount || 0);
+        existing.workHours += whr.workHours || 0;
+        existing.amount += whr.amount || 0;
       }
     }
 
@@ -694,10 +682,7 @@ export class EarnedHoursAllocationService {
 
           // 在字段组内，所有条件都要满足（AND关系）
           for (const condition of fieldGroup.conditions) {
-            const employeeMatch = await this.checkEmployeeCondition(
-              employee,
-              condition
-            );
+            const employeeMatch = await this.checkEmployeeCondition(employee, condition);
 
             if (!employeeMatch) {
               match = false;
@@ -750,10 +735,7 @@ export class EarnedHoursAllocationService {
       const workInfo = await this.prisma.workInfoHistory.findFirst({
         where: {
           employeeId: employeeInfo.id,
-          OR: [
-            { endDate: null },
-            { endDate: { gte: new Date() } }
-          ]
+          OR: [{ endDate: null }, { endDate: { gte: new Date() } }],
         },
         orderBy: {
           effectiveDate: 'desc', // 获取最新的生效记录
@@ -782,9 +764,9 @@ export class EarnedHoursAllocationService {
     const passes = this.compareValues(fieldValue, operator, value);
     this.logger.log(
       `员工筛选: ${employeeInfo.name}(${employeeInfo.employeeNo}) - ` +
-      `字段[${fieldName || fieldCode}] = ${fieldValue ?? 'undefined'}, ` +
-      `操作符[${operator}], 值[${value}], ` +
-      `结果: ${passes ? '✅通过' : '❌未通过'}`
+        `字段[${fieldName || fieldCode}] = ${fieldValue ?? 'undefined'}, ` +
+        `操作符[${operator}], 值[${value}], ` +
+        `结果: ${passes ? '✅通过' : '❌未通过'}`,
     );
 
     return passes;
@@ -895,17 +877,19 @@ export class EarnedHoursAllocationService {
     });
 
     if (deletedCount.count > 0) {
-      this.logger.log(`清理旧数据: configId=${configId}, rule=${rule.ruleName}, account=${productionRecord.orgId}, date=${recordDate.toISOString().substring(0,10)}, 删除 ${deletedCount.count} 条记录`);
+      this.logger.log(
+        `清理旧数据: configId=${configId}, rule=${rule.ruleName}, account=${productionRecord.orgId}, date=${recordDate.toISOString().substring(0, 10)}, 删除 ${deletedCount.count} 条记录`,
+      );
     }
 
     // 获取员工详细信息
-    const employeeNos = employees.map(e => e.employeeNo);
+    const employeeNos = employees.map((e) => e.employeeNo);
     const employeeDetails = await this.prisma.employee.findMany({
       where: { employeeNo: { in: employeeNos } },
       select: { employeeNo: true, name: true },
     });
 
-    const employeeMap = new Map(employeeDetails.map(e => [e.employeeNo, e.name]));
+    const employeeMap = new Map(employeeDetails.map((e) => [e.employeeNo, e.name]));
 
     if (rule.allocationBasis === 'ACTUAL_HOURS') {
       // 按实际工时比例分摊
@@ -955,7 +939,7 @@ export class EarnedHoursAllocationService {
         });
 
         this.logger.log(
-          `员工 ${employee.employeeNo}: 工时=${employee.workHours}, 比例=${ratio.toFixed(4)}, 分得工时=${allocatedHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`
+          `员工 ${employee.employeeNo}: 工时=${employee.workHours}, 比例=${ratio.toFixed(4)}, 分得工时=${allocatedHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`,
         );
       }
     } else if (rule.allocationBasis === 'ACTUAL_HOURS_COEFFICIENT') {
@@ -1013,7 +997,7 @@ export class EarnedHoursAllocationService {
         });
 
         this.logger.log(
-          `员工 ${employee.employeeNo}: 金额=${employee.amount}, 比例=${ratio.toFixed(4)}, 分得工时=${allocatedHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`
+          `员工 ${employee.employeeNo}: 金额=${employee.amount}, 比例=${ratio.toFixed(4)}, 分得工时=${allocatedHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`,
         );
       }
     } else if (rule.allocationBasis === 'AVERAGE') {
@@ -1065,7 +1049,7 @@ export class EarnedHoursAllocationService {
         });
 
         this.logger.log(
-          `员工 ${employee.employeeNo}: 分得工时=${perPersonHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`
+          `员工 ${employee.employeeNo}: 分得工时=${perPersonHours.toFixed(2)}, 合并账户=${mergedAccount.namePath}`,
         );
       }
     }
@@ -1101,7 +1085,9 @@ export class EarnedHoursAllocationService {
       take = pageSize;
     }
 
-    this.logger.log(`[挣得工时查询] usePagination=${usePagination}, skip=${skip}, take=${take === undefined ? 'undefined(获取全部)' : take}`);
+    this.logger.log(
+      `[挣得工时查询] usePagination=${usePagination}, skip=${skip}, take=${take === undefined ? 'undefined(获取全部)' : take}`,
+    );
 
     const where: any = {};
 
@@ -1124,7 +1110,7 @@ export class EarnedHoursAllocationService {
     ]);
 
     // 计算每个批次的总挣得工时（通过 SUM(allocatedHours)）
-    const batchNoList = [...new Set(list.map(item => item.batchNo))];
+    const batchNoList = [...new Set(list.map((item) => item.batchNo))];
     const batchTotalEarnedHours = new Map<string, number>();
 
     await Promise.all(
@@ -1136,7 +1122,7 @@ export class EarnedHoursAllocationService {
           },
         });
         batchTotalEarnedHours.set(batchNo, result._sum.allocatedHours || 0);
-      })
+      }),
     );
 
     // 关联生产记录和配置信息
@@ -1179,26 +1165,33 @@ export class EarnedHoursAllocationService {
           ...item,
           totalEarnedHours, // 添加总挣得工时字段
           allocationBasis, // 添加分摊方式字段
-          productionRecord: productionRecord ? {
-            productName: productionRecord.productName,
-            productCode: productionRecord.productCode,
-            actualQty: productionRecord.actualQty,
-            totalStdHours: productionRecord.totalStdHours > 0 ? productionRecord.totalStdHours : totalEarnedHours,
-            lineName: productionRecord.lineName,
-            shiftName: productionRecord.shiftName,
-          } : {
-            // 如果找不到生产记录，使用总挣得工时
-            productName: '未知产品',
-            productCode: '-',
-            actualQty: 0,
-            totalStdHours: totalEarnedHours,
-            lineName: null,
-            shiftName: null,
-          },
-          config: config ? {
-            configCode: config.code,
-            configName: config.configName || config.name,
-          } : null,
+          productionRecord: productionRecord
+            ? {
+                productName: productionRecord.productName,
+                productCode: productionRecord.productCode,
+                actualQty: productionRecord.actualQty,
+                totalStdHours:
+                  productionRecord.totalStdHours > 0
+                    ? productionRecord.totalStdHours
+                    : totalEarnedHours,
+                lineName: productionRecord.lineName,
+                shiftName: productionRecord.shiftName,
+              }
+            : {
+                // 如果找不到生产记录，使用总挣得工时
+                productName: '未知产品',
+                productCode: '-',
+                actualQty: 0,
+                totalStdHours: totalEarnedHours,
+                lineName: null,
+                shiftName: null,
+              },
+          config: config
+            ? {
+                configCode: config.code,
+                configName: config.configName || config.name,
+              }
+            : null,
           ruleName,
           ruleCode,
           rule: {
@@ -1206,7 +1199,7 @@ export class EarnedHoursAllocationService {
             ruleName,
           },
         };
-      })
+      }),
     );
 
     return {
@@ -1259,7 +1252,9 @@ export class EarnedHoursAllocationService {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
-    this.logger.log(`[统一挣得工时报表] 查询条件: startDate=${startDate}, endDate=${endDate}, employeeNo=${employeeNo}, orgId=${orgId}, productId=${productId}`);
+    this.logger.log(
+      `[统一挣得工时报表] 查询条件: startDate=${startDate}, endDate=${endDate}, employeeNo=${employeeNo}, orgId=${orgId}, productId=${productId}`,
+    );
 
     // 使用Map来聚合数据，key格式: 日期_员工号_账户ID_产品ID
     const dataMap = new Map<string, any>();
@@ -1297,7 +1292,7 @@ export class EarnedHoursAllocationService {
           record.productId,
           record.orgId,
           record.orgName,
-          recordDate
+          recordDate,
         );
 
         if (standardConfig) {
@@ -1382,7 +1377,7 @@ export class EarnedHoursAllocationService {
           productionRecord.productId,
           allocation.sourceAccountId!,
           allocation.sourceAccountName || '',
-          recordDate
+          recordDate,
         );
 
         if (standardConfig) {
@@ -1437,11 +1432,19 @@ export class EarnedHoursAllocationService {
     // 汇总统计
     const totalRecords = results.length;
     const totalQty = results.reduce((sum, r) => sum + (r.actualQty || 0), 0);
-    const totalTeamAllocatedHours = results.reduce((sum, r) => sum + (r.teamAllocatedHours || 0), 0);
-    const totalPersonalEarnedHours = results.reduce((sum, r) => sum + (r.personalEarnedHours || 0), 0);
+    const totalTeamAllocatedHours = results.reduce(
+      (sum, r) => sum + (r.teamAllocatedHours || 0),
+      0,
+    );
+    const totalPersonalEarnedHours = results.reduce(
+      (sum, r) => sum + (r.personalEarnedHours || 0),
+      0,
+    );
     const totalEarnedHours = results.reduce((sum, r) => sum + (r.totalEarnedHours || 0), 0);
 
-    this.logger.log(`[统一挣得工时报表] 汇总: ${totalRecords} 条记录, 总产量: ${totalQty}, 团队分摊: ${totalTeamAllocatedHours}, 个人挣得: ${totalPersonalEarnedHours}, 总计: ${totalEarnedHours}`);
+    this.logger.log(
+      `[统一挣得工时报表] 汇总: ${totalRecords} 条记录, 总产量: ${totalQty}, 团队分摊: ${totalTeamAllocatedHours}, 个人挣得: ${totalPersonalEarnedHours}, 总计: ${totalEarnedHours}`,
+    );
 
     return {
       items: results,
@@ -1466,7 +1469,9 @@ export class EarnedHoursAllocationService {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
-    this.logger.log(`[团队产量挣得工时] 查询条件: startDate=${startDate}, endDate=${endDate}, orgId=${orgId}, productId=${productId}`);
+    this.logger.log(
+      `[团队产量挣得工时] 查询条件: startDate=${startDate}, endDate=${endDate}, orgId=${orgId}, productId=${productId}`,
+    );
 
     // 构建查询条件
     const allocationWhere: any = {
@@ -1500,8 +1505,12 @@ export class EarnedHoursAllocationService {
     }
 
     // 获取相关的生产记录信息
-    const recordDates = [...new Set(allocationResults.map(r => r.recordDate.toISOString().split('T')[0]))];
-    const sourceAccountIds = [...new Set(allocationResults.map(r => r.sourceAccountId).filter(Boolean))];
+    const recordDates = [
+      ...new Set(allocationResults.map((r) => r.recordDate.toISOString().split('T')[0])),
+    ];
+    const sourceAccountIds = [
+      ...new Set(allocationResults.map((r) => r.sourceAccountId).filter(Boolean)),
+    ];
 
     // 查询生产记录
     const productionWhere: any = {
@@ -1544,7 +1553,7 @@ export class EarnedHoursAllocationService {
             productionRecord.productId,
             allocation.sourceAccountId!,
             allocation.sourceAccountName || '',
-            recordDate
+            recordDate,
           );
 
           if (standardConfig) {
@@ -1597,7 +1606,9 @@ export class EarnedHoursAllocationService {
     const totalQty = results.reduce((sum, r) => sum + (r.actualQty || 0), 0);
     const totalEarnedHours = results.reduce((sum, r) => sum + (r.calculatedEarnedHours || 0), 0);
 
-    this.logger.log(`[团队产量挣得工时] 汇总: ${results.length} 条记录, 总产量: ${totalQty}, 总挣得工时: ${totalEarnedHours}`);
+    this.logger.log(
+      `[团队产量挣得工时] 汇总: ${results.length} 条记录, 总产量: ${totalQty}, 总挣得工时: ${totalEarnedHours}`,
+    );
 
     return {
       items: results,
@@ -1620,7 +1631,9 @@ export class EarnedHoursAllocationService {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
-    this.logger.log(`[个人产量挣得工时] 查询条件: startDate=${startDate}, endDate=${endDate}, employeeNo=${employeeNo}, orgId=${orgId}, productId=${productId}`);
+    this.logger.log(
+      `[个人产量挣得工时] 查询条件: startDate=${startDate}, endDate=${endDate}, employeeNo=${employeeNo}, orgId=${orgId}, productId=${productId}`,
+    );
 
     // 1. 查询个人产量记录表（个人直接记录的产量和挣得工时）
     const personalWhere: any = {
@@ -1671,7 +1684,7 @@ export class EarnedHoursAllocationService {
           record.productId,
           record.orgId,
           record.orgName,
-          recordDate
+          recordDate,
         );
 
         if (standardConfig) {
@@ -1738,7 +1751,7 @@ export class EarnedHoursAllocationService {
             productionRecord.productId,
             allocation.sourceAccountId!,
             allocation.sourceAccountName || '',
-            recordDate
+            recordDate,
           );
 
           if (standardConfig) {
@@ -1781,7 +1794,9 @@ export class EarnedHoursAllocationService {
     const totalAllocatedHours = results.reduce((sum, r) => sum + (r.allocatedHours || 0), 0);
     const totalCalculatedEarnedHours = totalEarnedHours + totalAllocatedHours;
 
-    this.logger.log(`[个人产量挣得工时] 汇总: ${results.length} 条记录, 总产量: ${totalQty}, 个人挣得工时: ${totalEarnedHours}, 团队分摊工时: ${totalAllocatedHours}, 总计: ${totalCalculatedEarnedHours}`);
+    this.logger.log(
+      `[个人产量挣得工时] 汇总: ${results.length} 条记录, 总产量: ${totalQty}, 个人挣得工时: ${totalEarnedHours}, 团队分摊工时: ${totalAllocatedHours}, 总计: ${totalCalculatedEarnedHours}`,
+    );
 
     return {
       items: results,
@@ -1807,43 +1822,45 @@ export class EarnedHoursAllocationService {
     }
 
     // 解析层级配置（支持 "产品,工序" 或 "4,5" 或 "6,8" 格式）
-    const levelsToExtract = hierarchyLevelsToExtract.split(',').map(l => l.trim());
+    const levelsToExtract = hierarchyLevelsToExtract.split(',').map((l) => l.trim());
 
     // 将层级名称转换为层级编号（序号）
     const levelNameMap: Record<string, number> = {
-      '工厂': 1,
-      '车间': 2,
-      '产线': 3,
-      '产品': 4,
-      '工序': 5,
+      工厂: 1,
+      车间: 2,
+      产线: 3,
+      产品: 4,
+      工序: 5,
     };
 
     // 直接使用层级序号（level字段），不需要levelId映射
     // hierarchyValues中已包含level字段（1-7），SystemConfig直接配置层级序号即可
-    const levelsToExtractNumbers = levelsToExtract.map(l => {
-      const num = parseInt(l);
-      if (isNaN(num)) {
-        // 如果不是数字，尝试从层级名称映射
-        return levelNameMap[l] || 0;
-      }
-      // 如果是数字，直接作为层级序号使用（1-7）
-      return num;
-    }).filter(n => n > 0);
+    const levelsToExtractNumbers = levelsToExtract
+      .map((l) => {
+        const num = parseInt(l);
+        if (isNaN(num)) {
+          // 如果不是数字，尝试从层级名称映射
+          return levelNameMap[l] || 0;
+        }
+        // 如果是数字，直接作为层级序号使用（1-7）
+        return num;
+      })
+      .filter((n) => n > 0);
 
     if (levelsToExtractNumbers.length === 0) {
       return [];
     }
 
     // 将路径字符串分割成数组
-    const pathSegments = namePath.split('/').filter(s => s.trim() !== '');
+    const pathSegments = namePath.split('/').filter((s) => s.trim() !== '');
 
     this.logger.log(`[标准工时匹配] 账户路径: "${namePath}" 分割后: [${pathSegments.join(', ')}]`);
     this.logger.log(`[标准工时匹配] 要提取的层级序号: [${levelsToExtractNumbers.join(', ')}]`);
 
     // 按层级序号提取对应的值（序号从1开始）
     const extractedValues = levelsToExtractNumbers
-      .map(levelNum => {
-        const index = levelNum - 1;  // 转换为数组索引（从0开始）
+      .map((levelNum) => {
+        const index = levelNum - 1; // 转换为数组索引（从0开始）
         if (index >= 0 && index < pathSegments.length) {
           const value = pathSegments[index];
           this.logger.log(`[标准工时匹配] 提取层级${levelNum}(索引${index}): "${value}"`);
@@ -1852,7 +1869,7 @@ export class EarnedHoursAllocationService {
         this.logger.log(`[标准工时匹配] 层级${levelNum}(索引${index})超出范围，返回null`);
         return null;
       })
-      .filter(v => v !== null) as string[];
+      .filter((v) => v !== null) as string[];
 
     this.logger.log(`[标准工时匹配] 最终提取的值: [${extractedValues.join(', ')}]`);
 
@@ -1867,7 +1884,7 @@ export class EarnedHoursAllocationService {
    */
   private extractMatchValuesFromHierarchy(
     hierarchyValuesJSON: string | null,
-    hierarchyLevelsToExtract: string
+    hierarchyLevelsToExtract: string,
   ): string[] {
     if (!hierarchyValuesJSON || !hierarchyLevelsToExtract) {
       return [];
@@ -1883,35 +1900,39 @@ export class EarnedHoursAllocationService {
     }
 
     // 解析层级配置（支持 "产品,工序" 或 "4,5" 或 "6,8" 格式）
-    const levelsToExtract = hierarchyLevelsToExtract.split(',').map(l => l.trim());
+    const levelsToExtract = hierarchyLevelsToExtract.split(',').map((l) => l.trim());
 
     // 将层级名称转换为层级编号（序号）
     const levelNameMap: Record<string, number> = {
-      '工厂': 1,
-      '车间': 2,
-      '产线': 3,
-      '产品': 4,
-      '工序': 5,
-      '岗位': 6,
-      '技能等级': 7,
+      工厂: 1,
+      车间: 2,
+      产线: 3,
+      产品: 4,
+      工序: 5,
+      岗位: 6,
+      技能等级: 7,
     };
 
     // 直接使用层级序号（level字段），不需要levelId映射
-    const levelsToExtractNumbers = levelsToExtract.map(l => {
-      const num = parseInt(l);
-      if (isNaN(num)) {
-        // 如果不是数字，尝试从层级名称映射
-        return levelNameMap[l] || 0;
-      }
-      // 如果是数字，直接作为层级序号使用（1-7）
-      return num;
-    }).filter(n => n > 0);
+    const levelsToExtractNumbers = levelsToExtract
+      .map((l) => {
+        const num = parseInt(l);
+        if (isNaN(num)) {
+          // 如果不是数字，尝试从层级名称映射
+          return levelNameMap[l] || 0;
+        }
+        // 如果是数字，直接作为层级序号使用（1-7）
+        return num;
+      })
+      .filter((n) => n > 0);
 
     if (levelsToExtractNumbers.length === 0) {
       return [];
     }
 
-    this.logger.log(`[标准工时匹配] 从hierarchyValues提取层级: [${levelsToExtractNumbers.join(', ')}]`);
+    this.logger.log(
+      `[标准工时匹配] 从hierarchyValues提取层级: [${levelsToExtractNumbers.join(', ')}]`,
+    );
 
     // 将hierarchyValues转换为level -> value的映射
     const hierarchyValuesMap = new Map<number, string>();
@@ -1924,11 +1945,13 @@ export class EarnedHoursAllocationService {
       }
     });
 
-    this.logger.log(`[标准工时匹配] hierarchyValues包含的层级: [${[...hierarchyValuesMap.keys()].join(', ')}]`);
+    this.logger.log(
+      `[标准工时匹配] hierarchyValues包含的层级: [${[...hierarchyValuesMap.keys()].join(', ')}]`,
+    );
 
     // 按层级序号提取对应的值
     const extractedValues = levelsToExtractNumbers
-      .map(levelNum => {
+      .map((levelNum) => {
         const value = hierarchyValuesMap.get(levelNum);
         if (value) {
           this.logger.log(`[标准工时匹配] 提取层级${levelNum}: "${value}"`);
@@ -1937,7 +1960,7 @@ export class EarnedHoursAllocationService {
         this.logger.log(`[标准工时匹配] 层级${levelNum}在hierarchyValues中为空，跳过`);
         return null;
       })
-      .filter(v => v !== null) as string[];
+      .filter((v) => v !== null) as string[];
 
     this.logger.log(`[标准工时匹配] 最终提取的值: [${extractedValues.join(', ')}]`);
 
@@ -1984,7 +2007,7 @@ export class EarnedHoursAllocationService {
     productId: number,
     orgId: number,
     orgName: string,
-    targetDate: Date
+    targetDate: Date,
   ) {
     // 1. 获取配置的提取层级
     const hierarchyConfig = await this.prisma.systemConfig.findUnique({
@@ -2003,7 +2026,7 @@ export class EarnedHoursAllocationService {
     // 3. 提取匹配值（从hierarchyValues而不是name path）
     const extractedValues = this.extractMatchValuesFromHierarchy(
       laborAccount?.hierarchyValues,
-      hierarchyLevelsToExtract
+      hierarchyLevelsToExtract,
     );
 
     if (extractedValues.length === 0) {
@@ -2029,7 +2052,9 @@ export class EarnedHoursAllocationService {
       });
 
       if (standardHourConfig) {
-        this.logger.log(`[标准工时匹配] ✓ 找到匹配的标准配置 (有日期区间): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`);
+        this.logger.log(
+          `[标准工时匹配] ✓ 找到匹配的标准配置 (有日期区间): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`,
+        );
         return standardHourConfig;
       }
     }
@@ -2048,7 +2073,9 @@ export class EarnedHoursAllocationService {
       });
 
       if (standardHourConfig) {
-        this.logger.log(`[标准工时匹配] ✓ 找到匹配的标准配置 (永久): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`);
+        this.logger.log(
+          `[标准工时匹配] ✓ 找到匹配的标准配置 (永久): accountPath=${standardHourConfig.accountPath}, standardHours=${standardHourConfig.standardHours}`,
+        );
         return standardHourConfig;
       }
     }
@@ -2063,16 +2090,14 @@ export class EarnedHoursAllocationService {
         status: 'ACTIVE',
         effectiveDate: { lte: targetDate },
         expiryDate: { gte: targetDate },
-        OR: [
-          { accountPath: '' },
-          { accountPath: null },
-          { accountPath: '-' },
-        ],
+        OR: [{ accountPath: '' }, { accountPath: null }, { accountPath: '-' }],
       },
     });
 
     if (standardHourConfig) {
-      this.logger.log(`[标准工时匹配] ✓ 找到全局配置标准 (有日期区间): standardHours=${standardHourConfig.standardHours}`);
+      this.logger.log(
+        `[标准工时匹配] ✓ 找到全局配置标准 (有日期区间): standardHours=${standardHourConfig.standardHours}`,
+      );
       return standardHourConfig;
     }
 
@@ -2084,16 +2109,14 @@ export class EarnedHoursAllocationService {
         status: 'ACTIVE',
         effectiveDate: { lte: targetDate },
         expiryDate: null,
-        OR: [
-          { accountPath: '' },
-          { accountPath: null },
-          { accountPath: '-' },
-        ],
+        OR: [{ accountPath: '' }, { accountPath: null }, { accountPath: '-' }],
       },
     });
 
     if (standardHourConfig) {
-      this.logger.log(`[标准工时匹配] ✓ 找到全局配置标准 (永久): standardHours=${standardHourConfig.standardHours}`);
+      this.logger.log(
+        `[标准工时匹配] ✓ 找到全局配置标准 (永久): standardHours=${standardHourConfig.standardHours}`,
+      );
       return standardHourConfig;
     }
 

@@ -88,7 +88,7 @@ export class PairingService {
         });
 
         // 同步更新内存中的punchRecords数组
-        const record = punchRecords.find(r => r.id === result.id);
+        const record = punchRecords.find((r) => r.id === result.id);
         if (record) {
           record.accountId = result.mergedAccountId;
         }
@@ -232,15 +232,14 @@ export class PairingService {
 
     // 只有当明确配置了有效的设备组ID，并且能找到对应设备时，才进行过滤
     if (deviceGroupIds.length > 0) {
-      const devices = await this.prisma.punchDevice
-        .findMany({
-          where: {
-            groupId: { in: deviceGroupIds },
-          },
-          select: {
-            id: true,
-          },
-        });
+      const devices = await this.prisma.punchDevice.findMany({
+        where: {
+          groupId: { in: deviceGroupIds },
+        },
+        select: {
+          id: true,
+        },
+      });
 
       const deviceIds = devices.map((d) => d.id);
 
@@ -339,8 +338,8 @@ export class PairingService {
     let currentType = 'IN'; // 从签入开始
 
     // 按时间排序
-    const sorted = [...punchRecords].sort((a, b) =>
-      new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime()
+    const sorted = [...punchRecords].sort(
+      (a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime(),
     );
 
     for (const record of sorted) {
@@ -496,8 +495,11 @@ export class PairingService {
 
     // 触发工时计算（异步执行，不阻塞摆卡流程）
     for (const pair of pairs) {
-      console.log(`触发工时计算 - 摆卡记录ID: ${pair.id}, 员工: ${pair.employeeNo}, 日期: ${pair.pairDate}`);
-      this.attendanceCodeService.calculateFromPunchPair(pair.id)
+      console.log(
+        `触发工时计算 - 摆卡记录ID: ${pair.id}, 员工: ${pair.employeeNo}, 日期: ${pair.pairDate}`,
+      );
+      this.attendanceCodeService
+        .calculateFromPunchPair(pair.id)
         .then((results) => {
           console.log(`工时计算成功 - 摆卡记录ID: ${pair.id}, 生成 ${results.length} 条结果`);
         })
@@ -614,7 +616,16 @@ export class PairingService {
    * 获取摆卡结果
    */
   async getPunchPairs(query: any) {
-    const { page = 1, pageSize = 10, employeeNo, pairDate, shiftId, accountId, startDate, endDate } = query;
+    const {
+      page = 1,
+      pageSize = 10,
+      employeeNo,
+      pairDate,
+      shiftId,
+      accountId,
+      startDate,
+      endDate,
+    } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
@@ -865,10 +876,15 @@ export class PairingService {
     });
 
     // 触发工时计算（与摆卡逻辑保持一致）
-    console.log(`触发工时计算 - 补卡摆卡记录ID: ${punchPair.id}, 员工: ${punchPair.employeeNo}, 日期: ${punchPair.pairDate}`);
-    this.attendanceCodeService.calculateFromPunchPair(punchPair.id)
+    console.log(
+      `触发工时计算 - 补卡摆卡记录ID: ${punchPair.id}, 员工: ${punchPair.employeeNo}, 日期: ${punchPair.pairDate}`,
+    );
+    this.attendanceCodeService
+      .calculateFromPunchPair(punchPair.id)
       .then((results) => {
-        console.log(`工时计算成功 - 补卡摆卡记录ID: ${punchPair.id}, 生成 ${results.length} 条结果`);
+        console.log(
+          `工时计算成功 - 补卡摆卡记录ID: ${punchPair.id}, 生成 ${results.length} 条结果`,
+        );
       })
       .catch((error) => {
         console.error(`工时计算失败 (补卡摆卡记录 ${punchPair.id}):`, error);

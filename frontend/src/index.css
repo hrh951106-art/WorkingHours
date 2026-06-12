@@ -72,3 +72,197 @@ html, body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   z-index: 10;
 }
+
+/* Modal圆角设置为4px */
+.ant-modal-content {
+  border-radius: 4px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.ant-modal {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Modal标题栏样式 - 分割线横跨整个宽度 */
+.ant-modal-header {
+  height: 56px !important;
+  padding: 0 !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+}
+
+/* 确保没有其他样式覆盖 */
+.ant-modal-wrap .ant-modal-header,
+.ant-modal .ant-modal-header {
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+}
+
+/* Modal标题文字居中 - 添加左右间距避免贴边 */
+.ant-modal-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  margin: 0 20px !important;
+  line-height: normal;
+  padding: 0 !important;
+}
+
+/* Modal关闭按钮居中 */
+.ant-modal-close {
+  top: 0 !important;
+  right: 0 !important;
+  height: 56px !important;
+  display: flex !important;
+  align-items: center !important;
+  margin: 0 !important;
+  width: auto !important;
+}
+
+.ant-modal-close-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 100%;
+  padding: 0;
+}
+
+/* Modal body - 移除所有padding并隐藏横向滚动条 */
+.ant-modal-body {
+  padding: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Modal内容区域也隐藏横向滚动条 */
+.ant-modal-body * {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 隐藏所有Modal内的横向滚动条 */
+.ant-modal-body::-webkit-scrollbar {
+  display: none !important;
+}
+
+.ant-modal-body {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Popconfirm 自定义样式 - 符合弹窗标准 */
+.custom-popconfirm .ant-popconfirm-inner {
+  padding: 0 !important;
+  border-radius: 4px !important;
+  overflow: hidden;
+}
+
+.custom-popconfirm .ant-popconfirm-title {
+  height: 56px !important;
+  padding: 0 20px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.custom-popconfirm .ant-popconfirm-description {
+  padding: 20px !important;
+  margin: 0 !important;
+}
+
+.custom-popconfirm .ant-popconfirm-buttons {
+  height: 64px !important;
+  padding: 16px 20px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  border-top: 1px solid #f0f0f0 !important;
+}
+
+.custom-popconfirm .ant-btn {
+  margin: 0 !important;
+}
+
+/* 停用确认Modal 自定义样式 */
+.deactivate-modal .ant-modal-header,
+.deactivate-modal-single-title .ant-modal-header {
+  height: 56px !important;
+  padding: 0 20px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.deactivate-modal .ant-modal-title,
+.deactivate-modal-single-title .ant-modal-title {
+  margin: 0 !important;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.deactivate-modal .ant-modal-body,
+.deactivate-modal-single-title .ant-modal-body {
+  padding: 20px !important;
+}
+
+.deactivate-modal .ant-modal-confirm-title,
+.deactivate-modal-single-title .ant-modal-confirm-title {
+  display: none !important;
+}
+
+.deactivate-modal .ant-modal-footer,
+.deactivate-modal-single-title .ant-modal-footer {
+  height: 64px !important;
+  padding: 16px 20px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  border-top: 1px solid #f0f0f0 !important;
+  background: #fff !important;
+}
+
+.deactivate-modal .ant-modal-footer .ant-btn,
+.deactivate-modal-single-title .ant-modal-footer .ant-btn {
+  margin: 0 !important;
+}
+
+/* 计算弹窗 自定义样式 */
+.calc-modal .ant-modal-body {
+  padding: 20px 12px !important;
+}
+
+.calc-modal .ant-modal-footer {
+  height: 64px !important;
+  padding: 0 40px 0 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  border-top: 1px solid #f0f0f0 !important;
+  background: #fff !important;
+}
+
+.calc-modal .ant-modal-footer .ant-btn {
+  margin: 0 !important;
+}
+

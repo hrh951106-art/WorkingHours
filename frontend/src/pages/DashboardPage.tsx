@@ -125,13 +125,14 @@ const DashboardPage: React.FC = () => {
           path: '/allocation/new-production-records',
           description: '记录产量数据',
         },
-        {
-          title: '分配规则',
-          icon: <SettingOutlined />,
-          color: '#00B365',
-          path: '/allocation/config',
-          description: '配置分摊规则',
-        },
+        // 分配规则已移动到系统配置下
+        // {
+        //   title: '分配规则',
+        //   icon: <SettingOutlined />,
+        //   color: '#00B365',
+        //   path: '/system/work-hour-management/allocation-config',
+        //   description: '配置分摊规则',
+        // },
         {
           title: '分摊结果查询',
           icon: <SearchOutlined />,
@@ -153,13 +154,14 @@ const DashboardPage: React.FC = () => {
           path: '/allocation/line-maintenance',
           description: '维护开线计划',
         },
-        {
-          title: '分配计算',
-          icon: <CalculatorOutlined />,
-          color: '#f5222d',
-          path: '/allocation/calculate',
-          description: '执行分摊计算',
-        },
+        // 分配计算入口已隐藏 - 使用规则列表中的计算按钮
+        // {
+        //   title: '分配计算',
+        //   icon: <CalculatorOutlined />,
+        //   color: '#f5222d',
+        //   path: '/allocation/calculate',
+        //   description: '执行分摊计算',
+        // },
       ],
     },
     {

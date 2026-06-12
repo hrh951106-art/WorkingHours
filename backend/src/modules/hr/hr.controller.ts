@@ -73,7 +73,7 @@ export class HrController {
   @ApiOperation({ summary: '获取员工选择列表（不需要权限）' })
   async getEmployeeSelectList(
     @Query() query: { status?: string; keyword?: string; pageSize?: number },
-    @Req() req: any
+    @Req() req: any,
   ) {
     return this.hrService.getEmployeeSelectList(query, req.user);
   }
@@ -130,7 +130,11 @@ export class HrController {
   @Put('employees/:id/work-info/:historyId')
   @RequirePermissions('hr:emp:edit')
   @ApiOperation({ summary: '更新指定的工作信息历史记录' })
-  async updateWorkInfoHistory(@Param('id') id: string, @Param('historyId') historyId: string, @Body() dto: any) {
+  async updateWorkInfoHistory(
+    @Param('id') id: string,
+    @Param('historyId') historyId: string,
+    @Body() dto: any,
+  ) {
     return this.hrService.updateWorkInfoHistory(+historyId, dto);
   }
 
@@ -287,7 +291,7 @@ export class HrController {
   async updateDataSourceOption(
     @Param('dataSourceId') dataSourceId: string,
     @Param('id') id: string,
-    @Body() dto: any
+    @Body() dto: any,
   ) {
     return this.hrService.updateDataSourceOption(+id, dto);
   }
@@ -297,7 +301,7 @@ export class HrController {
   @ApiOperation({ summary: '删除数据源选项' })
   async deleteDataSourceOption(
     @Param('dataSourceId') dataSourceId: string,
-    @Param('id') id: string
+    @Param('id') id: string,
   ) {
     return this.hrService.deleteDataSourceOption(+id);
   }

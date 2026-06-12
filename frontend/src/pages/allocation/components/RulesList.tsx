@@ -234,6 +234,12 @@ const RulesList: React.FC<RulesListProps> = ({ value = [], onChange, attendanceC
         width={900}
         okText="确定"
         cancelText="取消"
+        centered
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         <Form form={form} layout="vertical">
           <Row gutter={16}>

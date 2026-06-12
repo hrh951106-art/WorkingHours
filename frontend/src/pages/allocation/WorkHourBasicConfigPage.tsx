@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Card, Form, Select, Button, message, Spin, Space, Typography, Table, Input } from 'antd';
+import { Card, Form, Select, Button, message, Spin, Space, Typography, Table, Input, Tag } from 'antd';
 import { SettingOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
@@ -185,6 +185,23 @@ const WorkHourBasicConfigPage: React.FC = () => {
       ? shiftPropertiesConfig.configValue.split(',').filter((key: string) => key)
       : [];
 
+    // 处理 productionLineHierarchyLevel：确保使用层级序号
+    let productionLineLevelValue = productionLineConfig?.configValue || undefined;
+
+    // 如果配置值是层级名称而不是层级序号，尝试转换为层级序号
+    if (productionLineLevelValue && isNaN(parseInt(productionLineLevelValue))) {
+      console.warn('⚠️ productionLineHierarchyLevel 配置值不是层级序号:', productionLineLevelValue);
+      // 尝试通过层级名称查找对应的层级序号
+      const matchedLevel = hierarchyLevels?.find((level: any) => level.name === productionLineLevelValue);
+      if (matchedLevel) {
+        productionLineLevelValue = String(matchedLevel.level);
+        console.log('✅ 已将层级名称转换为层级序号:', productionLineLevelValue);
+      } else {
+        console.error('❌ 无法找到对应的层级，请重新配置');
+        productionLineLevelValue = undefined;
+      }
+    }
+
     // 将数据库中存储的层级序号转换为层级名称，用于Select回显
     const standardHoursLevels = standardHoursLevelsConfig?.configValue
       ? standardHoursLevelsConfig.configValue.split(',')
@@ -196,7 +213,7 @@ const WorkHourBasicConfigPage: React.FC = () => {
       : [];
 
     return {
-      productionLineHierarchyLevel: productionLineConfig?.configValue || undefined,
+      productionLineHierarchyLevel: productionLineLevelValue,
       standardHoursHierarchyLevels: standardHoursLevels,
       productionLineShiftPropertyKeys: propertyKeys,
       actualHoursAllocationCode: actualHoursCodeConfig?.configValue || undefined,
@@ -228,7 +245,7 @@ const WorkHourBasicConfigPage: React.FC = () => {
         key: 'productionLineHierarchyLevel',
         name: '开线计划产线对应劳动力账户层级',
         code: 'WH1001',
-        description: '选择后，开线维护时产线选择该层级下的明细',
+        description: '选择后，开线维护时产线选择该层级下的明细（保存层级序号，显示层级名称）',
         renderValue: () => (
           <Form.Item name="productionLineHierarchyLevel" style={{ marginBottom: 0 }}>
             <Select
@@ -237,12 +254,26 @@ const WorkHourBasicConfigPage: React.FC = () => {
               showSearch
               optionFilterProp="label"
               style={{ width: '100%' }}
+              onChange={(value) => {
+                console.log('📝 productionLineHierarchyLevel 选择变化:', {
+                  displayValue: value, // 层级序号
+                  levelName: hierarchyLevels?.find((l: any) => String(l.level) === String(value))?.name,
+                });
+              }}
             >
               {hierarchyLevels
                 .filter((level: any) => level.mappingType === 'ORG_TYPE' || level.mappingType === 'ORG')
                 .map((level: any) => (
-                  <Select.Option key={level.id} value={level.name} label={level.name}>
-                    {level.name}
+                  <Select.Option
+                    key={level.id}
+                    value={String(level.level)}
+                    label={level.name}
+                    title={`层级序号: ${level.level}, 层级名称: ${level.name}`}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{level.name}</span>
+                      <Tag color="blue" style={{ marginLeft: 8 }}>序号: {level.level}</Tag>
+                    </div>
                   </Select.Option>
                 ))}
             </Select>

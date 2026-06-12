@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { startOfDay, endOfDay, differenceInMinutes, addMinutes, isBefore, isAfter, isEqual } from 'date-fns';
+import {
+  startOfDay,
+  endOfDay,
+  differenceInMinutes,
+  addMinutes,
+  isBefore,
+  isAfter,
+  isEqual,
+} from 'date-fns';
 import { AttendanceRuleGroupHelper } from '../attendance-rule-group/attendance-rule-group-helper.service';
 import { AccountMergeService } from './account-merge.service';
 
@@ -60,11 +68,7 @@ export class AttendancePunchService {
    * @param startDate 开始日期
    * @param endDate 结束日期
    */
-  async collectAttendancePunchBatch(
-    employeeNos: string[],
-    startDate: Date,
-    endDate: Date,
-  ) {
+  async collectAttendancePunchBatch(employeeNos: string[], startDate: Date, endDate: Date) {
     const results = {
       successCount: 0,
       failCount: 0,
@@ -74,7 +78,7 @@ export class AttendancePunchService {
 
     // 生成日期范围内的所有日期
     const dates: Date[] = [];
-    let currentDate = startDate;
+    const currentDate = startDate;
     while (currentDate <= endDate) {
       dates.push(new Date(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
@@ -125,10 +129,7 @@ export class AttendancePunchService {
         laborAccounts: {
           where: {
             status: 'ACTIVE',
-            OR: [
-              { expiryDate: null },
-              { expiryDate: { gte: punchDate } },
-            ],
+            OR: [{ expiryDate: null }, { expiryDate: { gte: punchDate } }],
           },
           orderBy: {
             isPrimary: 'desc',
@@ -210,7 +211,7 @@ export class AttendancePunchService {
           schedules,
           punchRecords,
           scheduledConfig,
-          accountId
+          accountId,
         );
 
         // ✅ 将每个配对保存为独立的记录
@@ -237,7 +238,13 @@ export class AttendancePunchService {
       }
     } else {
       // 未排班：按未排班逻辑收卡
-      const result = await this.collectUnscheduledPunch(employeeNo, punchDate, rule, punchRecords, accountId);
+      const result = await this.collectUnscheduledPunch(
+        employeeNo,
+        punchDate,
+        rule,
+        punchRecords,
+        accountId,
+      );
       // ✅ 只有当有打卡数据时才保存记录
       if (result.workStartPunches.length > 0 || result.workEndPunches.length > 0) {
         await this.saveAttendancePunchResult(result);
@@ -268,12 +275,15 @@ export class AttendancePunchService {
     );
 
     if (!ruleGroup) {
-      console.log(`员工 ${employeeNo} 在 ${punchDate.toISOString()} 未配置考勤规则组，跳过考勤打卡收卡`);
+      console.log(
+        `员工 ${employeeNo} 在 ${punchDate.toISOString()} 未配置考勤规则组，跳过考勤打卡收卡`,
+      );
       return null;
     }
 
     // ✅ 获取规则组中配置的考勤打卡规则ID（不是精益打卡规则）
-    const attendancePunchRuleId = this.attendanceRuleGroupHelper.getAttendancePunchRuleId(ruleGroup);
+    const attendancePunchRuleId =
+      this.attendanceRuleGroupHelper.getAttendancePunchRuleId(ruleGroup);
 
     if (!attendancePunchRuleId) {
       console.log(
@@ -333,7 +343,7 @@ export class AttendancePunchService {
       const mergedPath = await this.accountMergeService.mergeAccounts(
         punchAccountPath,
         record.deviceId,
-        record.punchTime
+        record.punchTime,
       );
 
       // 查找或创建合并后的账户
@@ -345,8 +355,8 @@ export class AttendancePunchService {
 
       this.logger.debug(
         `打卡记录 ID=${record.id}, 时间=${record.punchTime.toISOString()}, ` +
-        `打卡账户=${punchAccountPath}, 设备ID=${record.deviceId}, ` +
-        `合并后账户=${mergedPath}, 合并后账户ID=${mergedAccountId}`
+          `打卡账户=${punchAccountPath}, 设备ID=${record.deviceId}, ` +
+          `合并后账户=${mergedPath}, 合并后账户ID=${mergedAccountId}`,
       );
 
       mergedRecords.push({
@@ -552,10 +562,10 @@ export class AttendancePunchService {
     schedules: any[],
     punchRecords: any[],
     config: any,
-    accountId: number
+    accountId: number,
   ): Promise<AttendancePunchResult> {
-    let firstShift = schedules[0];
-    let lastShift = schedules[schedules.length - 1];
+    const firstShift = schedules[0];
+    const lastShift = schedules[schedules.length - 1];
 
     // ✅ 如果班次有多个段（包括REST），需要计算完整的时间范围
     // 确保包含所有段（从第一段开始到最后一段结束）
@@ -582,7 +592,7 @@ export class AttendancePunchService {
       firstShift,
       punchRecords,
       config.workStart,
-      config.punchInterval
+      config.punchInterval,
     );
 
     // 下班卡：最后班次的下班卡（如果只有一个班次，就是 firstShift）
@@ -591,7 +601,7 @@ export class AttendancePunchService {
       targetShift,
       punchRecords,
       config.workEnd,
-      config.punchInterval
+      config.punchInterval,
     );
 
     return {
@@ -618,7 +628,7 @@ export class AttendancePunchService {
     punchRecords: any[],
     config: any,
     accountId: number,
-    previousWorkEndTime?: Date
+    previousWorkEndTime?: Date,
   ): Promise<AttendancePunchResult> {
     const schedule = schedules[0]; // 单个班次
 
@@ -627,7 +637,7 @@ export class AttendancePunchService {
       schedule,
       punchRecords,
       config.workStart,
-      config.punchInterval
+      config.punchInterval,
     );
 
     // ✅ 如果有前一个班次的下班卡时间，检查是否有时间交叉
@@ -635,7 +645,9 @@ export class AttendancePunchService {
       const workStartTime = allWorkStartPunches[0].punchTime;
       if (workStartTime < previousWorkEndTime) {
         // 上班卡时间早于前一个班次的下班卡时间，认为缺上班卡
-        console.log(`[collectSingleShiftPunch] 时间交叉检测: 上班卡${workStartTime.toISOString()} < 前一班次下班卡${previousWorkEndTime.toISOString()}，认为缺上班卡`);
+        console.log(
+          `[collectSingleShiftPunch] 时间交叉检测: 上班卡${workStartTime.toISOString()} < 前一班次下班卡${previousWorkEndTime.toISOString()}，认为缺上班卡`,
+        );
         allWorkStartPunches = [];
       }
     }
@@ -645,7 +657,7 @@ export class AttendancePunchService {
       schedule,
       punchRecords,
       config.workEnd,
-      config.punchInterval
+      config.punchInterval,
     );
 
     // ✅ 智能配对逻辑：处理同一时间不同设备的打卡
@@ -653,7 +665,9 @@ export class AttendancePunchService {
     const pairedEndPunches: any[] = [];
     const paired = new Set<number>();
 
-    console.log(`[collectSingleShiftPunch] 收集到 ${allWorkStartPunches.length} 个上班卡, ${allWorkEndPunches.length} 个下班卡`);
+    console.log(
+      `[collectSingleShiftPunch] 收集到 ${allWorkStartPunches.length} 个上班卡, ${allWorkEndPunches.length} 个下班卡`,
+    );
 
     // 对每个上班卡，查找最近的下班卡进行配对
     for (let i = 0; i < allWorkStartPunches.length; i++) {
@@ -681,12 +695,16 @@ export class AttendancePunchService {
         pairedStartPunches.push(startPunch);
         pairedEndPunches.push(bestEndPunch);
         paired.add(bestEndIndex);
-        console.log(`配对: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11,19)} + OUT(${bestEndPunch.id}) ${bestEndPunch.punchTime.toISOString().substring(11,19)}`);
+        console.log(
+          `配对: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11, 19)} + OUT(${bestEndPunch.id}) ${bestEndPunch.punchTime.toISOString().substring(11, 19)}`,
+        );
       } else {
         // 没有找到配对的下班卡，作为缺卡处理
         pairedStartPunches.push(startPunch);
         pairedEndPunches.push(null);
-        console.log(`缺下班卡: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11,19)}`);
+        console.log(
+          `缺下班卡: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11, 19)}`,
+        );
       }
     }
 
@@ -695,11 +713,15 @@ export class AttendancePunchService {
       if (!paired.has(j)) {
         pairedStartPunches.push(null);
         pairedEndPunches.push(allWorkEndPunches[j]);
-        console.log(`缺上班卡: OUT(${allWorkEndPunches[j].id}) ${allWorkEndPunches[j].punchTime.toISOString().substring(11,19)}`);
+        console.log(
+          `缺上班卡: OUT(${allWorkEndPunches[j].id}) ${allWorkEndPunches[j].punchTime.toISOString().substring(11, 19)}`,
+        );
       }
     }
 
-    console.log(`[collectSingleShiftPunch] 最终配对结果: ${pairedStartPunches.length} 对 (包含缺卡)`);
+    console.log(
+      `[collectSingleShiftPunch] 最终配对结果: ${pairedStartPunches.length} 对 (包含缺卡)`,
+    );
 
     return {
       employeeNo,
@@ -724,7 +746,7 @@ export class AttendancePunchService {
     schedules: any[],
     punchRecords: any[],
     config: any,
-    accountId: number
+    accountId: number,
   ): Promise<AttendancePunchResult> {
     const allWorkStartPunchesMap = new Map<number, any>(); // ✅ 使用Map去重，key为punchId
     const allWorkEndPunchesMap = new Map<number, any>();
@@ -735,28 +757,28 @@ export class AttendancePunchService {
         schedule,
         punchRecords,
         config.workStart,
-        config.punchInterval
+        config.punchInterval,
       );
       // ✅ 使用Map去重，避免同一打卡被多个班次收集
-      workStartPunches.forEach(p => allWorkStartPunchesMap.set(p.id, p));
+      workStartPunches.forEach((p) => allWorkStartPunchesMap.set(p.id, p));
 
       // 下班卡
       const workEndPunches = await this.collectWorkEndPunch(
         schedule,
         punchRecords,
         config.workEnd,
-        config.punchInterval
+        config.punchInterval,
       );
       // ✅ 使用Map去重，避免同一打卡被多个班次收集
-      workEndPunches.forEach(p => allWorkEndPunchesMap.set(p.id, p));
+      workEndPunches.forEach((p) => allWorkEndPunchesMap.set(p.id, p));
     }
 
     // ✅ 转换为数组并按时间排序
-    const allWorkStartPunches = Array.from(allWorkStartPunchesMap.values()).sort((a, b) =>
-      a.punchTime.getTime() - b.punchTime.getTime()
+    const allWorkStartPunches = Array.from(allWorkStartPunchesMap.values()).sort(
+      (a, b) => a.punchTime.getTime() - b.punchTime.getTime(),
     );
-    const allWorkEndPunches = Array.from(allWorkEndPunchesMap.values()).sort((a, b) =>
-      a.punchTime.getTime() - b.punchTime.getTime()
+    const allWorkEndPunches = Array.from(allWorkEndPunchesMap.values()).sort(
+      (a, b) => a.punchTime.getTime() - b.punchTime.getTime(),
     );
 
     // ✅ 新增：对收集到的所有上下班卡进行智能配对
@@ -764,7 +786,9 @@ export class AttendancePunchService {
     const pairedEndPunches: any[] = [];
     const paired = new Set<number>();
 
-    console.log(`[collectDiscreteShiftsPunch] 收集到 ${allWorkStartPunches.length} 个上班卡, ${allWorkEndPunches.length} 个下班卡`);
+    console.log(
+      `[collectDiscreteShiftsPunch] 收集到 ${allWorkStartPunches.length} 个上班卡, ${allWorkEndPunches.length} 个下班卡`,
+    );
 
     // 对每个上班卡，查找最近的下班卡进行配对
     for (let i = 0; i < allWorkStartPunches.length; i++) {
@@ -792,12 +816,16 @@ export class AttendancePunchService {
         pairedStartPunches.push(startPunch);
         pairedEndPunches.push(bestEndPunch);
         paired.add(bestEndIndex);
-        console.log(`配对: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11,19)} + OUT(${bestEndPunch.id}) ${bestEndPunch.punchTime.toISOString().substring(11,19)}`);
+        console.log(
+          `配对: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11, 19)} + OUT(${bestEndPunch.id}) ${bestEndPunch.punchTime.toISOString().substring(11, 19)}`,
+        );
       } else {
         // 没有找到配对的下班卡，作为缺卡处理
         pairedStartPunches.push(startPunch);
         pairedEndPunches.push(null);
-        console.log(`缺下班卡: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11,19)}`);
+        console.log(
+          `缺下班卡: IN(${startPunch.id}) ${startPunch.punchTime.toISOString().substring(11, 19)}`,
+        );
       }
     }
 
@@ -806,13 +834,17 @@ export class AttendancePunchService {
       if (!paired.has(j)) {
         pairedStartPunches.push(null);
         pairedEndPunches.push(allWorkEndPunches[j]);
-        console.log(`缺上班卡: OUT(${allWorkEndPunches[j].id}) ${allWorkEndPunches[j].punchTime.toISOString().substring(11,19)}`);
+        console.log(
+          `缺上班卡: OUT(${allWorkEndPunches[j].id}) ${allWorkEndPunches[j].punchTime.toISOString().substring(11, 19)}`,
+        );
       }
     }
 
     // 不过滤null值，保留缺卡记录
     // pairedStartPunches 和 pairedEndPunches 长度相同，null表示缺卡
-    console.log(`[collectDiscreteShiftsPunch] 最终配对结果: ${pairedStartPunches.length} 对 (包含缺卡)`);
+    console.log(
+      `[collectDiscreteShiftsPunch] 最终配对结果: ${pairedStartPunches.length} 对 (包含缺卡)`,
+    );
 
     return {
       employeeNo,
@@ -830,21 +862,30 @@ export class AttendancePunchService {
   /**
    * 收集上班卡 - 修改为返回所有符合条件的打卡并进行配对
    */
-  private async collectWorkStartPunch(schedule: any, punchRecords: any[], config: any, punchInterval: number) {
+  private async collectWorkStartPunch(
+    schedule: any,
+    punchRecords: any[],
+    config: any,
+    punchInterval: number,
+  ) {
     const shiftStart = schedule.workStartTime;
 
     // 计算收卡时间范围
     const earlyStart = addMinutes(shiftStart, -config.earlyRange);
     const lateEnd = addMinutes(shiftStart, config.lateRange);
 
-    console.log(`[collectWorkStartPunch] Shift start: ${shiftStart.toISOString().substring(11,19)}, Range: ${earlyStart.toISOString().substring(11,19)} - ${lateEnd.toISOString().substring(11,19)}`);
+    console.log(
+      `[collectWorkStartPunch] Shift start: ${shiftStart.toISOString().substring(11, 19)}, Range: ${earlyStart.toISOString().substring(11, 19)} - ${lateEnd.toISOString().substring(11, 19)}`,
+    );
 
     // ✅ 修复：使用>=和<=以包含边界时间
     const rangePunches = punchRecords.filter((punch) => {
       return punch.punchTime >= earlyStart && punch.punchTime <= lateEnd;
     });
 
-    console.log(`[collectWorkStartPunch] Punches in range: ${rangePunches.length}/${punchRecords.length}`);
+    console.log(
+      `[collectWorkStartPunch] Punches in range: ${rangePunches.length}/${punchRecords.length}`,
+    );
 
     if (rangePunches.length === 0) {
       return [];
@@ -852,20 +893,24 @@ export class AttendancePunchService {
 
     // ✅ 新逻辑：返回所有IN类型的打卡（或按时间范围的所有打卡），不进行过滤
     // 考勤打卡看打卡类型（IN/OUT），收集所有IN卡
-    const inPunches = rangePunches.filter(p => p.punchType === 'IN');
-    
+    const inPunches = rangePunches.filter((p) => p.punchType === 'IN');
+
     console.log(`[collectWorkStartPunch] IN punches in range: ${inPunches.length}`);
 
     // 如果没有IN卡，则返回所有打卡（兼容逻辑）
     if (inPunches.length === 0) {
       const filteredPunches = this.filterByPunchInterval(rangePunches, punchInterval, 'first');
-      const selectedPunch = this.selectPunchByCountType(filteredPunches, config.countType, config.count);
+      const selectedPunch = this.selectPunchByCountType(
+        filteredPunches,
+        config.countType,
+        config.count,
+      );
       return selectedPunch ? [selectedPunch] : [];
     }
 
     // 按打卡间隔过滤IN卡
     const filteredInPunches = this.filterByPunchInterval(inPunches, punchInterval, 'first');
-    
+
     console.log(`[collectWorkStartPunch] Filtered IN punches: ${filteredInPunches.length}`);
 
     // 返回所有符合间隔条件的IN卡
@@ -875,41 +920,54 @@ export class AttendancePunchService {
   /**
    * 收集下班卡 - 修改为返回所有符合条件的打卡
    */
-  private async collectWorkEndPunch(schedule: any, punchRecords: any[], config: any, punchInterval: number) {
+  private async collectWorkEndPunch(
+    schedule: any,
+    punchRecords: any[],
+    config: any,
+    punchInterval: number,
+  ) {
     const shiftEnd = schedule.workEndTime;
 
     // 计算收卡时间范围
     const earlyStart = addMinutes(shiftEnd, -config.earlyRange);
     const lateEnd = addMinutes(shiftEnd, config.lateRange);
 
-    console.log(`[collectWorkEndPunch] Shift end: ${shiftEnd.toISOString().substring(11,19)}, Range: ${earlyStart.toISOString().substring(11,19)} - ${lateEnd.toISOString().substring(11,19)}`);
+    console.log(
+      `[collectWorkEndPunch] Shift end: ${shiftEnd.toISOString().substring(11, 19)}, Range: ${earlyStart.toISOString().substring(11, 19)} - ${lateEnd.toISOString().substring(11, 19)}`,
+    );
 
     // ✅ 修复：使用>=和<=以包含边界时间
     const rangePunches = punchRecords.filter((punch) => {
       return punch.punchTime >= earlyStart && punch.punchTime <= lateEnd;
     });
 
-    console.log(`[collectWorkEndPunch] Punches in range: ${rangePunches.length}/${punchRecords.length}`);
+    console.log(
+      `[collectWorkEndPunch] Punches in range: ${rangePunches.length}/${punchRecords.length}`,
+    );
 
     if (rangePunches.length === 0) {
       return [];
     }
 
     // ✅ 新逻辑：返回所有OUT类型的打卡
-    const outPunches = rangePunches.filter(p => p.punchType === 'OUT');
-    
+    const outPunches = rangePunches.filter((p) => p.punchType === 'OUT');
+
     console.log(`[collectWorkEndPunch] OUT punches in range: ${outPunches.length}`);
 
     // 如果没有OUT卡，则返回所有打卡（兼容逻辑）
     if (outPunches.length === 0) {
       const filteredPunches = this.filterByPunchInterval(rangePunches, punchInterval, 'last');
-      const selectedPunch = this.selectPunchByCountType(filteredPunches, config.countType, config.count);
+      const selectedPunch = this.selectPunchByCountType(
+        filteredPunches,
+        config.countType,
+        config.count,
+      );
       return selectedPunch ? [selectedPunch] : [];
     }
 
     // 按打卡间隔过滤OUT卡
     const filteredOutPunches = this.filterByPunchInterval(outPunches, punchInterval, 'last');
-    
+
     console.log(`[collectWorkEndPunch] Filtered OUT punches: ${filteredOutPunches.length}`);
 
     // 返回所有符合间隔条件的OUT卡
@@ -990,7 +1048,7 @@ export class AttendancePunchService {
     punchDate: Date,
     rule: any,
     punchRecords: any[],
-    accountId: number
+    accountId: number,
   ): Promise<AttendancePunchResult> {
     const unscheduledConfig = JSON.parse(rule.unscheduledConfig);
 
@@ -1040,7 +1098,9 @@ export class AttendancePunchService {
     const hasPrevSchedule = prevSchedule !== null;
     const hasNextSchedule = nextSchedule !== null;
 
-    console.log(`员工 ${employeeNo} 在 ${punchDate.toISOString()}: 前一天有排班=${hasPrevSchedule}, 后一天有排班=${hasNextSchedule}`);
+    console.log(
+      `员工 ${employeeNo} 在 ${punchDate.toISOString()}: 前一天有排班=${hasPrevSchedule}, 后一天有排班=${hasNextSchedule}`,
+    );
 
     let workStartPunches: any[];
     let workEndPunches: any[];
@@ -1053,7 +1113,7 @@ export class AttendancePunchService {
         nextSchedule,
         punchDate,
         punchRecords,
-        unscheduledConfig
+        unscheduledConfig,
       );
       workStartPunches = result.workStartPunches;
       workEndPunches = result.workEndPunches;
@@ -1063,7 +1123,7 @@ export class AttendancePunchService {
       const result = await this.collectUnscheduledFullDay(
         punchDate,
         punchRecords,
-        unscheduledConfig
+        unscheduledConfig,
       );
       workStartPunches = result.workStartPunches;
       workEndPunches = result.workEndPunches;
@@ -1100,7 +1160,7 @@ export class AttendancePunchService {
     nextSchedule: any,
     punchDate: Date,
     punchRecords: any[],
-    config: any
+    config: any,
   ) {
     // 获取前一天的班次结束时间
     const prevShiftEnd = this.getScheduleEndTime(prevSchedule);
@@ -1119,7 +1179,7 @@ export class AttendancePunchService {
       startAfter,
       endBefore,
       'first',
-      config.punchInterval
+      config.punchInterval,
     );
 
     // 下班卡范围：上班卡时间 + 1 到 上班卡时间 + 班次前未排班结束（分钟）之间
@@ -1129,14 +1189,16 @@ export class AttendancePunchService {
       const workEndStart = addMinutes(actualWorkStart, 1);
       const workEndEnd = addMinutes(actualWorkStart, config.off.endBeforeShiftMins);
 
-      console.log(`未排班下班卡收卡范围: ${workEndStart.toISOString()} - ${workEndEnd.toISOString()}`);
+      console.log(
+        `未排班下班卡收卡范围: ${workEndStart.toISOString()} - ${workEndEnd.toISOString()}`,
+      );
 
       workEndPunches = this.collectPunchesInRange(
         punchRecords,
         workEndStart,
         workEndEnd,
         'last',
-        config.punchInterval
+        config.punchInterval,
       );
     }
 
@@ -1146,11 +1208,7 @@ export class AttendancePunchService {
   /**
    * 未排班 - 前后都没有排班的情况（全天范围）
    */
-  private async collectUnscheduledFullDay(
-    punchDate: Date,
-    punchRecords: any[],
-    config: any
-  ) {
+  private async collectUnscheduledFullDay(punchDate: Date, punchRecords: any[], config: any) {
     const dayStart = startOfDay(punchDate);
     const dayEnd = endOfDay(punchDate);
 
@@ -1158,9 +1216,9 @@ export class AttendancePunchService {
     console.log(`原始打卡记录数: ${punchRecords.length}`);
 
     // 过滤出当天所有打卡并按时间排序
-    const dayPunches = punchRecords.filter(punch => 
-      punch.punchTime >= dayStart && punch.punchTime <= dayEnd
-    ).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+    const dayPunches = punchRecords
+      .filter((punch) => punch.punchTime >= dayStart && punch.punchTime <= dayEnd)
+      .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
 
     console.log(`当天打卡记录数: ${dayPunches.length}`);
 
@@ -1194,21 +1252,27 @@ export class AttendancePunchService {
         allWorkEndPunches.push(pairedPunch);
 
         if (pairedPunch) {
-          console.log(`配对: IN(${currentPunch.id}) ${currentPunch.punchTime.toISOString().substring(11,19)} + OUT(${pairedPunch.id}) ${pairedPunch.punchTime.toISOString().substring(11,19)}`);
+          console.log(
+            `配对: IN(${currentPunch.id}) ${currentPunch.punchTime.toISOString().substring(11, 19)} + OUT(${pairedPunch.id}) ${pairedPunch.punchTime.toISOString().substring(11, 19)}`,
+          );
         } else {
-          console.log(`缺卡: IN(${currentPunch.id}) ${currentPunch.punchTime.toISOString().substring(11,19)} 无对应OUT卡`);
+          console.log(
+            `缺卡: IN(${currentPunch.id}) ${currentPunch.punchTime.toISOString().substring(11, 19)} 无对应OUT卡`,
+          );
         }
       } else {
         // OUT 卡，如果还没配对，说明缺上班卡
         allWorkStartPunches.push(null);
         allWorkEndPunches.push(currentPunch);
-        console.log(`缺卡: OUT(${currentPunch.id}) ${currentPunch.punchTime.toISOString().substring(11,19)} 无对应IN卡`);
+        console.log(
+          `缺卡: OUT(${currentPunch.id}) ${currentPunch.punchTime.toISOString().substring(11, 19)} 无对应IN卡`,
+        );
       }
     }
 
     // 过滤掉 null 值
-    const filteredStart = allWorkStartPunches.filter(p => p !== null);
-    const filteredEnd = allWorkEndPunches.filter(p => p !== null);
+    const filteredStart = allWorkStartPunches.filter((p) => p !== null);
+    const filteredEnd = allWorkEndPunches.filter((p) => p !== null);
 
     console.log(`最终配对结果: ${filteredStart.length} 对`);
 
@@ -1279,7 +1343,7 @@ export class AttendancePunchService {
     startTime: Date,
     endTime: Date,
     countType: 'first' | 'last',
-    punchInterval: number
+    punchInterval: number,
   ): any[] {
     // 使用 >= 和 <= 以包含边界时间
     const rangePunches = punchRecords.filter((punch) => {
@@ -1322,15 +1386,22 @@ export class AttendancePunchService {
         isContinuousShift: result.isContinuousShift,
         accountId: result.accountId,
         // 主卡位 - ✅ 修复：使用正确的属性名（id不是punchId）
-        workStartPunchTime: result.workStartPunches.length > 0 ? result.workStartPunches[0].punchTime : null,
-        workStartShiftId: result.workStartPunches.length > 0 ? result.workStartPunches[0].shiftId : null,
-        workStartShiftName: result.workStartPunches.length > 0 ? result.workStartPunches[0].shiftName : null,
-        workEndPunchTime: result.workEndPunches.length > 0 ? result.workEndPunches[0].punchTime : null,
+        workStartPunchTime:
+          result.workStartPunches.length > 0 ? result.workStartPunches[0].punchTime : null,
+        workStartShiftId:
+          result.workStartPunches.length > 0 ? result.workStartPunches[0].shiftId : null,
+        workStartShiftName:
+          result.workStartPunches.length > 0 ? result.workStartPunches[0].shiftName : null,
+        workEndPunchTime:
+          result.workEndPunches.length > 0 ? result.workEndPunches[0].punchTime : null,
         workEndShiftId: result.workEndPunches.length > 0 ? result.workEndPunches[0].shiftId : null,
-        workEndShiftName: result.workEndPunches.length > 0 ? result.workEndPunches[0].shiftName : null,
+        workEndShiftName:
+          result.workEndPunches.length > 0 ? result.workEndPunches[0].shiftName : null,
         // 多班次信息
-        workStartPunches: result.workStartPunches.length > 0 ? JSON.stringify(result.workStartPunches) : null,
-        workEndPunches: result.workEndPunches.length > 0 ? JSON.stringify(result.workEndPunches) : null,
+        workStartPunches:
+          result.workStartPunches.length > 0 ? JSON.stringify(result.workStartPunches) : null,
+        workEndPunches:
+          result.workEndPunches.length > 0 ? JSON.stringify(result.workEndPunches) : null,
       },
     });
   }
@@ -1340,8 +1411,8 @@ export class AttendancePunchService {
    */
   private async saveAttendancePunchResultWithoutDelete(result: AttendancePunchResult) {
     // 过滤出有效的上班卡和下班卡（排除null值）
-    const validStartPunches = result.workStartPunches.filter(p => p !== null);
-    const validEndPunches = result.workEndPunches.filter(p => p !== null);
+    const validStartPunches = result.workStartPunches.filter((p) => p !== null);
+    const validEndPunches = result.workEndPunches.filter((p) => p !== null);
 
     // 直接保存新的收卡结果，不删除旧记录
     await this.prisma.attendancePunchPair.create({
@@ -1361,8 +1432,10 @@ export class AttendancePunchService {
         workEndShiftId: validEndPunches.length > 0 ? validEndPunches[0].shiftId : null,
         workEndShiftName: validEndPunches.length > 0 ? validEndPunches[0].shiftName : null,
         // 多班次信息 - 保留原始数组（包含null表示缺卡）
-        workStartPunches: result.workStartPunches.length > 0 ? JSON.stringify(result.workStartPunches) : null,
-        workEndPunches: result.workEndPunches.length > 0 ? JSON.stringify(result.workEndPunches) : null,
+        workStartPunches:
+          result.workStartPunches.length > 0 ? JSON.stringify(result.workStartPunches) : null,
+        workEndPunches:
+          result.workEndPunches.length > 0 ? JSON.stringify(result.workEndPunches) : null,
       },
     });
   }
@@ -1422,7 +1495,7 @@ export class AttendancePunchService {
           },
         });
         return { ...item, account };
-      })
+      }),
     );
 
     return {

@@ -230,10 +230,7 @@ export class PunchIntervalFilterService {
    * @param deviceGroupIntervals 设备组间隔配置
    * @returns 摆卡间隔（分钟），如果没有配置则返回0
    */
-  private getIntervalForDevice(
-    record: any,
-    deviceGroupIntervals: Map<number, number>,
-  ): number {
+  private getIntervalForDevice(record: any, deviceGroupIntervals: Map<number, number>): number {
     const deviceGroupId = record.device?.groupId;
     if (deviceGroupId && deviceGroupIntervals.has(deviceGroupId)) {
       return deviceGroupIntervals.get(deviceGroupId)!;
@@ -274,10 +271,7 @@ export class PunchIntervalFilterService {
     }
 
     // 进 + 出 → 不比较
-    if (
-      (type1 === 'IN' && type2 === 'OUT') ||
-      (type1 === 'OUT' && type2 === 'IN')
-    ) {
+    if ((type1 === 'IN' && type2 === 'OUT') || (type1 === 'OUT' && type2 === 'IN')) {
       return false;
     }
 

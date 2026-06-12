@@ -22,6 +22,7 @@ import {
   BarChartOutlined,
   TableOutlined,
   LineChartOutlined,
+  AccountBookOutlined,
 } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
@@ -35,7 +36,7 @@ interface MenuItem {
   icon: React.ReactNode;
   label: string;
   path?: string;
-  children?: Omit<MenuItem, 'children'>[];
+  children?: MenuItem[];
 }
 
 const menuItems: MenuItem[] = [
@@ -52,8 +53,10 @@ const menuItems: MenuItem[] = [
   { key: '/attendance/attendance-card', icon: <ClockCircleOutlined />, label: '考勤卡', path: '/attendance/attendance-card' },
   { key: '/allocation/line-maintenance', icon: <CalendarOutlined />, label: '开线维护', path: '/allocation/line-maintenance' },
   { key: '/allocation/production-records', icon: <FileTextOutlined />, label: '产量记录', path: '/allocation/production-records' },
-  { key: '/allocation/config', icon: <SettingOutlined />, label: '分摊规则', path: '/allocation/config' },
-  { key: '/allocation/calculate', icon: <CalculatorOutlined />, label: '分摊计算', path: '/allocation/calculate' },
+  // 分摊规则已移动到系统配置-工时管理下
+  // { key: '/allocation/config', icon: <SettingOutlined />, label: '分摊规则', path: '/allocation/config' },
+  // 分摊计算页面已关闭 - 使用规则列表中的计算按钮
+  // { key: '/allocation/calculate', icon: <CalculatorOutlined />, label: '分摊计算', path: '/allocation/calculate' },
   { key: '/allocation/results', icon: <PieChartOutlined />, label: '分摊结果查询', path: '/allocation/results' },
   { key: '/hr/data-source-management', icon: <DatabaseOutlined />, label: '查找项管理', path: '/hr/data-source-management' },
   { key: '/hr/custom-field-config', icon: <EditOutlined />, label: '自定义字段配置', path: '/hr/custom-field-config' },
@@ -125,18 +128,13 @@ const MainLayout: React.FC = () => {
 
     // 构建菜单项（支持嵌套）
   const buildMenuItems = () => {
-    return menuItems.map(item => {
-      if (item.children) {
+    const buildItem = (item: MenuItem): any => {
+      if (item.children && item.children.length > 0) {
         return {
           key: item.key,
           icon: item.icon,
           label: item.label,
-          children: item.children.map(child => ({
-            key: child.key,
-            icon: child.icon,
-            label: child.label,
-            onClick: () => handleMenuClick({ key: child.key }),
-          })),
+          children: item.children.map(child => buildItem(child)),
         };
       }
       return {
@@ -145,7 +143,9 @@ const MainLayout: React.FC = () => {
         label: item.label,
         onClick: () => handleMenuClick({ key: item.key }),
       };
-    });
+    };
+
+    return menuItems.map(item => buildItem(item));
   };
 
   const userMenuItems = [

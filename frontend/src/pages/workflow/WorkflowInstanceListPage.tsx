@@ -429,11 +429,14 @@ const WorkflowInstanceListPage: React.FC = () => {
         open={isDetailModalVisible}
         onCancel={handleDetailModalCancel}
         width={800}
-        footer={[
-          <Button key="close" onClick={handleDetailModalCancel}>
-            关闭
-          </Button>,
-        ]}
+        destroyOnClose
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         {selectedInstance && (
           <div>
@@ -517,47 +520,65 @@ const WorkflowInstanceListPage: React.FC = () => {
             )}
           </div>
         )}
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={handleDetailModalCancel}>关闭</Button>
+        </div>
       </Modal>
 
       {/* 强制通过弹窗 */}
       <Modal
         title="强制通过"
         open={isForceApproveModalVisible}
-        onOk={handleForceApproveSubmit}
         onCancel={() => {
           setIsForceApproveModalVisible(false);
           forceApproveForm.resetFields();
           setPendingApprovalNode(null);
         }}
-        confirmLoading={forceApproveMutation.isPending}
-        okText="确定"
-        cancelText="取消"
+        width={600}
+        destroyOnClose
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '0'
+          }
+        }}
       >
-        {pendingApprovalNode && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 500, marginBottom: 8 }}>流程信息</div>
-              <div>标题: {pendingApprovalNode.instance.title}</div>
-              <div style={{ color: '#ff4d4f', marginTop: 4 }}>
-                ⚠️ 此操作将强制通过所有剩余审批节点
+        <div style={{ padding: '24px 12px' }}>
+          {pendingApprovalNode && (
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontWeight: 500, marginBottom: 8 }}>流程信息</div>
+                <div>标题: {pendingApprovalNode.instance.title}</div>
+                <div style={{ color: '#ff4d4f', marginTop: 4 }}>
+                  ⚠️ 此操作将强制通过所有剩余审批节点
+                </div>
               </div>
+              <Form form={forceApproveForm} layout="vertical">
+                <Form.Item
+                  label="备注"
+                  name="comment"
+                  rules={[{ required: true, message: '请输入备注' }]}
+                >
+                  <Input.TextArea
+                    rows={4}
+                    placeholder="请输入备注信息"
+                    maxLength={500}
+                    showCount
+                  />
+                </Form.Item>
+              </Form>
             </div>
-            <Form form={forceApproveForm} layout="vertical">
-              <Form.Item
-                label="备注"
-                name="comment"
-                rules={[{ required: true, message: '请输入备注' }]}
-              >
-                <Input.TextArea
-                  rows={4}
-                  placeholder="请输入备注信息"
-                  maxLength={500}
-                  showCount
-                />
-              </Form.Item>
-            </Form>
+          )}
+          <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px 0 0 0' }}>
+            <Button onClick={() => {
+              setIsForceApproveModalVisible(false);
+              forceApproveForm.resetFields();
+              setPendingApprovalNode(null);
+            }}>取消</Button>
+            <Button type="primary" onClick={handleForceApproveSubmit} loading={forceApproveMutation.isPending}>确定</Button>
           </div>
-        )}
+        </div>
       </Modal>
     </div>
   );

@@ -10,21 +10,23 @@ export class WorkHourReceiverService {
   /**
    * 接收并存储工时结果（从计算管理模块推送）
    */
-  async receiveWorkHourResults(data: {
-    employeeNo: string;
-    employeeId?: number;
-    calcDate: Date;
-    shiftId?: number;
-    shiftName?: string;
-    attendanceCodeId?: number; // ✅ 使用ID
-    attendanceCode?: string; // ✅ 冗余字段
-    calcAttendanceCode: string;
-    workHours: number;
-    sourceType: string;
-    sourceId: number;
-    accountId?: number;
-    accountName?: string;
-  }[]) {
+  async receiveWorkHourResults(
+    data: {
+      employeeNo: string;
+      employeeId?: number;
+      calcDate: Date;
+      shiftId?: number;
+      shiftName?: string;
+      attendanceCodeId?: number; // ✅ 使用ID
+      attendanceCode?: string; // ✅ 冗余字段
+      calcAttendanceCode: string;
+      workHours: number;
+      sourceType: string;
+      sourceId: number;
+      accountId?: number;
+      accountName?: string;
+    }[],
+  ) {
     this.logger.log(`接收工时结果数据，数量: ${data.length}`);
 
     const results = {
@@ -60,7 +62,9 @@ export class WorkHourReceiverService {
             definitionAttendanceCodeStr = definitionCode.name;
             // 使用数据库中的 calcAttendanceCode（可能比推送的更准确）
             calcAttendanceCode = definitionCode.calcAttendanceCode || calcAttendanceCode;
-            this.logger.log(`通过 calcAttendanceCode=${calcAttendanceCode} 匹配到定义出勤代码: ${definitionCode.code} - ${definitionCode.name}`);
+            this.logger.log(
+              `通过 calcAttendanceCode=${calcAttendanceCode} 匹配到定义出勤代码: ${definitionCode.code} - ${definitionCode.name}`,
+            );
           } else {
             this.logger.warn(`未找到 calcAttendanceCode=${calcAttendanceCode} 对应的定义出勤代码`);
           }
@@ -114,19 +118,12 @@ export class WorkHourReceiverService {
         results.success++;
       } catch (error) {
         results.failed++;
-        results.errors.push(
-          `处理 ${item.employeeNo} ${item.calcDate} 失败: ${error.message}`,
-        );
-        this.logger.error(
-          `处理工时结果失败: ${item.employeeNo} ${item.calcDate}`,
-          error.stack,
-        );
+        results.errors.push(`处理 ${item.employeeNo} ${item.calcDate} 失败: ${error.message}`);
+        this.logger.error(`处理工时结果失败: ${item.employeeNo} ${item.calcDate}`, error.stack);
       }
     }
 
-    this.logger.log(
-      `工时结果接收完成 - 成功: ${results.success}, 失败: ${results.failed}`,
-    );
+    this.logger.log(`工时结果接收完成 - 成功: ${results.success}, 失败: ${results.failed}`);
 
     return results;
   }
@@ -162,17 +159,11 @@ export class WorkHourReceiverService {
     page?: number;
     pageSize?: number;
   }) {
-    const {
-      employeeNo,
-      startDate,
-      endDate,
-      page = 1,
-      pageSize = 10,
-    } = query;
+    const { employeeNo, startDate, endDate, page = 1, pageSize = 10 } = query;
 
     // 确保 page 和 pageSize 是整数
-    const pageNum = typeof page === 'string' ? parseInt(page) : (page || 1);
-    const pageSizeNum = typeof pageSize === 'string' ? parseInt(pageSize) : (pageSize || 10);
+    const pageNum = typeof page === 'string' ? parseInt(page) : page || 1;
+    const pageSizeNum = typeof pageSize === 'string' ? parseInt(pageSize) : pageSize || 10;
 
     const skip = (pageNum - 1) * pageSizeNum;
 
@@ -242,7 +233,7 @@ export class WorkHourReceiverService {
         // 解析账户路径，判断属于哪个出勤代码
         // 账户格式: "大华工厂/W1总装车间/W1总装L2产线//焊接"
         const accountPath = pair.accountName || '';
-        const pathParts = accountPath.split('/').filter(p => p.trim());
+        const pathParts = accountPath.split('/').filter((p) => p.trim());
 
         // 根据 category 匹配出勤代码
         let matchedCode = null;
@@ -255,19 +246,19 @@ export class WorkHourReceiverService {
           // 判断 category
           if (pathParts.length >= 4 && pathParts[3]) {
             // 有工序，属于工序工时 (A02)
-            matchedCode = definitionAttendanceCodes.find(c => c.code === 'A02');
+            matchedCode = definitionAttendanceCodes.find((c) => c.code === 'A02');
           } else if (line.includes('产线')) {
             // 有产线，属于线体工时 (A01)
-            matchedCode = definitionAttendanceCodes.find(c => c.code === 'A01');
+            matchedCode = definitionAttendanceCodes.find((c) => c.code === 'A01');
           } else if (workshop.includes('车间')) {
             // 只有车间，属于车间工时 (A03)
-            matchedCode = definitionAttendanceCodes.find(c => c.code === 'A03');
+            matchedCode = definitionAttendanceCodes.find((c) => c.code === 'A03');
           }
         }
 
         // 如果没有匹配到，使用默认的出勤代码
         if (!matchedCode) {
-          matchedCode = definitionAttendanceCodes.find(c => c.code === 'A01');
+          matchedCode = definitionAttendanceCodes.find((c) => c.code === 'A01');
         }
 
         if (!matchedCode) {
@@ -336,8 +327,8 @@ export class WorkHourReceiverService {
     } = query;
 
     // 确保 page 和 pageSize 是整数
-    const pageNum = typeof page === 'string' ? parseInt(page) : (page || 1);
-    const pageSizeNum = typeof pageSize === 'string' ? parseInt(pageSize) : (pageSize || 10);
+    const pageNum = typeof page === 'string' ? parseInt(page) : page || 1;
+    const pageSizeNum = typeof pageSize === 'string' ? parseInt(pageSize) : pageSize || 10;
 
     const skip = (pageNum - 1) * pageSizeNum;
 
@@ -400,14 +391,14 @@ export class WorkHourReceiverService {
     ]);
 
     // 查询员工信息（通过employeeNo查询）
-    const employeeNos = [...new Set(items.map(item => item.employeeNo).filter(Boolean))];
+    const employeeNos = [...new Set(items.map((item) => item.employeeNo).filter(Boolean))];
     const employeesMap = new Map<string, any>();
     if (employeeNos.length > 0) {
       const employees = await this.prisma.employee.findMany({
         where: { employeeNo: { in: employeeNos } },
         include: { org: true },
       });
-      employees.forEach(emp => {
+      employees.forEach((emp) => {
         employeesMap.set(emp.employeeNo, emp);
       });
     }
@@ -440,7 +431,8 @@ export class WorkHourReceiverService {
           shiftName: item.shiftName,
           definitionAttendanceCodeId: item.definitionAttendanceCodeId,
           definitionAttendanceCode: definitionCode,
-          definitionAttendanceCodeStr: definitionCode?.name || item.definitionAttendanceCodeStr || '',
+          definitionAttendanceCodeStr:
+            definitionCode?.name || item.definitionAttendanceCodeStr || '',
           calcAttendanceCode: item.calcAttendanceCode || definitionCode?.calcAttendanceCode || '',
           workHours: item.workHours,
           amount: item.amount,

@@ -1,4 +1,13 @@
-import { IsString, IsNumber, IsDateString, IsOptional, IsNotEmpty, IsEnum, ValidateNested, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsDateString,
+  IsOptional,
+  IsNotEmpty,
+  IsEnum,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum ReportMode {
@@ -21,15 +30,15 @@ export class ReportEmployeeDto {
 
   @IsOptional()
   @IsString()
-  startTime?: string;   // 员工独立开始时间 (HH:mm)
+  startTime?: string; // 员工独立开始时间 (HH:mm)
 
   @IsOptional()
   @IsString()
-  endTime?: string;     // 员工独立结束时间 (HH:mm)
+  endTime?: string; // 员工独立结束时间 (HH:mm)
 
   @IsOptional()
   @IsNumber()
-  value?: number;       // 员工独立工时数量
+  value?: number; // 员工独立工时数量
 
   @IsOptional()
   @IsString()
@@ -107,6 +116,10 @@ export class CreateLaborHourReportRequestDto {
   @IsNotEmpty()
   @IsString()
   accountName: string;
+
+  @IsOptional()
+  @IsString()
+  hierarchyValues?: string;  // 层级值JSON字符串
 
   @IsNotEmpty()
   @IsNumber()

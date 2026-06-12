@@ -115,7 +115,7 @@ export class PunchCollectionRangeService {
     const lastSegment = shift.segments[shift.segments.length - 1];
 
     // 计算班次开始时间
-    let shiftStart = new Date(scheduleDate);
+    const shiftStart = new Date(scheduleDate);
     if (firstSegment.startDate === '+0') {
       const [hours, minutes] = firstSegment.startTime.split(':').map(Number);
       shiftStart.setHours(hours, minutes, 0, 0);
@@ -126,7 +126,7 @@ export class PunchCollectionRangeService {
     }
 
     // 计算班次结束时间
-    let shiftEnd = new Date(scheduleDate);
+    const shiftEnd = new Date(scheduleDate);
     if (lastSegment.endDate === '+0') {
       const [hours, minutes] = lastSegment.endTime.split(':').map(Number);
       shiftEnd.setHours(hours, minutes, 0, 0);
@@ -170,7 +170,7 @@ export class PunchCollectionRangeService {
     // 1. 计算前一天班次结束时间 + afterShiftMins
     const prevShift = previousSchedule.shift;
     const prevScheduleDate = new Date(previousSchedule.scheduleDate);
-    let prevShiftEnd = new Date(prevScheduleDate);
+    const prevShiftEnd = new Date(prevScheduleDate);
 
     if (prevShift.segments && prevShift.segments.length > 0) {
       const lastSegment = prevShift.segments[prevShift.segments.length - 1];
@@ -200,7 +200,7 @@ export class PunchCollectionRangeService {
     // 3. 计算后一天班次开始时间 - beforeShiftMins
     const nextShift = nextSchedule.shift;
     const nextScheduleDate = new Date(nextSchedule.scheduleDate);
-    let nextShiftStart = new Date(nextScheduleDate);
+    const nextShiftStart = new Date(nextScheduleDate);
 
     if (nextShift.segments && nextShift.segments.length > 0) {
       const firstSegment = nextShift.segments[0];
@@ -254,7 +254,7 @@ export class PunchCollectionRangeService {
     // 1. 计算前一天班次结束时间 + afterShiftMins
     const prevShift = previousSchedule.shift;
     const prevScheduleDate = new Date(previousSchedule.scheduleDate);
-    let prevShiftEnd = new Date(prevScheduleDate);
+    const prevShiftEnd = new Date(prevScheduleDate);
 
     if (prevShift.segments && prevShift.segments.length > 0) {
       const lastSegment = prevShift.segments[prevShift.segments.length - 1];
@@ -311,7 +311,7 @@ export class PunchCollectionRangeService {
     // 1. 计算后一天班次开始时间 - beforeShiftMins
     const nextShift = nextSchedule.shift;
     const nextScheduleDate = new Date(nextSchedule.scheduleDate);
-    let nextShiftStart = new Date(nextScheduleDate);
+    const nextShiftStart = new Date(nextScheduleDate);
 
     if (nextShift.segments && nextShift.segments.length > 0) {
       const firstSegment = nextShift.segments[0];
@@ -442,12 +442,8 @@ export class PunchCollectionRangeService {
       return null;
     }
 
-    const overlapStart = new Date(
-      Math.max(range1.startTime.getTime(), range2.startTime.getTime()),
-    );
-    const overlapEnd = new Date(
-      Math.min(range1.endTime.getTime(), range2.endTime.getTime()),
-    );
+    const overlapStart = new Date(Math.max(range1.startTime.getTime(), range2.startTime.getTime()));
+    const overlapEnd = new Date(Math.min(range1.endTime.getTime(), range2.endTime.getTime()));
 
     const midpoint = new Date((overlapStart.getTime() + overlapEnd.getTime()) / 2);
     return midpoint;

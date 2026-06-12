@@ -250,19 +250,45 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
   return (
     <div>
       {selections.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 20, color: '#999' }}>
-          暂无工时归属，点击下方按钮添加
+        // 未配置时，显示提示和添加按钮
+        <div style={{ textAlign: 'center', padding: '8px 16px' }}>
+          <div style={{ color: '#999', marginBottom: 8, fontSize: 12 }}>
+            暂未配置工时归属，点击下方按钮添加
+          </div>
+          <Button
+            type="dashed"
+            onClick={addSelection}
+            icon={<PlusOutlined />}
+            disabled={disabled}
+            size="small"
+          >
+            添加工时归属
+          </Button>
         </div>
       ) : (
-        <Space direction="vertical" style={{ width: '100%' }} size="small">
+        // 已配置时，显示列表
+        <div>
           {selections.map((selection, index) => {
             const levelOptions = levelOptionsMap[selection.levelId] || [];
 
             return (
-              <Row key={index} gutter={8}>
+              <Row key={index} gutter={8} align="top" style={{ marginBottom: 12 }}>
                 <Col span={1}>
-                  {index > 0 && (
-                    <Tag color="green">AND</Tag>
+                  {index === 0 ? (
+                    // 第一行显示+按钮，用于添加新条件
+                    <Button
+                      type="dashed"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      onClick={addSelection}
+                      disabled={disabled}
+                      style={{ marginTop: 0 }}
+                    />
+                  ) : (
+                    // 其他行显示AND标签
+                    <Tag color="blue" style={{ marginTop: 4 }}>
+                      AND
+                    </Tag>
                   )}
                 </Col>
                 <Col span={10}>
@@ -296,36 +322,23 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
                     optionFilterProp="label"
                   />
                 </Col>
-                <Col span={2}>
-                  {selections.length > 1 && (
-                    <Button
-                      type="link"
-                      size="small"
-                      danger
-                      icon={<MinusCircleOutlined />}
-                      onClick={() => removeSelection(index)}
-                      disabled={disabled}
-                    >
-                      删除
-                    </Button>
-                  )}
+                <Col span={2} style={{ textAlign: 'right' }}>
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    icon={<MinusCircleOutlined />}
+                    onClick={() => removeSelection(index)}
+                    disabled={disabled}
+                  >
+                    删除
+                  </Button>
                 </Col>
               </Row>
             );
           })}
-        </Space>
+        </div>
       )}
-
-      <Button
-        type="dashed"
-        onClick={addSelection}
-        disabled={disabled}
-        icon={<PlusOutlined />}
-        block
-        style={{ marginTop: selections.length > 0 ? 8 : 0 }}
-      >
-        添加工时归属
-      </Button>
     </div>
   );
 };

@@ -42,8 +42,8 @@ export class AttendancePunchTriggerService {
   }) {
     this.logger.log(
       `检测到排班变更，触发源: ${payload.triggerSource}, ` +
-      `员工数: ${payload.employeeNos.length}, ` +
-      `日期范围: ${payload.startDate.toISOString()} ~ ${payload.endDate.toISOString()}`
+        `员工数: ${payload.employeeNos.length}, ` +
+        `日期范围: ${payload.startDate.toISOString()} ~ ${payload.endDate.toISOString()}`,
     );
 
     try {
@@ -70,8 +70,8 @@ export class AttendancePunchTriggerService {
   }) {
     this.logger.log(
       `检测到打卡数据变更，触发源: ${payload.triggerSource}, ` +
-      `员工数: ${payload.employeeNos.length}, ` +
-      `日期范围: ${payload.startDate.toISOString()} ~ ${payload.endDate.toISOString()}`
+        `员工数: ${payload.employeeNos.length}, ` +
+        `日期范围: ${payload.startDate.toISOString()} ~ ${payload.endDate.toISOString()}`,
     );
 
     try {
@@ -127,20 +127,25 @@ export class AttendancePunchTriggerService {
         });
 
         this.logger.debug(
-          `删除员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的旧摆卡数据: ${deletedCount.count} 条`
+          `删除员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的旧摆卡数据: ${deletedCount.count} 条`,
         );
 
         // 1. 触发精益摆卡
-        this.logger.debug(`员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 触发精益摆卡`);
+        this.logger.debug(
+          `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 触发精益摆卡`,
+        );
         await this.pairingService.pairPunches(employeeNo, calcDate);
 
         // 2. 触发考勤打卡收卡
-        const punchResult = await this.attendancePunchService.collectEmployeeAttendancePunch(employeeNo, calcDate);
+        const punchResult = await this.attendancePunchService.collectEmployeeAttendancePunch(
+          employeeNo,
+          calcDate,
+        );
 
         if (punchResult) {
           // 收卡成功，触发工时计算
           this.logger.debug(
-            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的考勤打卡收卡成功，触发工时计算`
+            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的考勤打卡收卡成功，触发工时计算`,
           );
 
           // 生成批次ID
@@ -150,12 +155,12 @@ export class AttendancePunchTriggerService {
           await this.attendanceWorkHourService.calculateDaily(employeeNo, calcDate, batchId);
         } else {
           this.logger.debug(
-            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 无考勤打卡收卡结果`
+            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 无考勤打卡收卡结果`,
           );
         }
       } catch (error: any) {
         this.logger.error(
-          `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的摆卡失败: ${error.message}`
+          `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的摆卡失败: ${error.message}`,
         );
       }
 
@@ -184,12 +189,15 @@ export class AttendancePunchTriggerService {
 
       try {
         // 调用考勤打卡收卡服务
-        const result = await this.attendancePunchService.collectEmployeeAttendancePunch(employeeNo, calcDate);
+        const result = await this.attendancePunchService.collectEmployeeAttendancePunch(
+          employeeNo,
+          calcDate,
+        );
 
         if (result) {
           // 收卡成功，触发工���计算
           this.logger.debug(
-            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的考勤打卡收卡成功，触发工时计算`
+            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的考勤打卡收卡成功，触发工时计算`,
           );
 
           // 生成批次ID
@@ -199,12 +207,12 @@ export class AttendancePunchTriggerService {
           await this.attendanceWorkHourService.calculateDaily(employeeNo, calcDate, batchId);
         } else {
           this.logger.debug(
-            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 无考勤打卡收卡结果`
+            `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 无考勤打卡收卡结果`,
           );
         }
       } catch (error: any) {
         this.logger.error(
-          `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的考勤打卡收卡失败: ${error.message}`
+          `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的考勤打卡收卡失败: ${error.message}`,
         );
       }
 
@@ -251,8 +259,8 @@ export class AttendancePunchTriggerService {
   }) {
     this.logger.log(
       `检测到打卡记录账户变更，触发源: ${payload.triggerSource}, ` +
-      `员工: ${payload.employeeNo}, ` +
-      `打卡日期: ${payload.punchDate.toISOString()}`
+        `员工: ${payload.employeeNo}, ` +
+        `打卡日期: ${payload.punchDate.toISOString()}`,
     );
 
     try {
@@ -283,8 +291,8 @@ export class AttendancePunchTriggerService {
   }) {
     this.logger.log(
       `检测到设备账户变更，触发源: ${payload.triggerSource}, ` +
-      `设备ID: ${payload.deviceId}, ` +
-      `生效日期: ${payload.effectiveDate.toISOString()}`
+        `设备ID: ${payload.deviceId}, ` +
+        `生效日期: ${payload.effectiveDate.toISOString()}`,
     );
 
     try {
@@ -321,9 +329,7 @@ export class AttendancePunchTriggerService {
         affectedDates.get(record.employeeNo)!.add(dateKey);
       }
 
-      this.logger.log(
-        `设备账户变更影响 ${affectedDates.size} 个员工`
-      );
+      this.logger.log(`设备账户变更影响 ${affectedDates.size} 个员工`);
 
       // 为每个受影响的员工触发摆卡
       for (const [employeeNo, dates] of affectedDates.entries()) {
@@ -368,11 +374,16 @@ export class AttendancePunchTriggerService {
    * 这是一个便捷方法，用于手动触发
    */
   async triggerForEmployee(employeeNo: string, calcDate: Date) {
-    this.logger.log(`为员工 ${employeeNo} 触发 ${calcDate.toISOString().split('T')[0]} 的收卡和计算`);
+    this.logger.log(
+      `为员工 ${employeeNo} 触发 ${calcDate.toISOString().split('T')[0]} 的收卡和计算`,
+    );
 
     try {
       // 1. 触发考勤打卡收卡
-      const punchResult = await this.attendancePunchService.collectEmployeeAttendancePunch(employeeNo, calcDate);
+      const punchResult = await this.attendancePunchService.collectEmployeeAttendancePunch(
+        employeeNo,
+        calcDate,
+      );
 
       if (!punchResult) {
         this.logger.warn(`员工 ${employeeNo} 的考勤打卡收卡失败: 无收卡结果`);
@@ -400,7 +411,7 @@ export class AttendancePunchTriggerService {
 
       this.logger.log(
         `员工 ${employeeNo} 在 ${calcDate.toISOString().split('T')[0]} 的收卡和计算完成，` +
-        `共 ${workHourResult.results.length} 条工时结果`
+          `共 ${workHourResult.results.length} 条工时结果`,
       );
 
       return {
@@ -409,10 +420,7 @@ export class AttendancePunchTriggerService {
         workHourCount: workHourResult.results.length,
       };
     } catch (error: any) {
-      this.logger.error(
-        `为员工 ${employeeNo} 触发收卡和计算失败: ${error.message}`,
-        error.stack
-      );
+      this.logger.error(`为员工 ${employeeNo} 触发收卡和计算失败: ${error.message}`, error.stack);
       return {
         success: false,
         message: error.message,

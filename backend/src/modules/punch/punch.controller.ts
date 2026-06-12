@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, UploadedFile, UseInterceptors, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  UploadedFile,
+  UseInterceptors,
+  Req,
+} from '@nestjs/common';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -191,7 +204,10 @@ export class PunchController {
   @Put('pairs/:id')
   @RequirePermissions('punch:record:edit')
   @ApiOperation({ summary: '修改摆卡记录时间' })
-  async updatePunchPair(@Param('id') id: string, @Body() dto: { inPunchTime?: string; outPunchTime?: string }) {
+  async updatePunchPair(
+    @Param('id') id: string,
+    @Body() dto: { inPunchTime?: string; outPunchTime?: string },
+  ) {
     return this.pairingService.updatePunchPair(+id, dto);
   }
 
@@ -231,11 +247,9 @@ export class PunchController {
   @Post('attendance-punch/collect-batch')
   @RequirePermissions('punch:record:edit')
   @ApiOperation({ summary: '批量考勤打卡收卡（日期范围）' })
-  async collectAttendancePunchBatch(@Body() dto: {
-    employeeNos?: string[];
-    startDate: string;
-    endDate: string;
-  }) {
+  async collectAttendancePunchBatch(
+    @Body() dto: { employeeNos?: string[]; startDate: string; endDate: string },
+  ) {
     // ✅ 解析日期为本地时间（服务器时区），避免使用UTC时区导致日期范围错误
     // 例如："2026-05-12" 应该解析为本地时间 2026-05-12T00:00:00，而不是 UTC 时间 2026-05-12T00:00:00Z
     const startDate = new Date(dto.startDate + 'T00:00:00');
@@ -265,11 +279,7 @@ export class PunchController {
       employeeNos = schedules.map((s) => s.employee.employeeNo);
     }
 
-    return this.attendancePunchService.collectAttendancePunchBatch(
-      employeeNos,
-      startDate,
-      endDate,
-    );
+    return this.attendancePunchService.collectAttendancePunchBatch(employeeNos, startDate, endDate);
   }
 
   @Get('attendance-punch/results')
@@ -291,10 +301,13 @@ export class PunchController {
   @Post('attendance-punch/trigger-for-employee')
   @RequirePermissions('punch:record:edit')
   @ApiOperation({ summary: '为单个员工触发考勤打卡收卡和工时计算' })
-  async triggerForEmployee(@Body() dto: {
-    employeeNo: string;
-    calcDate: string; // YYYY-MM-DD
-  }) {
+  async triggerForEmployee(
+    @Body()
+    dto: {
+      employeeNo: string;
+      calcDate: string; // YYYY-MM-DD
+    },
+  ) {
     return this.attendancePunchTriggerService.triggerForEmployee(
       dto.employeeNo,
       new Date(dto.calcDate),
@@ -304,12 +317,15 @@ export class PunchController {
   @Post('attendance-punch/trigger-schedule-change')
   @RequirePermissions('punch:record:edit')
   @ApiOperation({ summary: '触发排班变更事件' })
-  async triggerScheduleChange(@Body() dto: {
-    employeeNos: string[];
-    startDate: string; // YYYY-MM-DD
-    endDate: string; // YYYY-MM-DD
-    triggerSource: string;
-  }) {
+  async triggerScheduleChange(
+    @Body()
+    dto: {
+      employeeNos: string[];
+      startDate: string; // YYYY-MM-DD
+      endDate: string; // YYYY-MM-DD
+      triggerSource: string;
+    },
+  ) {
     return this.attendancePunchTriggerService.triggerScheduleChange({
       employeeNos: dto.employeeNos,
       startDate: new Date(dto.startDate),
@@ -321,12 +337,15 @@ export class PunchController {
   @Post('attendance-punch/trigger-punch-change')
   @RequirePermissions('punch:record:edit')
   @ApiOperation({ summary: '触发打卡数据变更事件' })
-  async triggerPunchChange(@Body() dto: {
-    employeeNos: string[];
-    startDate: string; // YYYY-MM-DD
-    endDate: string; // YYYY-MM-DD
-    triggerSource: string;
-  }) {
+  async triggerPunchChange(
+    @Body()
+    dto: {
+      employeeNos: string[];
+      startDate: string; // YYYY-MM-DD
+      endDate: string; // YYYY-MM-DD
+      triggerSource: string;
+    },
+  ) {
     return this.attendancePunchTriggerService.triggerPunchChange({
       employeeNos: dto.employeeNos,
       startDate: new Date(dto.startDate),

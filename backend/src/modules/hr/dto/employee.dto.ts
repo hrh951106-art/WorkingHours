@@ -1,7 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ValidateIf } from 'class-validator';
-import { IsString, IsNotEmpty, IsOptional, IsInt, IsEmail, IsDateString, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  IsEmail,
+  IsDateString,
+  IsEnum,
+} from 'class-validator';
 
 export class CreateEmployeeDto {
   @ApiProperty({ description: '员工号', required: false })
@@ -138,7 +146,7 @@ export class EmployeeQueryDto {
   @IsOptional()
   @ValidateIf((o) => o.status !== '' && o.status !== undefined && o.status !== null)
   @IsEnum(['ACTIVE', 'RESIGNED'], {
-    message: 'status must be one of the following values: ACTIVE, RESIGNED'
+    message: 'status must be one of the following values: ACTIVE, RESIGNED',
   })
   status?: 'ACTIVE' | 'RESIGNED';
 

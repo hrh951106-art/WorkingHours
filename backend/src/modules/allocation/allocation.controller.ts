@@ -118,7 +118,10 @@ export class AllocationController {
 
   @Delete('products/:productId/processes/:processId')
   @ApiOperation({ summary: '从产品移除工序' })
-  async removeProcessFromProduct(@Param('productId') productId: string, @Param('processId') processId: string) {
+  async removeProcessFromProduct(
+    @Param('productId') productId: string,
+    @Param('processId') processId: string,
+  ) {
     return this.allocationService.removeProcessFromProduct(+productId, +processId);
   }
 
@@ -308,6 +311,12 @@ export class AllocationController {
     return this.allocationService.activateAllocationConfig(+id, dto);
   }
 
+  @Post('configs/:id/deactivate')
+  @ApiOperation({ summary: '停用分摊配置' })
+  async deactivateAllocationConfig(@Param('id') id: string, @Body() dto: any) {
+    return this.allocationService.deactivateAllocationConfig(+id, dto);
+  }
+
   @Post('configs/:id/copy')
   @ApiOperation({ summary: '复制分摊配置' })
   async copyAllocationConfig(@Param('id') id: string, @Body() dto: any) {
@@ -378,11 +387,14 @@ export class AllocationController {
     @Query('accountName') accountName: string,
     @Query('levels') levels: string,
   ) {
-    const levelNums = levels.split(',').map(l => parseInt(l.trim(), 10));
+    const levelNums = levels.split(',').map((l) => parseInt(l.trim(), 10));
     return {
       accountName,
       levels: levelNums,
-      values: this.allocationScopeService.extractMultipleLevelsFromAccountName(accountName, levelNums),
+      values: this.allocationScopeService.extractMultipleLevelsFromAccountName(
+        accountName,
+        levelNums,
+      ),
     };
   }
 

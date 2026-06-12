@@ -1255,7 +1255,9 @@ model LaborHourReportRequest {
   accountId         Int
   accountCode        String
   accountPath       String               @default("")
+  accountCodePath   String               @default("")  // 账户代码路径（如：A01/A01��
   accountName       String
+  hierarchyValues   String               @default("{}")  // 层级值JSON字符串
   status            String               @default("PENDING")  // PENDING, APPROVED, REJECTED
   requesterId       Int
   requesterName     String

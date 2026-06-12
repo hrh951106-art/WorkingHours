@@ -194,17 +194,6 @@ const ProductMaintenancePage: React.FC = () => {
     form.resetFields();
   };
 
-  // 重置查询
-  const handleResetFilters = () => {
-    setFilters({
-      keyword: '',
-    });
-    setPagination({
-      current: 1,
-      pageSize: 10,
-    });
-  };
-
   // 上传配置
   const uploadProps: UploadProps = {
     name: 'file',
@@ -292,29 +281,14 @@ const ProductMaintenancePage: React.FC = () => {
             <Input
               placeholder="请输入编码或名称"
               value={filters.keyword}
-              onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
+              onChange={(e) => {
+                setFilters({ ...filters, keyword: e.target.value });
+                setPagination({ ...pagination, current: 1 });
+              }}
               allowClear
               style={{ width: 250 }}
-              onPressEnter={() => refetch()}
               prefix={<SearchOutlined />}
             />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button
-                type="primary"
-                icon={<SearchOutlined />}
-                onClick={() => refetch()}
-              >
-                查询
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={handleResetFilters}
-              >
-                重置
-              </Button>
-            </Space>
           </Form.Item>
         </Form>
 
@@ -341,17 +315,23 @@ const ProductMaintenancePage: React.FC = () => {
       <Modal
         title={editingProduct ? '编辑产品' : '新增产品'}
         open={isModalVisible}
-        onOk={handleSubmit}
         onCancel={handleCancel}
         width={600}
-        confirmLoading={createProductMutation.isPending || updateProductMutation.isPending}
         destroyOnClose
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '0'
+          }
+        }}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          preserve={false}
-        >
+        <div style={{ padding: '24px 12px' }}>
+          <Form
+            form={form}
+            layout="vertical"
+            preserve={false}
+          >
           <Form.Item
             label="编码"
             name="code"
@@ -370,7 +350,12 @@ const ProductMaintenancePage: React.FC = () => {
           >
             <Input placeholder="请输入名称" />
           </Form.Item>
-        </Form>
+          </Form>
+          <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px 0 0 0' }}>
+            <Button onClick={handleCancel}>取消</Button>
+            <Button type="primary" onClick={handleSubmit} loading={createProductMutation.isPending || updateProductMutation.isPending}>确定</Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

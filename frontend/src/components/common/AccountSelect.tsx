@@ -593,13 +593,19 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
       <Modal
         title="新建子劳动力账户"
         open={accountModalOpen}
-        onOk={handleCreateAccountOk}
         onCancel={() => {
           setAccountModalOpen(false);
           setSelectedLevelValues({});
         }}
         confirmLoading={createAccountMutation.isPending}
         width={1000}
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         {/* 账户路径预览 */}
         <div
@@ -971,6 +977,13 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
             }] : []),
           ]}
         />
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={() => {
+            setAccountModalOpen(false);
+            setSelectedLevelValues({});
+          }}>取消</Button>
+          <Button type="primary" onClick={handleCreateAccountOk} loading={createAccountMutation.isPending}>确定</Button>
+        </div>
       </Modal>
     </>
   );

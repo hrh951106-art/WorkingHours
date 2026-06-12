@@ -335,6 +335,14 @@ const router = createBrowserRouter([
         path: 'allocation',
         children: [
           {
+            path: 'config',
+            element: (
+              <SuspenseWrapper>
+                <AllocationConfigPage />
+              </SuspenseWrapper>
+            ),
+          },
+          {
             path: 'line-maintenance',
             element: (
               <SuspenseWrapper>
@@ -350,22 +358,15 @@ const router = createBrowserRouter([
               </SuspenseWrapper>
             ),
           },
-          {
-            path: 'config',
-            element: (
-              <SuspenseWrapper>
-                <AllocationConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
-          {
-            path: 'calculate',
-            element: (
-              <SuspenseWrapper>
-                <AllocationCalculatePage />
-              </SuspenseWrapper>
-            ),
-          },
+          // 分摊计算页面已关闭 - 使用规则列表中的计算按钮
+          // {
+          //   path: 'calculate',
+          //   element: (
+          //     <SuspenseWrapper>
+          //       <AllocationCalculatePage />
+          //     </SuspenseWrapper>
+          //   ),
+          // },
           {
             path: 'results',
             element: (
@@ -914,15 +915,16 @@ const router = createBrowserRouter([
       {
         path: 'allocation',
         children: [
-          { index: true, element: <Navigate to="/allocation/config" replace /> },
-          {
-            path: 'config',
-            element: (
-              <SuspenseWrapper>
-                <AllocationConfigPage />
-              </SuspenseWrapper>
-            ),
-          },
+          { index: true, element: <Navigate to="/allocation/basic-config" replace /> },
+          // 分摊规则已移动到 系统配置-工时管理 下
+          // {
+          //   path: 'config',
+          //   element: (
+          //     <SuspenseWrapper>
+          //       <AllocationConfigPage />
+          //     </SuspenseWrapper>
+          //   ),
+          // },
           {
             path: 'product-config',
             element: (
@@ -939,14 +941,15 @@ const router = createBrowserRouter([
               </SuspenseWrapper>
             ),
           },
-          {
-            path: 'calculate',
-            element: (
-              <SuspenseWrapper>
-                <AllocationCalculatePage />
-              </SuspenseWrapper>
-            ),
-          },
+          // 分摊计算页面已关闭 - 使用规则列表中的计算按钮
+          // {
+          //   path: 'calculate',
+          //   element: (
+          //     <SuspenseWrapper>
+          //       <AllocationCalculatePage />
+          //     </SuspenseWrapper>
+          //   ),
+          // },
           {
             path: 'results',
             element: (

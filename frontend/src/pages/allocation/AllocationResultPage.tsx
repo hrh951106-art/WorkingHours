@@ -623,9 +623,6 @@ const AllocationResultPage: React.FC = () => {
                         <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
                           查询
                         </Button>
-                        <Button onClick={handleReset}>
-                          重置
-                        </Button>
                         <Button icon={<DownloadOutlined />} onClick={handleExport}>
                           导出
                         </Button>
@@ -699,9 +696,6 @@ const AllocationResultPage: React.FC = () => {
                       <Space>
                         <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
                           查询
-                        </Button>
-                        <Button onClick={handleReset}>
-                          重置
                         </Button>
                         <Button icon={<DownloadOutlined />} onClick={handleExport}>
                           导出

@@ -44,16 +44,10 @@ const HierarchyLevelDetailsTab: React.FC = () => {
 
     setRefreshing(true);
     try {
-      const result = await request.post(`/account/hierarchy-config/levels/${selectedLevelId}/refresh-details`);
+      await request.post(`/account/hierarchy-config/levels/${selectedLevelId}/refresh-details`);
 
-      // 更新本地缓存数据
-      queryClient.setQueryData(['hierarchyConfigWithDetails'], (old: any[]) => {
-        if (!old || !Array.isArray(old)) return [result];
-
-        return old.map((level: any) =>
-          level.id === selectedLevelId ? result : level
-        );
-      });
+      // 重新获取层级配置数据
+      await queryClient.invalidateQueries({ queryKey: ['hierarchyConfigWithDetails'] });
 
       message.success('层级明细刷新成功');
     } catch (error: any) {
@@ -68,10 +62,10 @@ const HierarchyLevelDetailsTab: React.FC = () => {
   const refreshAllLevels = async () => {
     setRefreshing(true);
     try {
-      const results = await request.post('/account/hierarchy-config/refresh-all-details');
+      await request.post('/account/hierarchy-config/refresh-all-details');
 
-      // 更新本地缓存数据
-      queryClient.setQueryData(['hierarchyConfigWithDetails'], results);
+      // 重新获取层级配置数据
+      await queryClient.invalidateQueries({ queryKey: ['hierarchyConfigWithDetails'] });
 
       message.success('所有层级明细刷新成功');
     } catch (error: any) {

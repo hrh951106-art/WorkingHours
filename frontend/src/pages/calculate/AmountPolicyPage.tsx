@@ -397,14 +397,47 @@ const AmountPolicyPage: React.FC = () => {
         // 有新的accountId，查找对应的accountPath
         const account = allAccounts?.find((acc: any) => acc.id === values.accountId);
         if (account) {
-          // 金额政策使用namePath（中文路径）进行层级匹配
-          accountPath = account.namePath || account.path || '';
+          // 金额政策使用完整层级路径：根据hierarchyValues生成包含所有层级的路径
+          // 层级顺序：1.工厂 2.车间 3.产线 4.产品 5.工序
+          if (account.hierarchyValues) {
+            try {
+              const hierarchyValues = typeof account.hierarchyValues === 'string'
+                ? JSON.parse(account.hierarchyValues)
+                : account.hierarchyValues;
+
+              // 按level排序（1-5）
+              const sortedLevels = hierarchyValues.sort((a: any, b: any) => a.level - b.level);
+
+              // 提取每个层级的代码，如果没有值则为空字符串
+              const levelCodes = sortedLevels.map((level: any) => {
+                const selectedValue = level.selectedValue;
+                return selectedValue && selectedValue.code ? selectedValue.code : '';
+              });
+
+              // 用/连接所有层级，包括空值
+              accountPath = levelCodes.join('/');
+
+              console.log('根据hierarchyValues生成完整路径:', {
+                hierarchyValues,
+                levelCodes,
+                accountPath
+              });
+            } catch (error) {
+              console.error('解析hierarchyValues失败:', error);
+              // 降级方案：使用path字段
+              accountPath = account.path || '';
+            }
+          } else {
+            // 降级方案：使用path字段
+            accountPath = account.path || account.namePath || '';
+          }
+
           if (!accountPath) {
             console.error('账户数据异常:', account);
             message.error('选择的账户没有路径信息，请选择其他账户');
             return;
           }
-          console.log('找到账户路径:', accountPath);
+          console.log('最终账户路径:', accountPath);
         } else {
           console.error('未找到账户，accountId:', values.accountId);
           console.error('allAccounts数量:', allAccounts?.length);

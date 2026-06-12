@@ -15,7 +15,7 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
     response.removeHeader('ETag');
 
     return next.handle().pipe(
-      map(data => {
+      map((data) => {
         // 如果返回的数据已经是 ApiResponse 格式，直接返回
         if (data instanceof ApiResponse) {
           return data;

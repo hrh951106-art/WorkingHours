@@ -130,7 +130,7 @@ export class EmployeeInfoTabController {
   @ApiOperation({ summary: '移动字段到分组' })
   async moveFieldToGroup(
     @Param('fieldId') fieldId: string,
-    @Body() dto: { groupId: number | null }
+    @Body() dto: { groupId: number | null },
   ) {
     return this.employeeInfoTabService.moveFieldToGroup(+fieldId, dto.groupId);
   }

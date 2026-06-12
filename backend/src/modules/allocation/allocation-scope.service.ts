@@ -40,7 +40,7 @@ export class AllocationScopeService {
    */
   extractMultipleLevelsFromAccountName(
     accountName: string,
-    levels: number[]
+    levels: number[],
   ): Record<number, string | null> {
     return extractMultipleLevelsFromAccountName(accountName, levels);
   }
@@ -74,7 +74,7 @@ export class AllocationScopeService {
       scheduleDate?: Date;
       shiftId?: number;
       status?: string;
-    }
+    },
   ): Promise<any[]> {
     const where: any = {
       status: queryOptions?.status || 'ACTIVE',
@@ -110,7 +110,7 @@ export class AllocationScopeService {
    */
   async extractWH1001LevelFromLineShift(
     lineShiftId: number,
-    targetLevel?: number
+    targetLevel?: number,
   ): Promise<string | null> {
     const lineShift = await this.prisma.lineShift.findUnique({
       where: { id: lineShiftId },
@@ -132,7 +132,7 @@ export class AllocationScopeService {
    */
   async extractWH1001LevelsFromLineShifts(
     lineShiftIds: number[],
-    targetLevel?: number
+    targetLevel?: number,
   ): Promise<(string | null)[]> {
     const lineShifts = await this.prisma.lineShift.findMany({
       where: {
@@ -197,7 +197,7 @@ export class AllocationScopeService {
       shiftId?: number;
       status?: string;
     },
-    wh1001TargetLevel?: number
+    wh1001TargetLevel?: number,
   ): Promise<any[]> {
     // 查询所有符合条件的开线计划记录
     const where: any = {
@@ -225,7 +225,7 @@ export class AllocationScopeService {
       sourceAccountName,
       allocationScopeLevel,
       lineShifts,
-      wh1001TargetLevel
+      wh1001TargetLevel,
     );
 
     return matched;
@@ -246,7 +246,7 @@ export class AllocationScopeService {
       scheduleDate?: Date;
       shiftId?: number;
       status?: string;
-    }
+    },
   ): Promise<any[]> {
     // 获取分摊范围配置
     const scopeConfig = await this.prisma.accountHierarchyConfig.findUnique({
@@ -258,11 +258,7 @@ export class AllocationScopeService {
     }
 
     // 使用配置的层级进行匹配
-    return this.matchAllocationScope(
-      sourceAccountName,
-      scopeConfig.level,
-      queryOptions
-    );
+    return this.matchAllocationScope(sourceAccountName, scopeConfig.level, queryOptions);
   }
 
   /**

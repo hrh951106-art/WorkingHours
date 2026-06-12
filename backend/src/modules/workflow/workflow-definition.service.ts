@@ -1,12 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateWorkflowDefinitionDto, UpdateWorkflowDefinitionDto } from './dto/workflow-definition.dto';
+import {
+  CreateWorkflowDefinitionDto,
+  UpdateWorkflowDefinitionDto,
+} from './dto/workflow-definition.dto';
 
 @Injectable()
 export class WorkflowDefinitionService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(params: { page?: number; pageSize?: number; category?: string; status?: string } = {}) {
+  async findAll(
+    params: { page?: number; pageSize?: number; category?: string; status?: string } = {},
+  ) {
     const { page = 1, pageSize = 10, category, status } = params;
     const skip = (page - 1) * pageSize;
 
@@ -148,7 +153,9 @@ export class WorkflowDefinitionService {
           });
 
           if (!sourceNode || !targetNode) {
-            throw new BadRequestException(`边配置错误: 找不到节点 ${edge.source} 或 ${edge.target}`);
+            throw new BadRequestException(
+              `边配置错误: 找不到节点 ${edge.source} 或 ${edge.target}`,
+            );
           }
 
           await tx.workflowEdge.create({
@@ -268,7 +275,9 @@ export class WorkflowDefinitionService {
             });
 
             if (!sourceNode || !targetNode) {
-              throw new BadRequestException(`边配置错误: 找不到节点 ${edge.source} 或 ${edge.target}`);
+              throw new BadRequestException(
+                `边配置错误: 找不到节点 ${edge.source} 或 ${edge.target}`,
+              );
             }
 
             await tx.workflowEdge.create({

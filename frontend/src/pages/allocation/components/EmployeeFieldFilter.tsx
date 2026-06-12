@@ -507,60 +507,88 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
   return (
     <div>
       {/* 条件列表 */}
-      <div>
-        {conditions.map((condition, conditionIndex) => (
-          <Row key={conditionIndex} gutter={8} align="top" style={{ marginBottom: 12 }}>
-            <Col span={1}>
-              {conditionIndex > 0 && (
-                <Tag color="blue" style={{ marginTop: 4 }}>
-                  AND
-                </Tag>
-              )}
-            </Col>
-            <Col span={6}>
-              <Select
-                placeholder="选择字段"
-                value={condition.fieldCode}
-                onChange={(val) => {
-                  const field = allFields.find((f) => f.code === val);
-                  console.log(`选择字段: ${val}, 类型: ${field?.type}`);
+      {conditions.length === 0 ? (
+        // 未配置条件时，显示提示和添加按钮
+        <div style={{ textAlign: 'center', padding: '8px 16px' }}>
+          <div style={{ color: '#999', marginBottom: 8, fontSize: 12 }}>
+            暂未配置人员条件，点击下方按钮添加
+          </div>
+          <Button
+            type="dashed"
+            onClick={addCondition}
+            icon={<PlusOutlined />}
+            disabled={disabled}
+            size="small"
+          >
+            添加条件
+          </Button>
+        </div>
+      ) : (
+        // 有条件时，显示条件列表
+        <div>
+          {conditions.map((condition, conditionIndex) => (
+            <Row key={conditionIndex} gutter={8} align="top" style={{ marginBottom: 12 }}>
+              <Col span={1}>
+                {conditionIndex === 0 ? (
+                  // 第一行显示+按钮，用于添加新条件
+                  <Button
+                    type="dashed"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={addCondition}
+                    disabled={disabled}
+                    style={{ marginTop: 0 }}
+                  />
+                ) : (
+                  // 其他行显示AND标签
+                  <Tag color="blue" style={{ marginTop: 4 }}>
+                    AND
+                  </Tag>
+                )}
+              </Col>
+              <Col span={7}>
+                <Select
+                  placeholder="选择字段"
+                  value={condition.fieldCode}
+                  onChange={(val) => {
+                    const field = allFields.find((f) => f.code === val);
+                    console.log(`选择字段: ${val}, 类型: ${field?.type}`);
 
-                  updateCondition(conditionIndex, {
-                    fieldCode: val,
-                    fieldName: field?.name || val,
-                    fieldType: field?.type || 'text',
-                    value: '',
-                    operator: 'eq',
-                  });
-                }}
-                disabled={disabled}
-                showSearch
-                optionFilterProp="label"
-              >
-                {allFields.map((field) => (
-                  <Select.Option key={field.code} value={field.code} label={field.name}>
-                    <Space>
-                      {field.icon}
-                      {field.name}
-                    </Space>
-                  </Select.Option>
-                ))}
-              </Select>
-            </Col>
-            <Col span={5}>
-              <Select
-                placeholder="操作符"
-                value={condition.operator}
-                onChange={(val) => updateCondition(conditionIndex, { operator: val })}
-                disabled={disabled}
-                options={getOperatorsForFieldType(condition.fieldType)}
-              />
-            </Col>
-            <Col span={10}>
-              {renderValueInput(condition, conditionIndex)}
-            </Col>
-            <Col span={2}>
-              {conditions.length > 1 && (
+                    updateCondition(conditionIndex, {
+                      fieldCode: val,
+                      fieldName: field?.name || val,
+                      fieldType: field?.type || 'text',
+                      value: '',
+                      operator: 'eq',
+                    });
+                  }}
+                  disabled={disabled}
+                  showSearch
+                  optionFilterProp="label"
+                >
+                  {allFields.map((field) => (
+                    <Select.Option key={field.code} value={field.code} label={field.name}>
+                      <Space>
+                        {field.icon}
+                        {field.name}
+                      </Space>
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Col>
+              <Col span={5}>
+                <Select
+                  placeholder="操作符"
+                  value={condition.operator}
+                  onChange={(val) => updateCondition(conditionIndex, { operator: val })}
+                  disabled={disabled}
+                  options={getOperatorsForFieldType(condition.fieldType)}
+                />
+              </Col>
+              <Col span={9}>
+                {renderValueInput(condition, conditionIndex)}
+              </Col>
+              <Col span={2} style={{ textAlign: 'right' }}>
                 <Button
                   type="link"
                   size="small"
@@ -571,31 +599,11 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
                 >
                   删除
                 </Button>
-              )}
-            </Col>
-          </Row>
-        ))}
-
-        {conditions.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 16, color: '#999' }}>
-            暂无条件，请添加条件
-          </div>
-        )}
-      </div>
-
-      <Divider style={{ margin: '12px 0' }} />
-
-      {/* 添加条件按钮 */}
-      <Button
-        type="dashed"
-        onClick={addCondition}
-        icon={<PlusOutlined />}
-        block
-        size="small"
-        disabled={disabled}
-      >
-        添加条件
-      </Button>
+              </Col>
+            </Row>
+          ))}
+        </div>
+      )}
 
       {/* 产线选择Modal */}
       <Modal
@@ -607,6 +615,12 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
           setCurrentConditionIndex(null);
         }}
         width={600}
+        centered
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         <div style={{ marginBottom: 12 }}>
           <Checkbox

@@ -61,11 +61,15 @@ export class PunchPairingService {
     }
 
     // 过滤已使用的打卡记录
-    const remainingInPunches = inPunches.filter(p => !usedInPunches.has(p.id));
-    const remainingOutPunches = outPunches.filter(p => !usedOutPunches.has(p.id));
+    const remainingInPunches = inPunches.filter((p) => !usedInPunches.has(p.id));
+    const remainingOutPunches = outPunches.filter((p) => !usedOutPunches.has(p.id));
 
     // 优先级2：子劳动力账户 相同
-    const priority2Pairs = this.pairByAccount(remainingInPunches, remainingOutPunches, pairingInterval);
+    const priority2Pairs = this.pairByAccount(
+      remainingInPunches,
+      remainingOutPunches,
+      pairingInterval,
+    );
     for (const pair of priority2Pairs) {
       results.push(pair);
       usedInPunches.add(pair.inPunch.id);
@@ -73,11 +77,15 @@ export class PunchPairingService {
     }
 
     // 过滤已使用的打卡记录
-    const remainingInPunches2 = inPunches.filter(p => !usedInPunches.has(p.id));
-    const remainingOutPunches2 = outPunches.filter(p => !usedOutPunches.has(p.id));
+    const remainingInPunches2 = inPunches.filter((p) => !usedInPunches.has(p.id));
+    const remainingOutPunches2 = outPunches.filter((p) => !usedOutPunches.has(p.id));
 
     // 优先级3：进出标记 相同
-    const priority3Pairs = this.pairByType(remainingInPunches2, remainingOutPunches2, pairingInterval);
+    const priority3Pairs = this.pairByType(
+      remainingInPunches2,
+      remainingOutPunches2,
+      pairingInterval,
+    );
     for (const pair of priority3Pairs) {
       results.push(pair);
       usedInPunches.add(pair.inPunch.id);
@@ -85,11 +93,15 @@ export class PunchPairingService {
     }
 
     // 过滤已使用的打卡记录
-    const remainingInPunches3 = inPunches.filter(p => !usedInPunches.has(p.id));
-    const remainingOutPunches3 = outPunches.filter(p => !usedOutPunches.has(p.id));
+    const remainingInPunches3 = inPunches.filter((p) => !usedInPunches.has(p.id));
+    const remainingOutPunches3 = outPunches.filter((p) => !usedOutPunches.has(p.id));
 
     // 优先级4：无标记（相邻配对）
-    const priority4Pairs = this.pairAdjacent(remainingInPunches3, remainingOutPunches3, pairingInterval);
+    const priority4Pairs = this.pairAdjacent(
+      remainingInPunches3,
+      remainingOutPunches3,
+      pairingInterval,
+    );
     for (const pair of priority4Pairs) {
       results.push(pair);
       usedInPunches.add(pair.inPunch.id);
@@ -119,8 +131,8 @@ export class PunchPairingService {
 
       // 将IN和OUT打卡合并，按时间排序
       const allPunches = [
-        ...groupInPunches.map(p => ({ ...p, type: 'IN' })),
-        ...groupOutPunches.map(p => ({ ...p, type: 'OUT' }))
+        ...groupInPunches.map((p) => ({ ...p, type: 'IN' })),
+        ...groupOutPunches.map((p) => ({ ...p, type: 'OUT' })),
       ].sort((a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
 
       // 按时间顺序相邻成对：只配对相邻的 IN 和 OUT
@@ -297,7 +309,7 @@ export class PunchPairingService {
 
     // 合并所有打卡记录并按时间排序
     const allPunches = [...inPunches, ...outPunches].sort(
-      (a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime()
+      (a, b) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime(),
     );
 
     // 第一笔视为进，第二笔视为出，依此类推
@@ -418,10 +430,18 @@ export class PunchPairingService {
     inPunches: any[],
     outPunches: any[],
     pairedResults: PairingResult[],
-  ): { inPunch: any; outPunch: any; accountId: number | null; pairingReason: string; priority: number }[] {
+  ): {
+    inPunch: any;
+    outPunch: any;
+    accountId: number | null;
+    pairingReason: string;
+    priority: number;
+  }[] {
     const unpaired: any[] = [];
-    const pairedInIds = new Set(pairedResults.map(r => r.inPunch?.id).filter(id => id != null));
-    const pairedOutIds = new Set(pairedResults.map(r => r.outPunch?.id).filter(id => id != null));
+    const pairedInIds = new Set(pairedResults.map((r) => r.inPunch?.id).filter((id) => id != null));
+    const pairedOutIds = new Set(
+      pairedResults.map((r) => r.outPunch?.id).filter((id) => id != null),
+    );
 
     // 未配对的签入
     for (const inPunch of inPunches) {

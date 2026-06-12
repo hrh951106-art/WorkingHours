@@ -15,8 +15,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exceptionResponse
         : (exceptionResponse as any).message || exception.message;
 
-    response.status(status).json(
-      new ApiResponse(false, Array.isArray(message) ? message[0] : message),
-    );
+    response
+      .status(status)
+      .json(new ApiResponse(false, Array.isArray(message) ? message[0] : message));
   }
 }

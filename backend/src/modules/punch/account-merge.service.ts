@@ -16,7 +16,11 @@ export class AccountMergeService {
    * @param punchTime 打卡时间
    * @returns 合并后的账户路径
    */
-  async mergeAccounts(punchAccountPath: string | null, deviceId: number, punchTime: Date): Promise<string> {
+  async mergeAccounts(
+    punchAccountPath: string | null,
+    deviceId: number,
+    punchTime: Date,
+  ): Promise<string> {
     // 如果刷卡记录没有账户，只使用设备绑定账户
     if (!punchAccountPath || punchAccountPath.trim() === '') {
       const deviceAccountPath = await this.getDeviceAccountPath(deviceId, punchTime);
@@ -106,7 +110,7 @@ export class AccountMergeService {
    */
   private mergePaths(
     punchPath: (string | null)[],
-    devicePath: (string | null)[]
+    devicePath: (string | null)[],
   ): (string | null)[] {
     // 确定最大长度
     const maxLength = Math.max(punchPath.length, devicePath.length);
@@ -144,7 +148,14 @@ export class AccountMergeService {
    * @param punchRecords 打卡记录列表
    * @returns 更新后的打卡记录（包含合并后的账户路径）
    */
-  async batchMergeAccounts(punchRecords: Array<{ id: number; deviceId: number; punchTime: Date; accountId?: number | null }>) {
+  async batchMergeAccounts(
+    punchRecords: Array<{
+      id: number;
+      deviceId: number;
+      punchTime: Date;
+      accountId?: number | null;
+    }>,
+  ) {
     const results = [];
 
     for (const record of punchRecords) {
@@ -159,7 +170,11 @@ export class AccountMergeService {
       }
 
       // 合并账户
-      const mergedPath = await this.mergeAccounts(punchAccountPath, record.deviceId, record.punchTime);
+      const mergedPath = await this.mergeAccounts(
+        punchAccountPath,
+        record.deviceId,
+        record.punchTime,
+      );
 
       // 查找或创建合并后的账户
       let mergedAccountId = null;

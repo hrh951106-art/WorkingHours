@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -421,7 +432,8 @@ export class AmountPolicyController {
       throw new Error('用户信息无效，请重新登录');
     }
 
-    const { employeeId, effectiveDate, expiryDate, coefficient, reason, description, ...rest } = dto;
+    const { employeeId, effectiveDate, expiryDate, coefficient, reason, description, ...rest } =
+      dto;
 
     const data: any = {
       ...rest,

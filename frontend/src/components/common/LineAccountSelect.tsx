@@ -66,7 +66,8 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
   // 解析可选择的层级ID列表
   const selectableLevelIds = useMemo(() => {
     if (!productionLineHierarchyConfig) return [];
-    return productionLineHierarchyConfig.split(',').map((id: string) => parseInt(id.trim())).filter((id: number) => !isNaN(id));
+    const ids = productionLineHierarchyConfig.split(',').map((id: string) => parseInt(id.trim())).filter((id: number) => !isNaN(id));
+    return ids;
   }, [productionLineHierarchyConfig]);
 
   // 获取最近创建的5个子劳动力账户
@@ -385,9 +386,10 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
     });
   };
 
-  // 构建组织树数据（带禁用状态，只显示映射到层级的组织或包含可选拥有孙节点的组织）
+  // 构建组织树数据��带禁用状态，只显示映射到层级的组织或包含可选拥有孙节点的组织）
   const buildOrgTreeData = (orgs: any[]): any[] => {
     if (!orgs || orgs.length === 0) return [];
+
 
     const buildNode = (org: any): any => {
       // 查找该组织类型对应的层级配置
@@ -395,6 +397,9 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
 
       // 使用层级序号（level.level）来判断是否可选
       const isSelectable = level ? selectableLevelIds.includes(level.level) : false;
+
+      if (level) {
+      }
 
       // 递归处理子节点
       const validChildren = org.children
@@ -618,13 +623,19 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
       <Modal
         title="新建产线账户"
         open={accountModalOpen}
-        onOk={handleCreateAccountOk}
         onCancel={() => {
           setAccountModalOpen(false);
           setSelectedLevelValues({});
         }}
         confirmLoading={createAccountMutation.isPending}
         width={800}
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         {/* 可选层级提示 */}
         {selectableLevelIds.length > 0 && (
@@ -1025,6 +1036,13 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
             }] : []),
           ]}
         />
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={() => {
+            setAccountModalOpen(false);
+            setSelectedLevelValues({});
+          }}>取消</Button>
+          <Button type="primary" onClick={handleCreateAccountOk} loading={createAccountMutation.isPending}>确定</Button>
+        </div>
       </Modal>
     </>
   );

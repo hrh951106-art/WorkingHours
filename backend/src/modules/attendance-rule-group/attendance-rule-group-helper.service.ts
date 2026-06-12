@@ -27,10 +27,7 @@ export class AttendanceRuleGroupHelper {
         effectiveDate: {
           lte: normalizedDate,
         },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gte: normalizedDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gte: normalizedDate } }],
       },
       orderBy: {
         effectiveDate: 'desc', // 取最新的配置
@@ -70,10 +67,7 @@ export class AttendanceRuleGroupHelper {
       where: {
         employeeNo: { in: employeeNos },
         effectiveDate: { lte: normalizedDate },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gte: normalizedDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gte: normalizedDate } }],
       },
       orderBy: {
         effectiveDate: 'desc',
@@ -112,21 +106,14 @@ export class AttendanceRuleGroupHelper {
    * @param endDate 结束日期
    * @returns 员工考勤规则组列表
    */
-  async getEmployeeRuleGroupHistory(
-    employeeNo: string,
-    startDate: Date,
-    endDate: Date,
-  ) {
+  async getEmployeeRuleGroupHistory(employeeNo: string, startDate: Date, endDate: Date) {
     return this.prisma.employeeAttendanceRuleGroup.findMany({
       where: {
         employeeNo,
         effectiveDate: {
           lte: endDate,
         },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gte: startDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gte: startDate } }],
       },
       orderBy: {
         effectiveDate: 'desc',

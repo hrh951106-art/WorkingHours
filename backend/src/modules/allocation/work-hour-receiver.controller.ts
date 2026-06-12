@@ -5,9 +5,7 @@ import { WorkHourReceiverService } from './work-hour-receiver.service';
 @Controller('allocation/work-hours')
 @UseGuards(JwtAuthGuard)
 export class WorkHourReceiverController {
-  constructor(
-    private readonly workHourReceiverService: WorkHourReceiverService,
-  ) {}
+  constructor(private readonly workHourReceiverService: WorkHourReceiverService) {}
 
   /**
    * 接收工时结果推送（内部API）

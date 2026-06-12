@@ -517,12 +517,6 @@ const ProductionRecordPage: React.FC = () => {
               >
                 查询
               </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={handleResetFilters}
-              >
-                重置
-              </Button>
             </Space>
           </Form.Item>
         </Form>
@@ -546,7 +540,13 @@ const ProductionRecordPage: React.FC = () => {
         open={isImportModalVisible}
         onCancel={handleImportCancel}
         width={800}
+        centered
         footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           {/* 步骤说明 */}
@@ -631,24 +631,18 @@ const ProductionRecordPage: React.FC = () => {
               />
             </div>
           )}
-
-          {/* 操作按钮 */}
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={handleImportCancel}>
-                取消
-              </Button>
-              <Button
-                type="primary"
-                onClick={handleBatchImport}
-                disabled={parsedData.length === 0 || isUploading}
-                loading={isUploading}
-              >
-                开始导入
-              </Button>
-            </Space>
-          </div>
         </Space>
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={handleImportCancel}>取消</Button>
+          <Button
+            type="primary"
+            onClick={handleBatchImport}
+            disabled={parsedData.length === 0 || isUploading}
+            loading={isUploading}
+          >
+            开始导入
+          </Button>
+        </div>
       </Modal>
     </div>
   );

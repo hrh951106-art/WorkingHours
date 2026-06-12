@@ -28,10 +28,7 @@ export class AmountCalculateService {
       where: {
         employeeNo,
         effectiveDate: { lte: calcDate },
-        OR: [
-          { expiryDate: null },
-          { expiryDate: { gte: calcDate } },
-        ],
+        OR: [{ expiryDate: null }, { expiryDate: { gte: calcDate } }],
         status: 'ACTIVE',
       },
       orderBy: { effectiveDate: 'desc' },
@@ -130,7 +127,7 @@ export class AmountCalculateService {
   private async matchPolicy(
     accountPath: string,
     attendanceCode: string,
-    calcDate: Date
+    calcDate: Date,
   ): Promise<any | null> {
     // 获取所有激活的金额政策
     const policies = await this.prisma.amountPolicy.findMany({
@@ -165,7 +162,7 @@ export class AmountCalculateService {
       const isAccountMatch = this.checkAccountPathMatch(
         accountPath,
         policy.accountPath || '',
-        policy.accountPathMatch || 'EXACT'
+        policy.accountPathMatch || 'EXACT',
       );
 
       console.log(`  政策账户路径: ${policy.accountPath}`);
@@ -197,7 +194,7 @@ export class AmountCalculateService {
   private checkAccountPathMatch(
     actualPath: string,
     policyPath: string,
-    matchType: string
+    matchType: string,
   ): boolean {
     if (!actualPath || !policyPath) {
       return false;
@@ -208,11 +205,41 @@ export class AmountCalculateService {
     } else if (matchType === 'PREFIX') {
       return actualPath.startsWith(policyPath);
     } else if (matchType === 'LEVEL') {
-      // LEVEL 匹配：检查账户路径的层级是否匹配
-      // 例如：DH/DH01/DH0101//A02 应该匹配 DH/DH01/DH0101/A02
-      // 处理 // 的情况
-      const normalizePath = (path: string) => path.replace(/\/\//g, '/');
-      return normalizePath(actualPath) === normalizePath(policyPath);
+      // LEVEL 匹配：按层级匹配账户路径
+      // 规则：
+      // 1. 政策路径和实际路径都必须有相同的层级数量（按/分割后的数组长度）
+      // 2. 逐层比较：
+      //    - 如果政策路径的某一层为空字符串，则该层匹配任意值（通配符）
+      //    - 如果政策路径的某一层有值，则实际路径的对应层必须完全相等
+      //
+      // 示例：
+      // - 政策路径：///A01/A02 → ['','','','A01','A02']
+      // - 实际路径：DH/DH01/DH0101/A01/A02 → ['DH','DH01','DH0101','A01','A02']
+      // - 匹配结果：✅ 前3层为空（通配），第4层A01==A01，第5层A02==A02
+
+      const policyLevels = policyPath.split('/');
+      const actualLevels = actualPath.split('/');
+
+      // 层级数量必须相同
+      if (policyLevels.length !== actualLevels.length) {
+        return false;
+      }
+
+      // 逐层比较
+      for (let i = 0; i < policyLevels.length; i++) {
+        const policyLevel = policyLevels[i];
+        const actualLevel = actualLevels[i];
+
+        // 如果政策层有值，则必须精确匹配
+        if (policyLevel !== '' && policyLevel !== actualLevel) {
+          return false;
+        }
+
+        // 如果政策层为空，则匹配任意值（通配符）
+        // 继续检查下一层
+      }
+
+      return true;
     }
 
     return false;

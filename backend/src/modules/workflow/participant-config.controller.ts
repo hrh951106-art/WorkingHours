@@ -1,7 +1,11 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ParticipantConfigService } from './participant-config.service';
-import { CreateParticipantConfigDto, UpdateParticipantConfigDto, UpdateParticipantConfigStatusDto } from './dto/participant-config.dto';
+import {
+  CreateParticipantConfigDto,
+  UpdateParticipantConfigDto,
+  UpdateParticipantConfigStatusDto,
+} from './dto/participant-config.dto';
 
 @Controller('workflow/participants')
 @UseGuards(JwtAuthGuard)

@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateParticipantConfigDto, UpdateParticipantConfigDto, UpdateParticipantConfigStatusDto } from './dto/participant-config.dto';
+import {
+  CreateParticipantConfigDto,
+  UpdateParticipantConfigDto,
+  UpdateParticipantConfigStatusDto,
+} from './dto/participant-config.dto';
 
 @Injectable()
 export class ParticipantConfigService {
@@ -8,10 +12,7 @@ export class ParticipantConfigService {
 
   async findAll() {
     return this.prisma.participantConfig.findMany({
-      orderBy: [
-        { sortOrder: 'asc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
     });
   }
 

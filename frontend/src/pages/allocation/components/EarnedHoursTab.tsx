@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Modal, Form, Input, message, Popconfirm, Tag, Row, Col, Select, DatePicker, Steps, Divider } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, StopOutlined } from '@ant-design/icons';
+import { useState, useEffect, useRef } from 'react';
+import { Card, Table, Button, Space, Modal, Form, Input, message, Popconfirm, Tag, Row, Col, Select, DatePicker, Steps, Divider, Alert, Empty } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, StopOutlined, CalculatorOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 import dayjs from 'dayjs';
@@ -31,8 +31,11 @@ const EarnedHoursTab: React.FC = () => {
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<string>('');
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isCalcModalVisible, setIsCalcModalVisible] = useState(false);
   const [editingConfig, setEditingConfig] = useState<EarnedHourConfig | null>(null);
+  const [calcConfig, setCalcConfig] = useState<EarnedHourConfig | null>(null);
   const [form] = Form.useForm();
+  const [calcForm] = Form.useForm();
   const queryClient = useQueryClient();
 
   // 获取出勤代码列表
@@ -191,28 +194,109 @@ const EarnedHoursTab: React.FC = () => {
 
   // 删除按钮
   const handleDelete = (id: number) => {
-    deleteMutation.mutate(id);
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除此配置吗？删除后将无法恢复。',
+      icon: null,
+      centered: true,
+      okText: '确定',
+      cancelText: '取消',
+      className: 'deactivate-modal',
+      onOk: () => {
+        return deleteMutation.mutateAsync(id);
+      },
+    });
   };
 
   // 启用按钮
   const handleActivate = (id: number) => {
-    activateMutation.mutate(id);
+    Modal.confirm({
+      title: '确认启用',
+      content: '确定要启用这条配置吗？启用后将无法修改。',
+      icon: null,
+      centered: true,
+      okText: '确定',
+      cancelText: '取消',
+      className: 'deactivate-modal',
+      onOk: () => {
+        activateMutation.mutate(id);
+      },
+    });
   };
 
   // 停用按钮
   const handleDeactivate = (id: number) => {
-    deactivateMutation.mutate(id);
+    Modal.confirm({
+      title: '确认停用',
+      content: '确定要停用这条配置吗？停用后将不再执行该分配规则。',
+      icon: null,
+      centered: true,
+      okText: '确定',
+      cancelText: '取消',
+      className: 'deactivate-modal',
+      onOk: () => {
+        deactivateMutation.mutate(id);
+      },
+    });
+  };
+
+  const handleOpenCalcModal = (config: EarnedHourConfig) => {
+    setCalcConfig(config);
+    calcForm.setFieldsValue({
+      dateRange: [dayjs().subtract(7, 'day'), dayjs()],
+    });
+    setIsCalcModalVisible(true);
+  };
+
+  // 计算mutation
+  const calculateMutation = useMutation({
+    mutationFn: (data: any) => {
+      return request.post('/earned-hours-allocation/calculate', data);
+    },
+    onSuccess: () => {
+      message.success('挣得工时分摊计算完成');
+      setIsCalcModalVisible(false);
+      setCalcConfig(null);
+      calcForm.resetFields();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '计算失败');
+    },
+  });
+
+  const handleCalcSubmit = async () => {
+    try {
+      const values = await calcForm.validateFields();
+
+      const data = {
+        configId: calcConfig?.id,
+        startDate: values.dateRange[0].format('YYYY-MM-DD'),
+        endDate: values.dateRange[1].format('YYYY-MM-DD'),
+        executeById: 1,
+        executeByName: 'Admin',
+      };
+
+      calculateMutation.mutate(data);
+    } catch (error) {
+      console.error('表单验证失败:', error);
+    }
+  };
+
+  const handleCalcCancel = () => {
+    setIsCalcModalVisible(false);
+    setCalcConfig(null);
+    calcForm.resetFields();
   };
 
   const columns = [
     {
-      title: '配置编码',
+      title: '规则代码',
       dataIndex: 'configCode',
       key: 'configCode',
       width: 150,
     },
     {
-      title: '配置名称',
+      title: '规则名称',
       dataIndex: 'configName',
       key: 'configName',
       width: 200,
@@ -225,8 +309,8 @@ const EarnedHoursTab: React.FC = () => {
       render: (status: string) => {
         const statusMap: Record<string, { text: string; color: string }> = {
           'DRAFT': { text: '草稿', color: 'default' },
-          'ACTIVE': { text: '启用', color: 'green' },
-          'INACTIVE': { text: '停用', color: 'red' },
+          'ACTIVE': { text: '生效', color: 'green' },
+          'INACTIVE': { text: '失效', color: 'red' },
         };
         const statusInfo = statusMap[status] || { text: status, color: 'default' };
         return <Tag color={statusInfo.color}>{statusInfo.text}</Tag>;
@@ -244,90 +328,91 @@ const EarnedHoursTab: React.FC = () => {
       width: 300,
       fixed: 'right' as const,
       render: (_: any, record: EarnedHourConfig) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-
+        <Space size={8} split={<div style={{ width: '1px', height: '12px', background: 'var(--color-border-1)' }} />}>
           {record.status === 'DRAFT' && (
             <>
-              <Popconfirm
-                title="确认启用"
-                description="确定要启用这条配置吗？启用后将开始执行分配规则。"
-                onConfirm={() => handleActivate(record.id)}
-                okText="确定"
-                cancelText="取消"
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+                style={{ padding: '0 4px' }}
               >
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<CheckCircleOutlined />}
-                  style={{ color: '#52c41a' }}
-                >
-                  启用
-                </Button>
-              </Popconfirm>
+                编辑
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                icon={<CheckCircleOutlined />}
+                onClick={() => handleActivate(record.id)}
+                style={{ padding: '0 4px', color: '#52c41a' }}
+              >
+                启用
+              </Button>
 
-              <Popconfirm
-                title="确认删除"
-                description="确定要删除这条配置吗？"
-                onConfirm={() => handleDelete(record.id)}
-                okText="确定"
-                cancelText="取消"
-              >
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                >
-                  删除
-                </Button>
-              </Popconfirm>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} style={{ padding: '0 4px' }}>
+                删除
+              </Button>
             </>
           )}
 
           {record.status === 'ACTIVE' && (
-            <Popconfirm
-              title="确认停用"
-              description="确定要停用这条配置吗？停用后将不再执行分配规则。"
-              onConfirm={() => handleDeactivate(record.id)}
-              okText="确定"
-              cancelText="取消"
-            >
+            <>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+                style={{ padding: '0 4px' }}
+              >
+                编辑
+              </Button>
               <Button
                 type="link"
                 size="small"
                 danger
                 icon={<StopOutlined />}
+                onClick={() => handleDeactivate(record.id)}
+                style={{ padding: '0 4px' }}
               >
                 停用
               </Button>
-            </Popconfirm>
+              <Button
+                type="link"
+                size="small"
+                icon={<CalculatorOutlined />}
+                onClick={() => handleOpenCalcModal(record)}
+                style={{ padding: '0 4px', color: '#1890ff' }}
+              >
+                计算
+              </Button>
+            </>
           )}
 
           {record.status === 'INACTIVE' && (
-            <Popconfirm
-              title="确认启用"
-              description="确定要重新启用这条配置吗？"
-              onConfirm={() => handleActivate(record.id)}
-              okText="确定"
-              cancelText="取消"
-            >
+            <>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+                style={{ padding: '0 4px' }}
+              >
+                编辑
+              </Button>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} style={{ padding: '0 4px' }}>
+                删除
+              </Button>
               <Button
                 type="link"
                 size="small"
                 icon={<CheckCircleOutlined />}
-                style={{ color: '#52c41a' }}
+                onClick={() => handleActivate(record.id)}
+                style={{ padding: '0 4px', color: '#52c41a' }}
               >
-                重新启用
+                启用
               </Button>
-            </Popconfirm>
+            </>
           )}
         </Space>
       ),
@@ -336,29 +421,31 @@ const EarnedHoursTab: React.FC = () => {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
-        <Input.Search
-          placeholder="搜索配置编码、名称"
-          allowClear
-          style={{ width: 300 }}
-          onSearch={(value) => setKeyword(value)}
-          onChange={(e) => !e.target.value && setKeyword('')}
-        />
-        <Select
-          placeholder="选择状态"
-          allowClear
-          style={{ width: 120 }}
-          value={status}
-          onChange={setStatus}
-        >
-          <Select.Option value="DRAFT">草稿</Select.Option>
-          <Select.Option value="ACTIVE">启用</Select.Option>
-          <Select.Option value="INACTIVE">停用</Select.Option>
-        </Select>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Space size={8} wrap>
+          <Input.Search
+            placeholder="搜索规则代码、名称"
+            allowClear
+            style={{ width: 240 }}
+            onSearch={(value) => setKeyword(value)}
+            onChange={(e) => !e.target.value && setKeyword('')}
+          />
+          <Select
+            placeholder="选择状态"
+            allowClear
+            style={{ width: 120 }}
+            value={status}
+            onChange={setStatus}
+          >
+            <Select.Option value="DRAFT">草稿</Select.Option>
+            <Select.Option value="ACTIVE">生效</Select.Option>
+            <Select.Option value="INACTIVE">失效</Select.Option>
+          </Select>
+        </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          新建配置
+          新增
         </Button>
-      </Space>
+      </div>
 
       <Table
         columns={columns}
@@ -381,7 +468,7 @@ const EarnedHoursTab: React.FC = () => {
 
       {/* 新增/编辑弹窗 - 向导式 */}
       <Modal
-        title={editingConfig ? '编辑挣得工时规则' : '新建挣得工时规则'}
+        title={editingConfig ? '编辑' : '新增'}
         open={isModalVisible}
         onCancel={() => {
           setIsModalVisible(false);
@@ -389,6 +476,20 @@ const EarnedHoursTab: React.FC = () => {
           form.resetFields();
         }}
         width={1000}
+        centered
+        styles={{
+          body: {
+            height: 'calc(100vh - 120px)',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '0 !important',
+            overflowY: 'hidden'
+          },
+          content: {
+            borderRadius: '4px'
+          }
+        }}
+        destroyOnClose
         footer={null}
       >
         <EarnedHoursWizardForm
@@ -447,6 +548,12 @@ const EarnedHoursTab: React.FC = () => {
                 console.log('转换后的 transformedSourceConfig:', JSON.stringify(transformedSourceConfig, null, 2));
               }
 
+              // 清理rules数组中的isNew标志（仅用于UI逻辑，不发送到后端）
+              const cleanedRules = (values.rules || []).map((rule: any) => {
+                const { isNew, ...ruleData } = rule;
+                return ruleData;
+              });
+
               const data = {
                 configCode: values.configCode,
                 configName: values.configName,
@@ -457,7 +564,7 @@ const EarnedHoursTab: React.FC = () => {
                 effectiveStartTime: dayjs().format('YYYY-MM-DD'),
                 effectiveEndTime: null,
                 sourceConfig: transformedSourceConfig,
-                rules: values.rules || [],
+                rules: cleanedRules,
                 createdById: 1,
                 createdByName: 'Admin',
               };
@@ -489,6 +596,40 @@ const EarnedHoursTab: React.FC = () => {
           }}
           isSubmitting={createMutation.isPending || updateMutation.isPending}
         />
+      </Modal>
+
+      {/* 计算周期弹窗 */}
+      <Modal
+        title="分配计算"
+        open={isCalcModalVisible}
+        onCancel={handleCalcCancel}
+        width={500}
+        centered
+        footer={null}
+        styles={{
+          body: {
+            padding: '24px 12px'
+          }
+        }}
+      >
+        <Form form={calcForm} layout="vertical">
+          <Form.Item
+            label="规则名称"
+          >
+            <Input value={calcConfig?.configName} disabled />
+          </Form.Item>
+          <Form.Item
+            label="计算周期"
+            name="dateRange"
+            rules={[{ required: true, message: '请选择计算周期' }]}
+          >
+            <DatePicker.RangePicker style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+        <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: '24px -12px -12px -12px', width: 'calc(100% + 24px)' }}>
+          <Button onClick={handleCalcCancel}>取消</Button>
+          <Button type="primary" onClick={handleCalcSubmit} loading={calculateMutation.isPending}>确定</Button>
+        </div>
       </Modal>
     </>
   );
@@ -530,6 +671,22 @@ const EarnedHoursWizardForm: React.FC<EarnedHoursWizardFormProps> = ({
       if (currentStep === 0) {
         // 验证第一步
         await form.validateFields(['configCode', 'configName']);
+
+        // 验证出勤代码必填
+        const formValues = form.getFieldsValue(true);
+        const filterGroups = formValues.sourceConfig?.filterGroups;
+
+        if (filterGroups && filterGroups.length > 0) {
+          const invalidGroups = filterGroups.filter((group: any) =>
+            !group.workHoursFilter?.attendanceCodes || group.workHoursFilter.attendanceCodes.length === 0
+          );
+
+          if (invalidGroups.length > 0) {
+            message.warning('请为每个条件组选择至少一个出勤代码');
+            return;
+          }
+        }
+
         setCurrentStep(currentStep + 1);
       } else if (currentStep === 1) {
         // 验证第二步并提交
@@ -570,21 +727,26 @@ const EarnedHoursWizardForm: React.FC<EarnedHoursWizardFormProps> = ({
   };
 
   return (
-    <Form form={form} layout="vertical">
-      <Steps current={currentStep} items={steps} style={{ marginBottom: 24 }} />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div style={{ paddingTop: '24px', paddingBottom: '24px', paddingLeft: '12px', paddingRight: '12px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Steps current={currentStep} items={steps} style={{ marginBottom: 16, flexShrink: 0 }} />
 
-      <div style={{ minHeight: 400 }}>{renderStepContent()}</div>
+        <Form form={form} layout="vertical" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            {renderStepContent()}
+          </div>
+        </Form>
+      </div>
 
-      <div style={{ marginTop: 24, textAlign: 'right' }}>
-        <Space>
+      <div style={{ height: '64px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', flexShrink: 0, padding: '0 20px', margin: 0, width: '100%' }}>
           {currentStep > 0 && (
-            <Button onClick={prev}>
-              <LeftOutlined /> 上一步
+            <Button onClick={prev} icon={<LeftOutlined />}>
+              上一步
             </Button>
           )}
           {currentStep < steps.length - 1 && (
-            <Button type="primary" onClick={next}>
-              下一步 <RightOutlined />
+            <Button type="primary" onClick={next} icon={<RightOutlined />}>
+              下一步
             </Button>
           )}
           {currentStep === steps.length - 1 && (
@@ -595,9 +757,8 @@ const EarnedHoursWizardForm: React.FC<EarnedHoursWizardFormProps> = ({
               </Button>
             </>
           )}
-        </Space>
-      </div>
-    </Form>
+        </div>
+    </div>
   );
 };
 
@@ -609,38 +770,54 @@ interface StepOneProps {
 }
 
 const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, editingConfig }) => {
-  // 获取当前的条件组列表，确保至少有一个默认条件组
-  const filterGroups = Form.useWatch(['sourceConfig', 'filterGroups'], form) || [
-    {
-      employeeFilter: { fieldGroups: [{ id: Date.now().toString(), conditions: [] }] },
-      workHoursFilter: { hierarchySelections: [], attendanceCodes: [] },
-    },
-  ];
+  // 使用 useState 存储 filterGroups
+  const [filterGroups, setFilterGroups] = useState<any[]>([]);
+  const [updateCount, setUpdateCount] = useState(0);
 
-  // 初始化默认条件组
+  // 初始化默认条件组 - 使用useEffect确保在组件挂载后执行
   useEffect(() => {
     const currentFilterGroups = form.getFieldValue(['sourceConfig', 'filterGroups']);
+    console.log('初始化检查 - 当前filterGroups:', currentFilterGroups);
     if (!currentFilterGroups || currentFilterGroups.length === 0) {
-      form.setFieldValue(['sourceConfig', 'filterGroups'], [
-        {
-          employeeFilter: { fieldGroups: [{ id: Date.now().toString(), conditions: [] }] },
-          workHoursFilter: { hierarchySelections: [], attendanceCodes: [] },
-        },
-      ]);
+      console.log('设置默认条件组');
+      const defaultGroup = {
+        employeeFilter: { fieldGroups: [{ id: Date.now().toString(), conditions: [] }] },
+        workHoursFilter: { hierarchySelections: [], attendanceCodes: [] },
+      };
+      form.setFieldValue(['sourceConfig', 'filterGroups'], [defaultGroup]);
     }
+    // 设置初始状态
+    setFilterGroups(currentFilterGroups || []);
   }, []);
+
+  useEffect(() => {
+    console.log('StepOneDefineSource - 组件挂载/更新');
+    console.log('filterGroups:', filterGroups);
+    console.log('filterGroups 数量:', filterGroups.length);
+  }, [filterGroups, updateCount]);
 
   // 添加条件组
   const addFilterGroup = () => {
+    console.log('=== 添加条件组被点击 ===');
     const currentGroups = form.getFieldValue(['sourceConfig', 'filterGroups']) || [];
+    console.log('当前条件组数量:', currentGroups.length);
+
     const newGroups = [
       ...currentGroups,
       {
+        id: `group_${Date.now()}`,
         employeeFilter: { fieldGroups: [{ id: Date.now().toString(), conditions: [] }] },
         workHoursFilter: { hierarchySelections: [], attendanceCodes: [] },
       },
     ];
+
     form.setFieldValue(['sourceConfig', 'filterGroups'], newGroups);
+
+    // 立即更新本地状态
+    setFilterGroups(newGroups);
+    setUpdateCount(prev => prev + 1);
+
+    console.log('✅ 新条件组数量:', newGroups.length);
   };
 
   // 删除条件组
@@ -648,34 +825,31 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, ed
     const currentGroups = form.getFieldValue(['sourceConfig', 'filterGroups']) || [];
     const newGroups = currentGroups.filter((_: any, i: number) => i !== index);
     form.setFieldValue(['sourceConfig', 'filterGroups'], newGroups);
+    setFilterGroups(newGroups);
+    setUpdateCount(prev => prev + 1);
   };
 
-  // 判断是否禁用数据源编辑（已启用的配置不可修改数据源）
-  const isDataSourceDisabled = editingConfig?.status === 'ACTIVE';
+  // 判断是否禁用数据源编辑（生效或失效状态时不可修改数据源）
+  const isDataSourceDisabled = editingConfig?.status === 'ACTIVE' || editingConfig?.status === 'INACTIVE';
 
   return (
     <div>
-      {isDataSourceDisabled && (
-        <Card size="small" style={{ marginBottom: 16, backgroundColor: '#fff7e6', borderColor: '#ffd591' }}>
-          <div style={{ color: '#d46b08' }}>该配置已启用，数据源配置不可修改。您可以编辑分配规则或添加新规则。</div>
-        </Card>
-      )}
 
       <Row gutter={16}>
         <Col span={12}>
           <Form.Item
-            label="配置编码"
+            label="规则代码"
             name="configCode"
-            rules={[{ required: true, message: '请输入配置编码' }]}
+            rules={[{ required: true, message: '请输入规则代码' }]}
           >
             <Input placeholder="如：EARNED_001" disabled={!!editingConfig || isDataSourceDisabled} />
           </Form.Item>
         </Col>
         <Col span={12}>
           <Form.Item
-            label="配置名称"
+            label="规则名称"
             name="configName"
-            rules={[{ required: true, message: '请输入配置名称' }]}
+            rules={[{ required: true, message: '请输入规则名称' }]}
           >
             <Input placeholder="如：车间挣得工时分摊" disabled={isDataSourceDisabled} />
           </Form.Item>
@@ -683,38 +857,33 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, ed
       </Row>
 
       <Form.Item
-        label="配置描述"
+        label="规则描述"
         name="description"
       >
         <TextArea rows={2} placeholder="请描述规则的作用和适用范围" disabled={isDataSourceDisabled} />
       </Form.Item>
 
-      <Divider><span style={{ fontWeight: 500 }}>分配数据源</span></Divider>
-
-      <div style={{ padding: 16, background: '#f0f5ff', borderRadius: 8, marginBottom: 16 }}>
-        根据生产的产品实际产量*产品的标准工时
-      </div>
-
-      <Divider><span style={{ fontWeight: 500 }}>分配范围</span></Divider>
+      <Divider style={{ margin: '24px 0' }}><span style={{ fontWeight: 500, color: 'var(--color-text-secondary)' }}>筛选条件</span></Divider>
 
       {/* 条件组列表 */}
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
+      <Space direction="vertical" style={{ width: '100%' }} size={16}>
         {filterGroups.map((group: any, groupIndex: number) => (
           <Card
             key={groupIndex}
             size="small"
-            title={<span>条件组 {groupIndex + 1}</span>}
+            title={<span style={{ fontWeight: 500 }}>条件组 {groupIndex + 1}</span>}
             extra={
-              <Space>
+              <Space size={8}>
                 {!isDataSourceDisabled && filterGroups.length > 1 && (
                   <Popconfirm
+                    overlayClassName="custom-popconfirm"
                     title="确认删除"
                     description="确定要删除这组条件吗？"
                     onConfirm={() => removeFilterGroup(groupIndex)}
                     okText="确定"
                     cancelText="取消"
                   >
-                    <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                    <Button type="link" size="small" danger icon={<DeleteOutlined />} style={{ padding: '0 4px' }}>
                       删除
                     </Button>
                   </Popconfirm>
@@ -728,8 +897,9 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, ed
               </Space>
             }
             style={{
-              background: isDataSourceDisabled ? '#f5f5f5' : '#fafafa',
-              border: '1px solid #f0f0f0'
+              background: isDataSourceDisabled ? 'var(--color-bg-disabled)' : 'var(--color-bg-light)',
+              border: '1px solid var(--color-border-1)',
+              borderRadius: 'var(--radius-md)'
             }}
           >
             {/* 人员筛选区域 */}
@@ -739,16 +909,16 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, ed
                 alignItems: 'center',
                 marginBottom: 12,
                 paddingBottom: 8,
-                borderBottom: '2px solid #1890ff'
+                borderBottom: '2px solid var(--color-primary)'
               }}>
                 <span style={{
                   fontSize: 14,
                   fontWeight: 600,
-                  color: '#1890ff'
+                  color: 'var(--color-primary)'
                 }}>
                   人员筛选
                 </span>
-                <span style={{ marginLeft: 8, fontSize: 12, color: '#999' }}>
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
                   （设置符合条件的人员）
                 </span>
               </div>
@@ -767,16 +937,16 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, ed
                 alignItems: 'center',
                 marginBottom: 12,
                 paddingBottom: 8,
-                borderBottom: '2px solid #52c41a'
+                borderBottom: '2px solid var(--color-success)'
               }}>
                 <span style={{
                   fontSize: 14,
                   fontWeight: 600,
-                  color: '#52c41a'
+                  color: 'var(--color-success)'
                 }}>
                   工时筛选
                 </span>
-                <span style={{ marginLeft: 8, fontSize: 12, color: '#999' }}>
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
                   （设置工时的归属类型和出勤代码）
                 </span>
               </div>
@@ -799,7 +969,7 @@ const StepOneDefineSource: React.FC<StepOneProps> = ({ form, attendanceCodes, ed
           onClick={addFilterGroup}
           icon={<PlusOutlined />}
           block
-          style={{ marginTop: 16 }}
+          style={{ height: 32 }}
         >
           添加条件组（OR关系）
         </Button>
@@ -816,6 +986,9 @@ interface StepTwoProps {
 
 const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig }) => {
   const [rules, setRules] = useState<any[]>([]);
+
+  // 判断是否禁用分配方式编辑（生效或失效状态时不可修改分配方式）
+  const isDataSourceDisabled = editingConfig?.status === 'ACTIVE' || editingConfig?.status === 'INACTIVE';
 
   // 监听表单rules字段的变化
   useEffect(() => {
@@ -847,6 +1020,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
       status: 'ACTIVE',
       sortOrder: rules.length,
       description: '',
+      isNew: true, // 标记为新规则，允许编辑分配方式
     };
 
     const newRules = [...rules, newRule];
@@ -951,92 +1125,110 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
   };
 
   return (
-    <div>
-      {rules.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, background: '#fafafa', borderRadius: 4 }}>
-          <Button type="primary" onClick={handleAddRule} icon={<PlusOutlined />}>
-            添加分配规则
-          </Button>
-        </div>
-      ) : (
-        <div>
-          {rules.map((rule: any, index: number) => {
-            return (
-            <Card
-              key={index}
-              size="small"
-              style={{ marginBottom: 12 }}
-              title={
-                <Space>
-                  <span style={{ fontWeight: 600 }}>分配规则 {index + 1}</span>
-                  <Select
-                    value={rule.allocationBasis}
-                    onChange={(val) => handleUpdateRule(index, 'allocationBasis', val)}
-                    style={{ width: 200 }}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* 规则列表区域 - 可滚动 */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {rules.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', background: 'var(--color-bg-light)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border-2)' }}>
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无分配规则，请点击下方按钮添加"
+            />
+          </div>
+        ) : (
+          <div>
+            {rules.map((rule: any, index: number) => {
+              return (
+              <Card
+                key={index}
+                size="small"
+                style={{ marginBottom: 12, border: '1px solid var(--color-border-1)', borderRadius: 'var(--radius-md)' }}
+                title={<span style={{ fontWeight: 500 }}>分配规则 {index + 1}</span>}
+                extra={
+                  <Button
+                    type="link"
                     size="small"
+                    danger
+                    onClick={() => handleRemoveRule(index)}
+                    disabled={
+                      rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
+                    }
+                    title={
+                      rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
+                        ? '该规则已经生效，不允许删除'
+                        : '删除此规则'
+                    }
+                    style={{ padding: '0 4px' }}
                   >
-                    {allocationBasisOptions.map(option => (
-                      <Select.Option key={option.value} value={option.value}>
-                        {option.label}
-                      </Select.Option>
-                    ))}
-                  </Select>
-                </Space>
-              }
-              extra={
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  onClick={() => handleRemoveRule(index)}
-                  disabled={
-                    rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
-                  }
-                  title={
-                    rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
-                      ? '该规则已经生效，不允许删除'
-                      : '删除此规则'
-                  }
-                >
-                  删除
-                </Button>
-              }
-            >
-              <Row gutter={16} align="middle">
-                <Col span={12}>
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
-                      <span style={{ color: 'red', marginRight: 4 }}>*</span>
-                      生效开始时间
+                    删除
+                  </Button>
+                }
+              >
+                {/* 第一行：分配方式 */}
+                <Row gutter={16} style={{ marginBottom: 12 }}>
+                  <Col span={24}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                        <span style={{ color: '#ff4d4f', marginRight: 4, fontSize: 14 }}>*</span>
+                        分配方式
+                      </div>
+                      <Select
+                        value={rule.allocationBasis}
+                        onChange={(val) => handleUpdateRule(index, 'allocationBasis', val)}
+                        style={{ width: '100%' }}
+                        disabled={isDataSourceDisabled && !rule.isNew}
+                      >
+                        {allocationBasisOptions.map(option => (
+                          <Select.Option key={option.value} value={option.value}>
+                            {option.label}
+                          </Select.Option>
+                        ))}
+                      </Select>
                     </div>
-                    <DatePicker
-                      value={rule.effectiveStartTime ? dayjs(rule.effectiveStartTime) : null}
-                      onChange={(date) => handleUpdateRule(index, 'effectiveStartTime', date ? date.toISOString() : null)}
-                      style={{ width: '100%' }}
-                      placeholder="选择开始时间"
-                    />
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>生效结束时间</div>
-                    <DatePicker
-                      value={rule.effectiveEndTime ? dayjs(rule.effectiveEndTime) : null}
-                      onChange={(date) => handleUpdateRule(index, 'effectiveEndTime', date ? date.toISOString() : null)}
-                      style={{ width: '100%' }}
-                      placeholder="选择结束时间（可选）"
-                    />
-                  </div>
-                </Col>
-              </Row>
-            </Card>
+                  </Col>
+                </Row>
+
+                {/* 第二行：生效日期与失效日期 */}
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                        <span style={{ color: '#ff4d4f', marginRight: 4, fontSize: 14 }}>*</span>
+                        生效日期
+                      </div>
+                      <DatePicker
+                        value={rule.effectiveStartTime ? dayjs(rule.effectiveStartTime) : null}
+                        onChange={(date) => handleUpdateRule(index, 'effectiveStartTime', date ? date.toISOString() : null)}
+                        style={{ width: '100%' }}
+                        placeholder="选择生效日期"
+                      />
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginBottom: 4 }}>失效日期</div>
+                      <DatePicker
+                        value={rule.effectiveEndTime ? dayjs(rule.effectiveEndTime) : null}
+                        onChange={(date) => handleUpdateRule(index, 'effectiveEndTime', date ? date.toISOString() : null)}
+                        style={{ width: '100%' }}
+                        placeholder="选择失效日期（可选）"
+                      />
+                    </div>
+                  </Col>
+                </Row>
+              </Card>
             );
           })}
-          <Button type="dashed" onClick={handleAddRule} block icon={<PlusOutlined />}>
-            添加分配规则
-          </Button>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
+
+      {/* 固定在底部的添加按钮 */}
+      <div style={{ marginTop: 16, textAlign: 'center', flexShrink: 0 }}>
+        <Button type="primary" onClick={handleAddRule} icon={<PlusOutlined />}>
+          添加分配规则
+        </Button>
+      </div>
 
       <Form.Item name="rules" hidden>
         <Input />
