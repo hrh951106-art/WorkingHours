@@ -414,26 +414,36 @@ const LineMaintenancePage: React.FC = () => {
 
   const columns = [
     {
-      title: '排班日期',
+      title: '日期',
       dataIndex: 'scheduleDate',
       key: 'scheduleDate',
       width: 120,
       render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
+      sorter: (a: LineRecord, b: LineRecord) => {
+        const dateA = dayjs(a.scheduleDate).valueOf();
+        const dateB = dayjs(b.scheduleDate).valueOf();
+        return dateA - dateB;
+      },
+      showSorterTooltip: { title: '点击排序' },
     },
     {
-      title: '产线组织',
+      title: '产线',
       dataIndex: 'orgName',
       key: 'orgName',
       width: 150,
       render: (name: string) => name || '-',
     },
     {
-      title: '产线账户',
+      title: '产线全路径',
       dataIndex: 'accountName',
       key: 'accountName',
       width: 250,
       ellipsis: true,
-      render: (name: string, record: LineRecord) => name || record.orgName || '-',
+      render: (name: string, record: LineRecord) => {
+        if (!name) return '-';
+        // 去除末尾的所有斜杠
+        return name.replace(/\/+$/, '');
+      },
     },
     {
       title: '班次',
@@ -447,6 +457,15 @@ const LineMaintenancePage: React.FC = () => {
       key: 'startTime',
       width: 100,
       render: (time: string) => time ? dayjs(time).format('HH:mm') : '-',
+      sorter: (a: LineRecord, b: LineRecord) => {
+        if (!a.startTime && !b.endTime) return 0;
+        if (!a.startTime) return 1;
+        if (!b.startTime) return -1;
+        const timeA = dayjs(a.startTime).valueOf();
+        const timeB = dayjs(b.startTime).valueOf();
+        return timeA - timeB;
+      },
+      showSorterTooltip: { title: '点击排序' },
     },
     {
       title: '结束时间',
@@ -454,9 +473,18 @@ const LineMaintenancePage: React.FC = () => {
       key: 'endTime',
       width: 100,
       render: (time: string) => time ? dayjs(time).format('HH:mm') : '-',
+      sorter: (a: LineRecord, b: LineRecord) => {
+        if (!a.endTime && !b.endTime) return 0;
+        if (!a.endTime) return 1;
+        if (!b.endTime) return -1;
+        const timeA = dayjs(a.endTime).valueOf();
+        const timeB = dayjs(b.endTime).valueOf();
+        return timeA - timeB;
+      },
+      showSorterTooltip: { title: '点击排序' },
     },
     {
-      title: '延迟关线(分钟)',
+      title: '延迟关线（分钟）',
       dataIndex: 'delayedShutdownTime',
       key: 'delayedShutdownTime',
       width: 120,
@@ -472,20 +500,6 @@ const LineMaintenancePage: React.FC = () => {
           {participate ? '是' : '否'}
         </Tag>
       ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: string) => {
-        const statusMap: Record<string, { text: string; color: string }> = {
-          'ACTIVE': { text: '生效', color: 'green' },
-          'CANCEL': { text: '取消', color: 'red' },
-        };
-        const statusInfo = statusMap[status] || { text: status, color: 'default' };
-        return <Tag color={statusInfo.color}>{statusInfo.text}</Tag>;
-      },
     },
     {
       title: '操作',
@@ -541,7 +555,7 @@ const LineMaintenancePage: React.FC = () => {
               onChange={(dates) => setFilters({ ...filters, dateRange: dates })}
             />
           </Form.Item>
-          <Form.Item label="产线组织">
+          <Form.Item label="产线">
             <OrganizationTreeSelect
               value={filters.orgId}
               onChange={(value) => {
@@ -552,13 +566,14 @@ const LineMaintenancePage: React.FC = () => {
                 console.log('包含子组织onChange触发，include:', include);
                 setFilters({ ...filters, includeChildren: include });
               }}
-              placeholder="请选择产线组织"
+              placeholder="请选择产线"
               allowClear
               multiple
               showIncludeChildren
               includeChildren={filters.includeChildren}
               showSelectAll
-              style={{ width: '100%', maxWidth: 400 }}
+              style={{ width: '100%', maxWidth: 600 }}
+              dropdownStyle={{ minWidth: 800 }}
             />
             {actualOrgIds.length > 0 && (
               <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
@@ -628,7 +643,7 @@ const LineMaintenancePage: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                label="排班日期"
+                label="日期"
                 name="scheduleDate"
                 rules={[{ required: true, message: '请选择日期' }]}
               >
@@ -675,7 +690,6 @@ const LineMaintenancePage: React.FC = () => {
               <Form.Item
                 label="开始时间"
                 name="startTime"
-                rules={[{ required: true, message: '请选择开始时间' }]}
               >
                 <DatePicker.TimePicker
                   style={{ width: '100%' }}
@@ -687,7 +701,6 @@ const LineMaintenancePage: React.FC = () => {
               <Form.Item
                 label="结束时间"
                 name="endTime"
-                rules={[{ required: true, message: '请选择结束时间' }]}
               >
                 <DatePicker.TimePicker
                   style={{ width: '100%' }}
@@ -698,9 +711,8 @@ const LineMaintenancePage: React.FC = () => {
           </Row>
 
           <Form.Item
-            label="延迟关线时间（分钟）"
+            label="延迟关线（分钟）"
             name="delayedShutdownTime"
-            tooltip="可选，允许产线在结束后延迟关线的时间"
           >
             <InputNumber
               min={0}
@@ -711,33 +723,30 @@ const LineMaintenancePage: React.FC = () => {
             />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="是否参与分摊"
-                name="participateInAllocation"
-                valuePropName="checked"
-              >
-                <Switch checkedChildren="是" unCheckedChildren="否" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="状态"
-                name="status"
-                rules={[{ required: true, message: '请选择状态' }]}
-              >
-                <Select>
-                  <Select.Option value="ACTIVE">生效</Select.Option>
-                  <Select.Option value="CANCEL">取消</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            label="是否参与分摊"
+            name="participateInAllocation"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+
+          <Form.Item
+            label="状态"
+            name="status"
+            hidden
+            initialValue="ACTIVE"
+          >
+            <Select>
+              <Select.Option value="ACTIVE">生效</Select.Option>
+              <Select.Option value="CANCEL">取消</Select.Option>
+            </Select>
+          </Form.Item>
 
           <Form.Item
             label="描述"
             name="description"
+            hidden
           >
             <Input placeholder="请输入描述" />
           </Form.Item>

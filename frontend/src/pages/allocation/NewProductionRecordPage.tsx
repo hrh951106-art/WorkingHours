@@ -23,12 +23,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import request from '@/utils/request';
 import AccountSelect from '@/components/common/AccountSelect';
-import AccountMultiSelect from '@/components/common/AccountMultiSelect';
 import EmployeeSelect from '@/components/common/EmployeeSelect';
 import LineSelectModal from '@/components/common/LineSelectModal';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
+const { RangePicker } = DatePicker;
 
 interface ProductionRecord {
   id?: number;
@@ -85,6 +85,15 @@ const NewProductionRecordPage: React.FC = () => {
   const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null);
   const [editingPersonalRecord, setEditingPersonalRecord] = useState<PersonalProductionRecord | null>(null);
   const [activeTab, setActiveTab] = useState('team');
+  const [selectedPersonalRowKeys, setSelectedPersonalRowKeys] = useState<React.Key[]>([]);
+
+  // 排序状态 - 支持两个页签独立排序
+  const [sortInfo, setSortInfo] = useState<{
+    teamField?: string;
+    teamOrder?: 'ascend' | 'descend';
+    personalField?: string;
+    personalOrder?: 'ascend' | 'descend';
+  }>({});
 
   // 产线选择弹窗状态
   const [isLineSelectModalVisible, setIsLineSelectModalVisible] = useState(false);
@@ -93,6 +102,7 @@ const NewProductionRecordPage: React.FC = () => {
 
   // 查询条件 - 默认为当天
   const [currentDate, setCurrentDate] = useState(dayjs());
+  const [dateRange, setDateRange] = useState<any[]>([dayjs(), dayjs()]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [selectedShiftId, setSelectedShiftId] = useState<number | null>(null);
@@ -137,15 +147,21 @@ const NewProductionRecordPage: React.FC = () => {
 
   // 获取产量记录列表
   const { data: records = [], isLoading, refetch } = useQuery({
-    queryKey: ['productionRecords', currentDate, selectedAccountIds, selectedProductId, selectedShiftId],
+    queryKey: ['productionRecords', currentDate, dateRange, selectedAccountIds, selectedProductId, selectedShiftId],
     queryFn: async () => {
-      const params: any = {
-        recordDate: currentDate.format('YYYY-MM-DD'),
-      };
+      const params: any = {};
+
+      // 优先使用日期范围，如果没有则使用单个日期
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        params.startDate = dateRange[0].format('YYYY-MM-DD');
+        params.endDate = dateRange[1].format('YYYY-MM-DD');
+      } else if (currentDate) {
+        params.recordDate = currentDate.format('YYYY-MM-DD');
+      }
 
       if (selectedAccountIds.length > 0) {
         // 支持多个产线查询
-        params.orgIds = selectedAccountIds.join(',');
+        params.accountIds = selectedAccountIds.join(',');
       }
 
       if (selectedProductId) {
@@ -159,23 +175,29 @@ const NewProductionRecordPage: React.FC = () => {
       const result = await request.get('/allocation/production-records', { params });
       return result?.items || result || [];
     },
-    enabled: !!currentDate && activeTab === 'team',
+    enabled: (!!currentDate || (dateRange && dateRange[0] && dateRange[1])) && activeTab === 'team',
   });
 
   // 获取个人产量记录列表
   const { data: personalRecords = [], isLoading: isPersonalLoading, refetch: refetchPersonal } = useQuery({
-    queryKey: ['personalProductionRecords', currentDate, selectedEmployeeNo, selectedAccountIds, selectedProductId, selectedShiftId],
+    queryKey: ['personalProductionRecords', currentDate, dateRange, selectedEmployeeNo, selectedAccountIds, selectedProductId, selectedShiftId],
     queryFn: async () => {
-      const params: any = {
-        recordDate: currentDate.format('YYYY-MM-DD'),
-      };
+      const params: any = {};
+
+      // 优先使用日期范围，如果没有则使用单个日期
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        params.startDate = dateRange[0].format('YYYY-MM-DD');
+        params.endDate = dateRange[1].format('YYYY-MM-DD');
+      } else if (currentDate) {
+        params.recordDate = currentDate.format('YYYY-MM-DD');
+      }
 
       if (selectedEmployeeNo) {
         params.employeeNo = selectedEmployeeNo;
       }
 
       if (selectedAccountIds.length > 0) {
-        params.orgIds = selectedAccountIds.join(',');
+        params.accountIds = selectedAccountIds.join(',');
       }
 
       if (selectedProductId) {
@@ -189,7 +211,7 @@ const NewProductionRecordPage: React.FC = () => {
       const result = await request.get('/allocation/personal-production-records', { params });
       return result?.items || result || [];
     },
-    enabled: !!currentDate && activeTab === 'personal',
+    enabled: (!!currentDate || (dateRange && dateRange[0] && dateRange[1])) && activeTab === 'personal',
   });
 
   // 创建或更新产量记录
@@ -361,17 +383,21 @@ const NewProductionRecordPage: React.FC = () => {
 
   // 切换到前一天
   const handlePreviousDay = () => {
-    setCurrentDate(currentDate.subtract(1, 'day'));
+    const newDateRange = [dateRange[0].subtract(1, 'day'), dateRange[1].subtract(1, 'day')];
+    setDateRange(newDateRange);
   };
 
   // 切换到后一天
   const handleNextDay = () => {
-    const nextDay = currentDate.add(1, 'day');
-    if (nextDay.isAfter(dayjs(), 'day')) {
+    const nextStart = dateRange[0].add(1, 'day');
+    const nextEnd = dateRange[1].add(1, 'day');
+
+    if (nextEnd.isAfter(dayjs(), 'day')) {
       message.warning('不能选择未来日期');
       return;
     }
-    setCurrentDate(nextDay);
+
+    setDateRange([nextStart, nextEnd]);
   };
 
   // 日期改变
@@ -381,7 +407,7 @@ const NewProductionRecordPage: React.FC = () => {
         message.warning('不能选择未来日期');
         return;
       }
-      setCurrentDate(date);
+      setDateRange([date, date]);
     }
   };
 
@@ -444,6 +470,7 @@ const NewProductionRecordPage: React.FC = () => {
 
   // 查询
   const handleSearch = () => {
+    message.loading('正在查询...', 0.5);
     if (activeTab === 'team') {
       refetch();
     } else {
@@ -565,6 +592,96 @@ const NewProductionRecordPage: React.FC = () => {
   // 计算总选择数量
   const totalLineSelectionCount = selectedLineOrgIds.length + Object.values(selectedLineLevels).flat().length;
 
+  // 处理产线下拉框点击
+  const handleLineSelectClick = () => {
+    handleOpenLineSelectModal();
+  };
+
+  // 计算挣得
+  const handleCalculateEarnedHours = () => {
+    Modal.confirm({
+      title: '确认计算',
+      content: '确定要重新计算挣得工时吗？',
+      okText: '确定',
+      cancelText: '取消',
+      centered: true,
+      onOk: async () => {
+        try {
+          message.loading('正在计算挣得工时...', 0);
+
+          const params: any = {};
+          // 优先使用日期范围
+          if (dateRange && dateRange[0] && dateRange[1]) {
+            params.startDate = dateRange[0].format('YYYY-MM-DD');
+            params.endDate = dateRange[1].format('YYYY-MM-DD');
+          } else if (currentDate) {
+            params.recordDate = currentDate.format('YYYY-MM-DD');
+          }
+
+          const result = await request.post('/earned-hours-allocation/calculate', { params });
+          message.destroy();
+          message.success('计算完成');
+
+          // 刷新数据
+          if (activeTab === 'team') {
+            refetch();
+          } else {
+            refetchPersonal();
+          }
+        } catch (error: any) {
+          message.destroy();
+          console.error('计算失败:', error);
+          const errorMsg = error?.response?.data?.message || error?.message || '计算失败';
+          message.error(errorMsg);
+        }
+      },
+    });
+  };
+
+  // 批量删除个人记录
+  const handleBatchDeletePersonal = () => {
+    if (selectedPersonalRowKeys.length === 0) {
+      message.warning('请至少选择一条记录');
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除选中的个人产量记录吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      centered: true,
+      className: 'deactivate-modal',
+      icon: null,
+      onOk: async () => {
+        try {
+          message.loading('正在删除...', 0);
+
+          // 批量删除
+          await Promise.all(
+            selectedPersonalRowKeys.map((id) =>
+              request.delete(`/allocation/personal-production-records/${id}`)
+            )
+          );
+
+          message.destroy();
+          message.success('删除成功');
+
+          // 清空选中状态
+          setSelectedPersonalRowKeys([]);
+
+          // 刷新数据
+          refetchPersonal();
+        } catch (error: any) {
+          message.destroy();
+          console.error('删除失败:', error);
+          const errorMsg = error?.response?.data?.message || error?.message || '删除失败';
+          message.error(errorMsg);
+        }
+      },
+    });
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -572,6 +689,12 @@ const NewProductionRecordPage: React.FC = () => {
       dataIndex: 'recordDate',
       key: 'recordDate',
       width: 120,
+      sorter: (a: ProductionRecord, b: ProductionRecord) => {
+        const dateA = dayjs(a.recordDate).valueOf();
+        const dateB = dayjs(b.recordDate).valueOf();
+        return dateA - dateB;
+      },
+      sortOrder: sortInfo.teamField === 'recordDate' ? sortInfo.teamOrder : null,
       render: (value: string) => value ? dayjs(value).format('YYYY-MM-DD') : '-',
     },
     {
@@ -585,6 +708,12 @@ const NewProductionRecordPage: React.FC = () => {
       dataIndex: 'lineName',
       key: 'lineName',
       width: 200,
+      sorter: (a: ProductionRecord, b: ProductionRecord) => {
+        const nameA = a.lineName || a.orgName || '';
+        const nameB = b.lineName || b.orgName || '';
+        return nameA.localeCompare(nameB, 'zh-CN');
+      },
+      sortOrder: sortInfo.teamField === 'lineName' ? sortInfo.teamOrder : null,
       render: (text: string, record: ProductionRecord) => {
         const displayName = text || record.orgName || '-';
         return (
@@ -599,17 +728,16 @@ const NewProductionRecordPage: React.FC = () => {
       dataIndex: 'productName',
       key: 'productName',
       width: 150,
+      sorter: (a: ProductionRecord, b: ProductionRecord) => {
+        const nameA = a.productName || '';
+        const nameB = b.productName || '';
+        return nameA.localeCompare(nameB, 'zh-CN');
+      },
+      sortOrder: sortInfo.teamField === 'productName' ? sortInfo.teamOrder : null,
       render: (text: string, record: ProductionRecord) => {
-        return (
-          <div>
-            <div style={{ fontWeight: 500 }}>{text || '-'}</div>
-            {record.productCode && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {record.productCode}
-              </Text>
-            )}
-          </div>
-        );
+        const code = record.productCode || '';
+        const name = text || '-';
+        return code ? `${code} ${name}` : name;
       },
     },
     {
@@ -617,8 +745,12 @@ const NewProductionRecordPage: React.FC = () => {
       dataIndex: 'actualQty',
       key: 'actualQty',
       width: 120,
+      sorter: (a: ProductionRecord, b: ProductionRecord) => {
+        return a.actualQty - b.actualQty;
+      },
+      sortOrder: sortInfo.teamField === 'actualQty' ? sortInfo.teamOrder : null,
       render: (value: number) => (
-        <span style={{ fontWeight: 500, color: '#1890ff' }}>{value}</span>
+        <span style={{ fontWeight: 500 }}>{value}</span>
       ),
     },
     {
@@ -655,26 +787,30 @@ const NewProductionRecordPage: React.FC = () => {
       dataIndex: 'recordDate',
       key: 'recordDate',
       width: 120,
+      sorter: (a: PersonalProductionRecord, b: PersonalProductionRecord) => {
+        const dateA = dayjs(a.recordDate).valueOf();
+        const dateB = dayjs(b.recordDate).valueOf();
+        return dateA - dateB;
+      },
+      sortOrder: sortInfo.personalField === 'personalRecordDate' ? sortInfo.personalOrder : null,
       render: (value: string) => value ? dayjs(value).format('YYYY-MM-DD') : '-',
     },
     {
       title: '员工',
-      dataIndex: 'employeeName',
-      key: 'employeeName',
-      width: 120,
-      render: (text: string, record: PersonalProductionRecord) => (
-        <Space>
-          <UserOutlined />
-          <div>
-            <div style={{ fontWeight: 500 }}>{text || '-'}</div>
-            {record.employeeNo && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {record.employeeNo}
-              </Text>
-            )}
-          </div>
-        </Space>
-      ),
+      dataIndex: 'employeeNo',
+      key: 'employee',
+      width: 150,
+      sorter: (a: PersonalProductionRecord, b: PersonalProductionRecord) => {
+        const infoA = `${a.employeeNo || ''} ${a.employeeName || ''}`;
+        const infoB = `${b.employeeNo || ''} ${b.employeeName || ''}`;
+        return infoA.localeCompare(infoB, 'zh-CN');
+      },
+      sortOrder: sortInfo.personalField === 'employee' ? sortInfo.personalOrder : null,
+      render: (text: string, record: PersonalProductionRecord) => {
+        const no = record.employeeNo || '-';
+        const name = record.employeeName || '-';
+        return `${no} ${name}`;
+      },
     },
     {
       title: '班次',
@@ -694,17 +830,16 @@ const NewProductionRecordPage: React.FC = () => {
       dataIndex: 'productName',
       key: 'productName',
       width: 150,
+      sorter: (a: PersonalProductionRecord, b: PersonalProductionRecord) => {
+        const nameA = a.productName || '';
+        const nameB = b.productName || '';
+        return nameA.localeCompare(nameB, 'zh-CN');
+      },
+      sortOrder: sortInfo.personalField === 'personalProductName' ? sortInfo.personalOrder : null,
       render: (text: string, record: PersonalProductionRecord) => {
-        return (
-          <div>
-            <div style={{ fontWeight: 500 }}>{text || '-'}</div>
-            {record.productCode && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {record.productCode}
-              </Text>
-            )}
-          </div>
-        );
+        const code = record.productCode || '';
+        const name = text || '-';
+        return code ? `${code} ${name}` : name;
       },
     },
     {
@@ -713,8 +848,12 @@ const NewProductionRecordPage: React.FC = () => {
       key: 'actualQty',
       width: 120,
       align: 'right' as const,
+      sorter: (a: PersonalProductionRecord, b: PersonalProductionRecord) => {
+        return a.actualQty - b.actualQty;
+      },
+      sortOrder: sortInfo.personalField === 'personalActualQty' ? sortInfo.personalOrder : null,
       render: (value: number) => (
-        <span style={{ fontWeight: 500, color: '#1890ff' }}>{value}</span>
+        <span style={{ fontWeight: 500 }}>{value}</span>
       ),
     },
     {
@@ -724,10 +863,9 @@ const NewProductionRecordPage: React.FC = () => {
       width: 100,
       align: 'right' as const,
       render: (value: number, record: PersonalProductionRecord) => {
-        const unit = record.unit || '小时';
         return (
-          <span style={{ fontWeight: 600, color: '#52c41a' }}>
-            {value !== undefined && value !== null ? value.toFixed(2) : '-'} {unit}
+          <span style={{ fontWeight: 500 }}>
+            {value !== undefined && value !== null ? value.toFixed(2) : '-'}
           </span>
         );
       },
@@ -779,6 +917,9 @@ const NewProductionRecordPage: React.FC = () => {
             <Space>
               {activeTab === 'team' && (
                 <>
+                  <Button onClick={handleCalculateEarnedHours}>
+                    计算挣得
+                  </Button>
                   <Button icon={<ImportOutlined />} onClick={() => handleImport('team')}>
                     导入
                   </Button>
@@ -789,8 +930,18 @@ const NewProductionRecordPage: React.FC = () => {
               )}
               {activeTab === 'personal' && (
                 <>
+                  <Button onClick={handleCalculateEarnedHours}>
+                    计算挣得
+                  </Button>
                   <Button icon={<ImportOutlined />} onClick={() => handleImport('personal')}>
                     导入
+                  </Button>
+                  <Button
+                    danger
+                    disabled={selectedPersonalRowKeys.length === 0}
+                    onClick={handleBatchDeletePersonal}
+                  >
+                    删除
                   </Button>
                   <Button type="primary" icon={<PlusOutlined />} onClick={handleAddPersonal}>
                     新增
@@ -803,22 +954,27 @@ const NewProductionRecordPage: React.FC = () => {
           <TabPane tab="团队产量" key="team">
         {/* 查询条件 */}
         <Row gutter={16} style={{ marginBottom: 16 }} align="middle">
-          {/* 日期选择 */}
+          {/* 日期范围选择 */}
           <Col>
             <Space size="small">
+              <Text strong>日期：</Text>
               <Button
                 icon={<LeftOutlined />}
                 onClick={handlePreviousDay}
               />
-              <DatePicker
-                value={currentDate}
-                onChange={handleDateChange}
+              <RangePicker
+                value={dateRange}
+                onChange={(dates) => {
+                  if (dates && dates[0] && dates[1]) {
+                    setDateRange(dates);
+                  }
+                }}
                 format="YYYY-MM-DD"
-                style={{ width: 130 }}
-                allowClear={false}
+                style={{ width: 240 }}
                 disabledDate={(current) => {
                   return current && current.isAfter(dayjs(), 'day');
                 }}
+                allowClear={false}
               />
               <Button
                 icon={<RightOutlined />}
@@ -828,31 +984,26 @@ const NewProductionRecordPage: React.FC = () => {
           </Col>
 
           {/* 产线选择 */}
-          <Col style={{ minWidth: 300 }}>
+          <Col>
             <Space>
               <Text strong>产线：</Text>
-              <Button
-                icon={<ApartmentOutlined />}
-                onClick={handleOpenLineSelectModal}
-                style={{ minWidth: 220 }}
+              <Select
+                value={selectedAccountIds.length > 0 ? selectedAccountIds : undefined}
+                placeholder="请选择产线"
+                allowClear
+                showSearch={false}
+                style={{ width: 300 }}
+                onClear={handleClearLineSelection}
+                onClick={handleLineSelectClick}
+                open={false}
+                dropdownStyle={{ display: 'none' }}
               >
-                选择产线
-                {totalLineSelectionCount > 0 && (
-                  <Tag color="blue" style={{ marginLeft: 8 }}>
+                {selectedAccountIds.length > 0 && (
+                  <Select.Option key="selected" value={selectedAccountIds}>
                     已选 {totalLineSelectionCount} 项
-                  </Tag>
+                  </Select.Option>
                 )}
-              </Button>
-              {totalLineSelectionCount > 0 && (
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  onClick={handleClearLineSelection}
-                >
-                  清空
-                </Button>
-              )}
+              </Select>
             </Space>
           </Col>
 
@@ -920,6 +1071,13 @@ const NewProductionRecordPage: React.FC = () => {
           dataSource={records}
           loading={isLoading}
           rowKey="id"
+          onChange={(pagination, filters, sorter: any) => {
+            setSortInfo({
+              ...sortInfo,
+              teamField: sorter.field,
+              teamOrder: sorter.order,
+            });
+          }}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,
@@ -933,22 +1091,27 @@ const NewProductionRecordPage: React.FC = () => {
           <TabPane tab="个人产量" key="personal">
         {/* 查询条件 */}
         <Row gutter={16} style={{ marginBottom: 16 }} align="middle">
-          {/* 日期选择 */}
+          {/* 日期范围选择 */}
           <Col>
             <Space size="small">
+              <Text strong>日期：</Text>
               <Button
                 icon={<LeftOutlined />}
                 onClick={handlePreviousDay}
               />
-              <DatePicker
-                value={currentDate}
-                onChange={handleDateChange}
+              <RangePicker
+                value={dateRange}
+                onChange={(dates) => {
+                  if (dates && dates[0] && dates[1]) {
+                    setDateRange(dates);
+                  }
+                }}
                 format="YYYY-MM-DD"
-                style={{ width: 130 }}
-                allowClear={false}
+                style={{ width: 240 }}
                 disabledDate={(current) => {
                   return current && current.isAfter(dayjs(), 'day');
                 }}
+                allowClear={false}
               />
               <Button
                 icon={<RightOutlined />}
@@ -972,31 +1135,26 @@ const NewProductionRecordPage: React.FC = () => {
           </Col>
 
           {/* 产线选择 */}
-          <Col style={{ minWidth: 300 }}>
+          <Col>
             <Space>
               <Text strong>产线：</Text>
-              <Button
-                icon={<ApartmentOutlined />}
-                onClick={handleOpenLineSelectModal}
-                style={{ minWidth: 220 }}
+              <Select
+                value={selectedAccountIds.length > 0 ? selectedAccountIds : undefined}
+                placeholder="请选择产线"
+                allowClear
+                showSearch={false}
+                style={{ width: 300 }}
+                onClear={handleClearLineSelection}
+                onClick={handleLineSelectClick}
+                open={false}
+                dropdownStyle={{ display: 'none' }}
               >
-                选择产线
-                {totalLineSelectionCount > 0 && (
-                  <Tag color="blue" style={{ marginLeft: 8 }}>
+                {selectedAccountIds.length > 0 && (
+                  <Select.Option key="selected" value={selectedAccountIds}>
                     已选 {totalLineSelectionCount} 项
-                  </Tag>
+                  </Select.Option>
                 )}
-              </Button>
-              {totalLineSelectionCount > 0 && (
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  onClick={handleClearLineSelection}
-                >
-                  清空
-                </Button>
-              )}
+              </Select>
             </Space>
           </Col>
 
@@ -1064,6 +1222,19 @@ const NewProductionRecordPage: React.FC = () => {
           dataSource={personalRecords}
           loading={isPersonalLoading}
           rowKey="id"
+          rowSelection={{
+            selectedRowKeys: selectedPersonalRowKeys,
+            onChange: (selectedKeys) => {
+              setSelectedPersonalRowKeys(selectedKeys);
+            },
+          }}
+          onChange={(pagination, filters, sorter: any) => {
+            setSortInfo({
+              ...sortInfo,
+              personalField: sorter.field,
+              personalOrder: sorter.order,
+            });
+          }}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,

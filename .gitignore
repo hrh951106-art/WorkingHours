@@ -24,6 +24,11 @@ logs/
 *.log
 udo*
 
+# Process ID files
+*.pid
+backend/backend.pid
+frontend/frontend.pid
+
 # OS
 .DS_Store
 ._.DS_Store

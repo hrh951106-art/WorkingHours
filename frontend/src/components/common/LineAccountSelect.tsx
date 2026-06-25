@@ -621,7 +621,7 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
 
       {/* 创建产线账户对话框 */}
       <Modal
-        title="新建产线账户"
+        title="选择产线"
         open={accountModalOpen}
         onCancel={() => {
           setAccountModalOpen(false);
@@ -637,68 +637,44 @@ const LineAccountSelect: React.FC<LineAccountSelectProps> = ({
           }
         }}
       >
-        {/* 可选层级提示 */}
-        {selectableLevelIds.length > 0 && (
+        {/* 账户路径预览 - 显示所有层级合并结果 */}
+        {Object.keys(selectedLevelValues).length > 0 && (
           <div
             style={{
-              marginBottom: 16,
-              padding: 12,
-              background: '#eff6ff',
-              borderRadius: 6,
-              border: '1px solid #bfdbfe',
+              marginBottom: 24,
+              padding: 16,
+              background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)',
+              borderRadius: 8,
+              border: '1px solid #c7d2fe',
             }}
           >
-            <div style={{ fontSize: 13, color: '#1e40af' }}>
-              <span style={{ fontWeight: 600 }}>可选层级： </span>
-              {hierarchyLevels
-                ?.filter((l: any) => selectableLevelIds.includes(l.level))
-                .sort((a: any, b: any) => a.level - b.level)
-                .map((level: any) => level.name)
-                .join('、')}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: '#6366f1', fontWeight: 500, fontFamily: 'monospace' }}>
+                  {(() => {
+                    const allLevels = hierarchyLevels
+                      ?.sort((a: any, b: any) => a.level - b.level) || [];
+
+                    const displayParts = allLevels.map((level: any) => {
+                      const selectedValue = selectedLevelValues[level.id];
+                      return selectedValue?.name || '';
+                    }).filter((name: string) => name !== '');
+
+                    return displayParts.join('/');
+                  })()}
+                </div>
+              </div>
+              <Button
+                size="small"
+                danger
+                onClick={() => setSelectedLevelValues({})}
+                style={{ borderRadius: 6 }}
+              >
+                一键清空
+              </Button>
             </div>
           </div>
         )}
-
-        {/* 账户路径预览 - 显示所有层级合并结果 */}
-        <div
-          style={{
-            marginBottom: 24,
-            padding: 16,
-            background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)',
-            borderRadius: 8,
-            border: '1px solid #c7d2fe',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 14, color: '#4338ca' }}>
-                子劳动力账户预览
-              </div>
-              <div style={{ fontSize: 13, color: '#6366f1', fontWeight: 500, fontFamily: 'monospace' }}>
-                {(() => {
-                  const allLevels = hierarchyLevels
-                    ?.sort((a: any, b: any) => a.level - b.level) || [];
-
-                  const displayParts = allLevels.map((level: any) => {
-                    const selectedValue = selectedLevelValues[level.id];
-                    return selectedValue?.name || '';
-                  }).filter((name: string) => name !== '');
-
-                  return displayParts.join('/') || '尚未选择任何层级';
-                })()}
-              </div>
-            </div>
-            <Button
-              size="small"
-              danger
-              onClick={() => setSelectedLevelValues({})}
-              disabled={Object.keys(selectedLevelValues).length === 0}
-              style={{ borderRadius: 6 }}
-            >
-              一键清空
-            </Button>
-          </div>
-        </div>
 
         {/* Tabs 页签：组织 和 其他 */}
         <Tabs

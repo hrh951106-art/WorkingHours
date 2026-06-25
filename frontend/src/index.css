@@ -266,3 +266,86 @@ html, body {
   margin: 0 !important;
 }
 
+/* 隐藏DatePicker内置的"今天"按钮，但保留renderExtraFooter中的自定义按钮 */
+/* 只隐藏内置按钮区域，不影响.ant-picker-footer-extra */
+.hide-today-button .ant-picker-footer > *:not(.ant-picker-footer-extra):not(.ant-picker-suffix) {
+  display: none !important;
+}
+
+/* 备用方案：直接隐藏特定class的今天按钮 */
+.hide-today-button .ant-picker-today-btn {
+  display: none !important;
+}
+
+/* 确保renderExtraFooter区域正常显示 */
+.hide-today-button .ant-picker-footer-extra {
+  display: block !important;
+}
+
+/* 修复danger按钮disabled状态样式 */
+.ant-btn-danger.ant-btn-disabled {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+.ant-btn-danger.ant-btn-disabled:hover {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+}
+
+.ant-btn-danger.ant-btn-disabled:active {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+}
+
+/* 修复link类型danger按钮disabled状态样式 */
+.ant-btn-link.ant-btn-danger.ant-btn-disabled {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: transparent !important;
+  border: none !important;
+  text-shadow: none !important;
+}
+
+.ant-btn-link.ant-btn-danger.ant-btn-disabled:hover {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: not-allowed !important;
+}
+
+.ant-btn-link.ant-btn-danger.ant-btn-disabled:active {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+/* 更强制的样式规则，确保覆盖所有可能的danger按钮禁用状态 */
+.ant-btn.ant-btn-link.ant-btn-danger[disabled] {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.ant-btn.ant-btn-link.ant-btn-danger[disabled]:hover {
+  color: rgba(0, 0, 0, 0.25) !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: not-allowed !important;
+}
+
+/* 针对Card extra中的删除按钮 */
+.ant-card-head-extra .ant-btn.ant-btn-link.ant-btn-danger.ant-btn-disabled {
+  color: rgba(0, 0, 0, 0.25) !important;
+}
+
+.ant-card-head-extra .ant-btn.ant-btn-link.ant-btn-danger.ant-btn-disabled:hover {
+  color: rgba(0, 0, 0, 0.25) !important;
+}
+
+
+

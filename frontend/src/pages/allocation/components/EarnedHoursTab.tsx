@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, Table, Button, Space, Modal, Form, Input, message, Popconfirm, Tag, Row, Col, Select, DatePicker, Steps, Divider, Alert, Empty } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, StopOutlined, CalculatorOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, StopOutlined, CalculatorOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import request from '@/utils/request';
 import dayjs from 'dayjs';
@@ -196,7 +196,7 @@ const EarnedHoursTab: React.FC = () => {
   const handleDelete = (id: number) => {
     Modal.confirm({
       title: '确认删除',
-      content: '确定要删除此配置吗？删除后将无法恢复。',
+      content: '确定要删除该规则吗？删除后将无法恢复。',
       icon: null,
       centered: true,
       okText: '确定',
@@ -210,25 +210,15 @@ const EarnedHoursTab: React.FC = () => {
 
   // 启用按钮
   const handleActivate = (id: number) => {
-    Modal.confirm({
-      title: '确认启用',
-      content: '确定要启用这条配置吗？启用后将无法修改。',
-      icon: null,
-      centered: true,
-      okText: '确定',
-      cancelText: '取消',
-      className: 'deactivate-modal',
-      onOk: () => {
-        activateMutation.mutate(id);
-      },
-    });
+    // 直接调用启用接口，不需要二次确认
+    activateMutation.mutate(id);
   };
 
   // 停用按钮
   const handleDeactivate = (id: number) => {
     Modal.confirm({
       title: '确认停用',
-      content: '确定要停用这条配置吗？停用后将不再执行该分配规则。',
+      content: '确定要停用该规则吗？停用后将不再执行该分配规则。',
       icon: null,
       centered: true,
       okText: '确定',
@@ -573,13 +563,28 @@ const EarnedHoursTab: React.FC = () => {
               console.log('data:', JSON.stringify(data, null, 2));
 
               if (editingConfig) {
+                // 如果配置已启用或停用，只发送 rules，不发送 sourceConfig
+                const isConfigActive = editingConfig.status === 'ACTIVE' || editingConfig.status === 'INACTIVE';
+                const updateData = isConfigActive
+                  ? {
+                      configName: data.configName,
+                      description: data.description,
+                      rules: data.rules,
+                      updatedById: 1,
+                      updatedByName: 'Admin',
+                    }
+                  : {
+                      ...data,
+                      updatedById: 1,
+                      updatedByName: 'Admin',
+                    };
+
+                console.log('=== 配置状态:', editingConfig.status);
+                console.log('=== 实际发送的更新数据:', JSON.stringify(updateData, null, 2));
+
                 updateMutation.mutate({
                   id: editingConfig.id,
-                  data: {
-                    ...data,
-                    updatedById: 1,
-                    updatedByName: 'Admin',
-                  },
+                  data: updateData,
                 });
               } else {
                 createMutation.mutate(data);
@@ -1031,13 +1036,21 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
   const handleRemoveRule = (index: number) => {
     const ruleToRemove = rules[index];
 
-    // 检查是否可以删除：如果当前日期 > 生效开始时间，则不允许删除
-    if (ruleToRemove.effectiveStartTime) {
-      const startDate = dayjs(ruleToRemove.effectiveStartTime);
+    // 只有已保存的规则（有id）才需要验证日期
+    if (ruleToRemove.id) {
+      const startDate = ruleToRemove.effectiveStartTime ? dayjs(ruleToRemove.effectiveStartTime).startOf('day') : null;
+      const endDate = ruleToRemove.effectiveEndTime ? dayjs(ruleToRemove.effectiveEndTime).startOf('day') : null;
       const currentDate = dayjs().startOf('day');
 
-      if (currentDate.isAfter(startDate)) {
+      // 如果当前日期 >= 生效日期，则不允许删除
+      if (startDate && !currentDate.isBefore(startDate)) {
         message.warning('该规则已经生效，不允许删除');
+        return;
+      }
+
+      // 如果当前日期 > 失效日期，则不允许删除
+      if (endDate && currentDate.isAfter(endDate)) {
+        message.warning('该规则已过期，不允许删除');
         return;
       }
     }
@@ -1047,19 +1060,72 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
     form.setFieldsValue({ rules: newRules });
   };
 
-  const handleUpdateRule = (index: number, field: string, value: any) => {
+  // 辅助函数：执行规则更新逻辑
+  const performRuleUpdate = (index: number, field: string, value: any) => {
+    console.log('🔧 performRuleUpdate 被调用', { index, field, value });
     // 如果更新的是时间字段，需要验证时间交叉
     if (field === 'effectiveStartTime' || field === 'effectiveEndTime') {
       const currentRule = rules[index];
       const newStartTime = field === 'effectiveStartTime' ? value : currentRule.effectiveStartTime;
       const newEndTime = field === 'effectiveEndTime' ? value : currentRule.effectiveEndTime;
 
+      // 验证失效日期必须大于等于生效日期
+      if (newStartTime && newEndTime) {
+        const startDate = dayjs(newStartTime).startOf('day');
+        const endDate = dayjs(newEndTime).startOf('day');
+
+        if (endDate.isBefore(startDate)) {
+          message.error('失效日期必须大于或等于生效日期');
+          return;
+        }
+      }
+
+      // 如果修改的是生效日期，先处理自动设置失效日期
+      if (field === 'effectiveStartTime' && value && index > 0) {
+        // 向前查找最近的一条没有失效日期的规则
+        let targetIndex = -1;
+        for (let i = index - 1; i >= 0; i--) {
+          if (!rules[i].effectiveEndTime) {
+            targetIndex = i;
+            break;
+          }
+        }
+
+        if (targetIndex !== -1) {
+          const previousRuleEndDate = dayjs(value).subtract(1, 'day').toISOString();
+
+          // 创建临时规则数组
+          const tempRules = [...rules];
+          tempRules[targetIndex] = {
+            ...tempRules[targetIndex],
+            effectiveEndTime: previousRuleEndDate,
+          };
+          tempRules[index] = {
+            ...tempRules[index],
+            [field]: value,
+          };
+
+          // 验证时间交叉
+          const hasOverlap = validateRuleTimeOverlapWithRules(newStartTime, newEndTime, index, tempRules);
+
+          if (hasOverlap) {
+            message.error('日期区间已有现有规则交叉，请调整日期区间');
+            return;
+          }
+
+          // 验证通过，应用更改
+          setRules(tempRules);
+          form.setFieldsValue({ rules: tempRules });
+          return;
+        }
+      }
+
       // 只有设置了开始时间才进行验证
       if (newStartTime) {
         const hasOverlap = validateRuleTimeOverlap(newStartTime, newEndTime, index);
 
         if (hasOverlap) {
-          message.error('规则时间与现有规则时间交叉，请调整时间设置');
+          message.error('日期区间已有现有规则交叉，请调整日期区间');
           return;
         }
       }
@@ -1074,30 +1140,72 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
     form.setFieldsValue({ rules: newRules });
   };
 
-  const getAllocationBasisLabel = (basis: string) => {
-    const option = allocationBasisOptions.find(opt => opt.value === basis);
-    return option?.label || basis;
+  const handleUpdateRule = (index: number, field: string, value: any) => {
+    // 如果更新的是生效日期，检查是否小于今天
+    if (field === 'effectiveStartTime' && value) {
+      const startDate = dayjs(value).startOf('day');
+      const today = dayjs().startOf('day');
+
+      if (startDate.isBefore(today)) {
+        Modal.confirm({
+          title: '提示',
+          icon: null,
+          content: '当前生效日期为历史日期，请确认是否继续',
+          okText: '确定',
+          cancelText: '取消',
+          centered: true,
+          className: 'deactivate-modal',
+          onOk: () => {
+            // 用户确认后继续执行原有���逻辑
+            performRuleUpdate(index, field, value);
+          },
+        });
+        return; // 等待用户确认，暂时不继续执行
+      }
+    }
+
+    // 如果更新的是失效日期，检查是否小于今天
+    if (field === 'effectiveEndTime' && value) {
+      const endDate = dayjs(value).startOf('day');
+      const today = dayjs().startOf('day');
+
+      if (endDate.isBefore(today)) {
+        Modal.confirm({
+          title: '提示',
+          icon: null,
+          content: '当前失效日期为历史日期，请确认是否继续',
+          okText: '确定',
+          cancelText: '取消',
+          centered: true,
+          className: 'deactivate-modal',
+          onOk: () => {
+            console.log('✅ 用户点击确定 - 失效日期', { index, field, value });
+            performRuleUpdate(index, field, value);
+          },
+        });
+        return; // 等待用户确认，暂时不继续执行
+      }
+    }
+
+    // 直接执行更新逻辑
+    performRuleUpdate(index, field, value);
   };
 
-  const getAllocationBasisColor = (basis: string) => {
-    const colors: Record<string, string> = {
-      'ACTUAL_HOURS': 'blue',
-      'ACTUAL_HOURS_COEFFICIENT': 'cyan',
-      'AVERAGE': 'green',
-    };
-    return colors[basis] || 'default';
-  };
-
-  // 验证规则时间是否与现有规则交叉
-  const validateRuleTimeOverlap = (newRuleStartTime: string | null, newRuleEndTime: string | null, excludeIndex: number = -1): boolean => {
+  const validateRuleTimeOverlapWithRules = (
+    newRuleStartTime: string | null,
+    newRuleEndTime: string | null,
+    excludeIndex: number = -1,
+    customRules?: any[]
+  ): boolean => {
     const newStart = newRuleStartTime ? dayjs(newRuleStartTime).startOf('day') : null;
     const newEnd = newRuleEndTime ? dayjs(newRuleEndTime).startOf('day') : null;
+    const rulesToCheck = customRules || rules;
 
     // 遍历所有现有规则（除了排除的索引）
-    for (let i = 0; i < rules.length; i++) {
+    for (let i = 0; i < rulesToCheck.length; i++) {
       if (i === excludeIndex) continue; // 跳过当前正在编辑的规则
 
-      const rule = rules[i];
+      const rule = rulesToCheck[i];
       if (!rule.effectiveStartTime) continue; // 没有开始时间的规则跳过
 
       const existingStart = dayjs(rule.effectiveStartTime).startOf('day');
@@ -1151,11 +1259,16 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
                     danger
                     onClick={() => handleRemoveRule(index)}
                     disabled={
-                      rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
+                      rule.id && (
+                        (rule.effectiveStartTime && !dayjs().startOf('day').isBefore(dayjs(rule.effectiveStartTime).startOf('day'))) ||
+                        (rule.effectiveEndTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveEndTime).startOf('day')))
+                      )
                     }
                     title={
-                      rule.effectiveStartTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveStartTime))
+                      rule.id && rule.effectiveStartTime && !dayjs().startOf('day').isBefore(dayjs(rule.effectiveStartTime).startOf('day'))
                         ? '该规则已经生效，不允许删除'
+                        : rule.id && rule.effectiveEndTime && dayjs().startOf('day').isAfter(dayjs(rule.effectiveEndTime).startOf('day'))
+                        ? '该规则已过期，不允许删除'
                         : '删除此规则'
                     }
                     style={{ padding: '0 4px' }}
@@ -1201,6 +1314,7 @@ const StepTwoAllocationRules: React.FC<StepTwoProps> = ({ form, editingConfig })
                         onChange={(date) => handleUpdateRule(index, 'effectiveStartTime', date ? date.toISOString() : null)}
                         style={{ width: '100%' }}
                         placeholder="选择生效日期"
+                        disabled={rule.id && rule.effectiveStartTime && !dayjs().startOf('day').isBefore(dayjs(rule.effectiveStartTime).startOf('day'))}
                       />
                     </div>
                   </Col>

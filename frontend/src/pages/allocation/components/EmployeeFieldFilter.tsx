@@ -8,8 +8,6 @@ import {
   Input,
   Divider,
   Tag,
-  Row,
-  Col,
   Spin,
   Empty,
   Checkbox,
@@ -527,8 +525,8 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
         // 有条件时，显示条件列表
         <div>
           {conditions.map((condition, conditionIndex) => (
-            <Row key={conditionIndex} gutter={8} align="top" style={{ marginBottom: 12 }}>
-              <Col span={1}>
+            <div key={conditionIndex} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', minWidth: '32px' }}>
                 {conditionIndex === 0 ? (
                   // 第一行显示+按钮，用于添加新条件
                   <Button
@@ -537,16 +535,16 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
                     icon={<PlusOutlined />}
                     onClick={addCondition}
                     disabled={disabled}
-                    style={{ marginTop: 0 }}
+                    style={{ margin: 0 }}
                   />
                 ) : (
                   // 其他行显示AND标签
-                  <Tag color="blue" style={{ marginTop: 4 }}>
+                  <Tag color="blue" style={{ margin: 0 }}>
                     AND
                   </Tag>
                 )}
-              </Col>
-              <Col span={7}>
+              </div>
+              <div style={{ flex: '0 0 29.17%', maxWidth: '29.17%' }}>
                 <Select
                   placeholder="选择字段"
                   value={condition.fieldCode}
@@ -565,6 +563,7 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
                   disabled={disabled}
                   showSearch
                   optionFilterProp="label"
+                  style={{ width: '100%' }}
                 >
                   {allFields.map((field) => (
                     <Select.Option key={field.code} value={field.code} label={field.name}>
@@ -575,20 +574,21 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
                     </Select.Option>
                   ))}
                 </Select>
-              </Col>
-              <Col span={5}>
+              </div>
+              <div style={{ flex: '0 0 20.83%', maxWidth: '20.83%' }}>
                 <Select
                   placeholder="操作符"
                   value={condition.operator}
                   onChange={(val) => updateCondition(conditionIndex, { operator: val })}
                   disabled={disabled}
                   options={getOperatorsForFieldType(condition.fieldType)}
+                  style={{ width: '100%' }}
                 />
-              </Col>
-              <Col span={9}>
+              </div>
+              <div style={{ flex: '1 1 auto' }}>
                 {renderValueInput(condition, conditionIndex)}
-              </Col>
-              <Col span={2} style={{ textAlign: 'right' }}>
+              </div>
+              <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end' }}>
                 <Button
                   type="link"
                   size="small"
@@ -599,8 +599,8 @@ const EmployeeFieldFilter: React.FC<EmployeeFieldFilterProps> = ({
                 >
                   删除
                 </Button>
-              </Col>
-            </Row>
+              </div>
+            </div>
           ))}
         </div>
       )}

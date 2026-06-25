@@ -6746,6 +6746,13 @@ export class AllocationService {
 
     // 解析 rules 和 sourceConfig JSON 字符串
     const rules = config.rules ? JSON.parse(config.rules) : [];
+
+    // 为每个rule添加唯一ID（如果没有的话）
+    const rulesWithIds = rules.map((rule: any, index: number) => ({
+      ...rule,
+      id: rule.id || `${config.id}-${index}`, // 使用配置ID和索引生成唯一ID
+    }));
+
     let sourceConfig = config.sourceConfig ? JSON.parse(config.sourceConfig) : null;
 
     // 转换 sourceConfig 为前端期望的 filterGroups 结构
@@ -6767,7 +6774,7 @@ export class AllocationService {
     return {
       ...config,
       configCode: config.code, // 映射 code 为 configCode
-      rules,
+      rules: rulesWithIds, // 使用带有ID的rules
       sourceConfig,
       _count: {
         rules: rules.length,

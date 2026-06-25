@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Select, Row, Col, Button, Space, Tag } from 'antd';
+import { Select, Button, Space, Tag } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import request from '@/utils/request';
@@ -272,8 +272,8 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
             const levelOptions = levelOptionsMap[selection.levelId] || [];
 
             return (
-              <Row key={index} gutter={8} align="top" style={{ marginBottom: 12 }}>
-                <Col span={1}>
+              <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', minWidth: '32px' }}>
                   {index === 0 ? (
                     // 第一行显示+按钮，用于添加新条件
                     <Button
@@ -282,16 +282,16 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
                       icon={<PlusOutlined />}
                       onClick={addSelection}
                       disabled={disabled}
-                      style={{ marginTop: 0 }}
+                      style={{ margin: 0 }}
                     />
                   ) : (
                     // 其他行显示AND标签
-                    <Tag color="blue" style={{ marginTop: 4 }}>
+                    <Tag color="blue" style={{ margin: 0 }}>
                       AND
                     </Tag>
                   )}
-                </Col>
-                <Col span={10}>
+                </div>
+                <div style={{ flex: '0 0 41.67%', maxWidth: '41.67%' }}>
                   <Select
                     placeholder="选择劳动力账户层级"
                     value={selection.levelId || undefined}
@@ -305,8 +305,8 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
                     showSearch
                     optionFilterProp="label"
                   />
-                </Col>
-                <Col span={11}>
+                </div>
+                <div style={{ flex: '1 1 auto' }}>
                   <Select
                     mode="multiple"
                     placeholder={`选择${selection.levelName || '账户'}`}
@@ -321,8 +321,8 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
                     showSearch
                     optionFilterProp="label"
                   />
-                </Col>
-                <Col span={2} style={{ textAlign: 'right' }}>
+                </div>
+                <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     type="link"
                     size="small"
@@ -333,8 +333,8 @@ const WorkHoursBelongingSelector: React.FC<WorkHoursBelongingSelectorProps> = ({
                   >
                     删除
                   </Button>
-                </Col>
-              </Row>
+                </div>
+              </div>
             );
           })}
         </div>
