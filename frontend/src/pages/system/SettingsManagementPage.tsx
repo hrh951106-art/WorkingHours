@@ -173,6 +173,12 @@ const SettingsManagementPage: React.FC = () => {
       icon: <PieChartOutlined />,
       items: [
         {
+          key: '/embed/allocation/calculation-management',
+          label: '计算管理',
+          path: '/embed/allocation/calculation-management',
+          icon: <CalculatorOutlined />,
+        },
+        {
           key: '/embed/allocation/config',
           label: '分配规则',
           path: '/embed/allocation/config',
@@ -311,6 +317,31 @@ const SettingsManagementPage: React.FC = () => {
       setActiveTab(item.key);
     }
   }, [location.pathname]);
+
+  // 监听 iframe 中的认证消息
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // 安全检查：确保消息来自同源
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      // 处理认证失败消息
+      if (event.data?.type === 'AUTH_REQUIRED') {
+        // 清除本地存储并跳转到登录页
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('auth-storage');
+        window.location.href = '/login';
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
 
   // 生成左侧菜单项
   const menuItems = menuCategories.map((category) => ({

@@ -61,7 +61,19 @@ request.interceptors.response.use(
       localStorage.removeItem('user');
       // 清除zustand persist存储
       localStorage.removeItem('auth-storage');
-      window.location.href = '/login';
+
+      // 检测是否在 iframe 中
+      if (window.self !== window.top) {
+        // 在 iframe 中，通知主窗口跳转到登录页
+        try {
+          window.top.postMessage({ type: 'AUTH_REQUIRED' }, '*');
+        } catch (e) {
+          console.error('postMessage failed:', e);
+        }
+      } else {
+        // 在主窗口中，直接跳转
+        window.location.href = '/login';
+      }
     } else if (error.response?.status === 403) {
       return Promise.reject(new Error('没有权限访问'));
     } else if (error.response?.status === 404) {

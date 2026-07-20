@@ -71,6 +71,7 @@ const ProductionReportCreatePage = lazy(() => import('@/pages/report/ProductionR
 const LaborHourReportListPage = lazy(() => import('@/pages/labor-hour-report/LaborHourReportListPage'));
 const LaborHourReportCreatePage = lazy(() => import('@/pages/labor-hour-report/LaborHourReportCreatePage'));
 const LaborHourReportDetailPage = lazy(() => import('@/pages/labor-hour-report/LaborHourReportDetailPage'));
+const CalculationManagementPage = lazy(() => import('@/pages/allocation/CalculationManagementPage'));
 const DataSourceManagePage = lazy(() => import('@/pages/bi-report/datasource/DataSourceManagePage'));
 const DataModelListPage = lazy(() => import('@/pages/bi-report/model/DataModelListPage'));
 const DataModelDetailPage = lazy(() => import('@/pages/bi-report/model/DataModelDetailPage'));
@@ -334,6 +335,14 @@ const router = createBrowserRouter([
       {
         path: 'allocation',
         children: [
+          {
+            path: 'calculation-management',
+            element: (
+              <SuspenseWrapper>
+                <CalculationManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
           {
             path: 'config',
             element: (
@@ -916,6 +925,14 @@ const router = createBrowserRouter([
         path: 'allocation',
         children: [
           { index: true, element: <Navigate to="/allocation/basic-config" replace /> },
+          {
+            path: 'calculation-management',
+            element: (
+              <SuspenseWrapper>
+                <CalculationManagementPage />
+              </SuspenseWrapper>
+            ),
+          },
           // 分摊规则已移动到 系统配置-工时管理 下
           // {
           //   path: 'config',
